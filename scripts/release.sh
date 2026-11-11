@@ -90,5 +90,5 @@ fi
 xcrun stapler staple "$PKG"
 spctl --assess --type install --verbose "$PKG"
 
-shasum -a 256 "$PKG" | tee "$PKG.sha256"
+(cd "$DIST" && shasum -a 256 "${PKG:t}" | tee "${PKG:t}.sha256")   # bare name: `shasum -c` works where it's downloaded
 echo "Ready: $PKG"
