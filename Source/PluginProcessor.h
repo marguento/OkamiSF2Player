@@ -12,7 +12,8 @@
 // player: its modulators, interpolation, reverb and chorus. The file is chosen
 // in the editor and remembered in the host's project.
 class SF2PlayerProcessor : public juce::AudioProcessor,
-                           public juce::ChangeBroadcaster
+                           public juce::ChangeBroadcaster,
+                           private juce::Timer
 {
 public:
     SF2PlayerProcessor();
@@ -61,6 +62,10 @@ public:
     // The SoundFont the project names when it isn't on this Mac any more (moved, renamed or deleted).
     juce::File missingSoundFont() const { return missingFile; }
 
+    // MIDI program changes wait here: selecting a preset reads its samples from disk, which
+    // the audio thread must never do. The message thread applies them (a timer; tests call it).
+    void applyPendingProgramChanges();
+
     // Voices sounding after the last block (for the editor and tests).
     std::atomic<int> activeVoices { 0 };
     // Tests: render with another interpolation (FLUID_INTERP_*); -1 keeps the 7th order.
@@ -97,6 +102,14 @@ private:
     void swapEngine (std::unique_ptr<Engine>);
 
     juce::SpinLock engineLock;   // guards `engine` between the audio and message threads
+
+    void timerCallback() override { applyPendingProgramChanges(); }
+    // Audio thread -> message thread: (channel, program) pairs.
+    juce::AbstractFifo programFifo { 64 };
+    std::array<std::pair<int, int>, 64> programQueue {};
+    // Events of a block that couldn't take the engine: played at the start of the next one,
+    // so a note-off, a pedal release or a bend's return is never lost.
+    juce::MidiBuffer deferredMidi;
     std::unique_ptr<Engine> engine;
 
     juce::File currentFile, missingFile;
@@ -161,5 +174,6 @@ private:
     int transposeFor (int note) const;
     int curvedVelocity (int velocity) const;
 
+    friend struct PluginTestsAccess;   // the tests hold engineLock to make a block skip
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SF2PlayerProcessor)
 };

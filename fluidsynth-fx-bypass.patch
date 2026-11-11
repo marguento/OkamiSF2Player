@@ -10,6 +10,79 @@ index e886f62..aa060e3 100644
  FLUIDSYNTH_API int fluid_synth_process(fluid_synth_t *synth, int len,
                                         int nfx, float *fx[],
                                         int nout, float *out[]);
+diff --git a/src/rvoice/fluid_chorus.c b/src/rvoice/fluid_chorus.c
+index 2be8af6..82b5e1b 100644
+--- a/src/rvoice/fluid_chorus.c
++++ b/src/rvoice/fluid_chorus.c
+@@ -118,6 +118,11 @@
+ #define SCALE_WET 1.0f
+ 
+ #define MAX_SAMPLES 2048 /* delay length in sample (46.4 ms at sample rate: 44100Hz).*/
++/* SF2 Player: above 96 kHz the delay line is twice MAX_SAMPLES, so the full 20 ms depth
++ * fits at 192 kHz. Up to 96 kHz it stays MAX_SAMPLES, and MAX_SAMPLES stays in
++ * HIGH_MOD_DEPTH (the mod rate formula): the chorus is bit-identical to FluidSynth's there. */
++#define CHORUS_BUFFER_SAMPLES 4096
++#define CHORUS_DELAY_LENGTH(chorus) ((chorus)->size - INTERP_SAMPLES_NBR)
+ #define LOW_MOD_DEPTH 176             /* low mod_depth/2 in samples */
+ #define HIGH_MOD_DEPTH  MAX_SAMPLES/2 /* high mod_depth in sample */
+ #define RANGE_MOD_DEPTH (HIGH_MOD_DEPTH - LOW_MOD_DEPTH)
+@@ -522,11 +527,11 @@ static void update_parameters_from_sample_rate(fluid_chorus_t *chorus)
+                               * chorus->sample_rate);
+ 
+     /* the delay line is fixed. So we reduce mod_depth (if necessary) */
+-    if(chorus->mod_depth > MAX_SAMPLES)
++    if(chorus->mod_depth > CHORUS_DELAY_LENGTH(chorus))
+     {
+         FLUID_LOG(FLUID_WARN, "chorus: Too high depth. Setting it to max (%d).",
+-                  MAX_SAMPLES);
+-        chorus->mod_depth = MAX_SAMPLES;
++                  CHORUS_DELAY_LENGTH(chorus));
++        chorus->mod_depth = CHORUS_DELAY_LENGTH(chorus);
+         /* set depth_ms to maximum to avoid spamming console with above warning */
+         chorus->depth_ms = (chorus->mod_depth * 1000) / chorus->sample_rate;
+     }
+@@ -655,7 +660,7 @@ new_fluid_chorus(fluid_real_t sample_rate)
+     printf("NEW_MOD\n");
+ #endif
+ 
+-    if(new_mod_delay_line(chorus, MAX_SAMPLES) == FLUID_FAILED)
++    if(new_mod_delay_line(chorus, sample_rate > 96000.0f ? CHORUS_BUFFER_SAMPLES : MAX_SAMPLES) == FLUID_FAILED)
+     {
+         delete_fluid_chorus(chorus);
+         return NULL;
+diff --git a/src/rvoice/fluid_rvoice.h b/src/rvoice/fluid_rvoice.h
+index 55c4eb2..2c1c41d 100644
+--- a/src/rvoice/fluid_rvoice.h
++++ b/src/rvoice/fluid_rvoice.h
+@@ -206,6 +206,7 @@ DECLARE_FLUID_RVOICE_FUNCTION(fluid_rvoice_set_finished_callback);
+ 
+ int fluid_rvoice_dsp_silence(fluid_rvoice_t *rvoice, fluid_real_t *FLUID_RESTRICT dsp_buf, int looping);
+ int fluid_rvoice_dsp_interpolate(fluid_rvoice_t *voice, fluid_real_t *FLUID_RESTRICT dsp_buf, int is_looping);
++void fluid_rvoice_dsp_warm_sinc_tables(void);
+ 
+ 
+ /*
+diff --git a/src/rvoice/fluid_rvoice_dsp.cpp b/src/rvoice/fluid_rvoice_dsp.cpp
+index 4b5fba6..0fb1499 100644
+--- a/src/rvoice/fluid_rvoice_dsp.cpp
++++ b/src/rvoice/fluid_rvoice_dsp.cpp
+@@ -796,6 +796,16 @@ fluid_rvoice_dsp_silence(fluid_rvoice_t *rvoice, fluid_real_t *FLUID_RESTRICT ds
+     return dsp_invoker<ProcessSilence>(rvoice, dsp_buf, looping);
+ }
+ 
++/* SF2 Player: builds the tabulated sinc kernels (a function-local static each, in this
++ * translation unit) before any voice needs them. */
++extern "C" void
++fluid_rvoice_dsp_warm_sinc_tables(void)
++{
++    fluid_interp_sinc_kernel<11>(std::array<fluid_real_t, 11> {}, 0);
++    fluid_interp_sinc_kernel<17>(std::array<fluid_real_t, 17> {}, 0);
++    fluid_interp_sinc_kernel<25>(std::array<fluid_real_t, 25> {}, 0);
++}
++
+ extern "C" int
+ fluid_rvoice_dsp_interpolate(fluid_rvoice_t *rvoice, fluid_real_t *FLUID_RESTRICT dsp_buf, int looping)
+ {
 diff --git a/src/rvoice/fluid_rvoice_dsp_sinc.hpp b/src/rvoice/fluid_rvoice_dsp_sinc.hpp
 index 0ed470a..c4185e9 100644
 --- a/src/rvoice/fluid_rvoice_dsp_sinc.hpp
@@ -352,10 +425,18 @@ index 0467c38..83d71f4 100644
  static int fluid_sffile_read_vorbis(SFData *sf, unsigned int start_byte, unsigned int end_byte, short **data)
  {
 diff --git a/src/synth/fluid_synth.c b/src/synth/fluid_synth.c
-index 5e2090d..b9343ac 100644
+index 5e2090d..5cb87ca 100644
 --- a/src/synth/fluid_synth.c
 +++ b/src/synth/fluid_synth.c
-@@ -255,7 +255,7 @@ void fluid_synth_settings(fluid_settings_t *settings)
+@@ -28,6 +28,7 @@
+ #include "fluid_dls.h"
+ #include "fluid_audio_convert.h"
+ #include "fluid_rev.h"
++#include "fluid_rvoice.h"
+ 
+ #ifdef TRAP_ON_FPE
+ #define _GNU_SOURCE
+@@ -255,7 +256,7 @@ void fluid_synth_settings(fluid_settings_t *settings)
      fluid_settings_register_int(settings, "synth.audio-groups", 1, 1, 128, 0);
      fluid_settings_register_int(settings, "synth.effects-channels", 2, 2, 2, 0);
      fluid_settings_register_int(settings, "synth.effects-groups", 1, 1, 128, 0);
@@ -364,7 +445,27 @@ index 5e2090d..b9343ac 100644
      fluid_settings_register_int(settings, "synth.device-id", 16, 0, 127, 0);
  #ifdef ENABLE_MIXER_THREADS
      fluid_settings_register_int(settings, "synth.cpu-cores", 1, 1, 256, 0);
-@@ -4646,6 +4646,19 @@ fluid_synth_process_LOCAL(fluid_synth_t *synth, int len, int nfx, float *fx[],
+@@ -731,6 +732,10 @@ new_fluid_synth(fluid_settings_t *settings)
+     }
+ 
+     /* allocate a new synthesizer object */
++    /* SF2 Player: the sinc kernels' tables are built here, on the thread creating the synth,
++     * not lazily by the first interpolated note on the audio thread. */
++    fluid_rvoice_dsp_warm_sinc_tables();
++
+     synth = FLUID_NEW(fluid_synth_t);
+ 
+     if(synth == NULL)
+@@ -3815,7 +3820,7 @@ static void
+ fluid_synth_set_sample_rate_LOCAL(fluid_synth_t *synth, float sample_rate)
+ {
+     int i;
+-    fluid_clip(sample_rate, 8000.0f, 96000.0f);
++    fluid_clip(sample_rate, 8000.0f, 192000.0f);   /* SF2 Player: as the setting's range */
+     synth->sample_rate = sample_rate;
+ 
+     synth->min_note_length_ticks = fluid_synth_get_min_note_length_LOCAL(synth);
+@@ -4646,6 +4651,19 @@ fluid_synth_process_LOCAL(fluid_synth_t *synth, int len, int nfx, float *fx[],
  }
  
  

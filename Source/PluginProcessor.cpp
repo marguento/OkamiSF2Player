@@ -112,9 +112,29 @@ SF2PlayerProcessor::SF2PlayerProcessor()
 {
     for (auto& channel : playedNote)
         channel.fill (-1);
+    deferredMidi.ensureSize (8192);
+    startTimerHz (50);
 }
 
-SF2PlayerProcessor::~SF2PlayerProcessor() = default;
+SF2PlayerProcessor::~SF2PlayerProcessor()
+{
+    stopTimer();
+}
+
+void SF2PlayerProcessor::applyPendingProgramChanges()
+{
+    if (programFifo.getNumReady() == 0)
+        return;
+    const juce::SpinLock::ScopedLockType lock (engineLock);
+    const auto scope = programFifo.read (programFifo.getNumReady());
+    for (int i = 0; i < scope.blockSize1 + scope.blockSize2; ++i)
+    {
+        const auto [channel, program] = programQueue[(size_t) (i < scope.blockSize1 ? scope.startIndex1 + i
+                                                                                   : scope.startIndex2 + i - scope.blockSize1)];
+        if (engine != nullptr)   // the channel's bank (CC0 / CC32) was already set on the audio thread
+            fluid_synth_program_change (engine->synth, channel, program);
+    }
+}
 
 SF2PlayerProcessor::EffectSettings SF2PlayerProcessor::currentEffectSettings() const
 {
@@ -134,25 +154,28 @@ SF2PlayerProcessor::EffectSettings SF2PlayerProcessor::currentEffectSettings() c
     return s;
 }
 
-// Called with the engine lock held. FluidSynth recalculates its effects only when told.
+// Called with the engine lock held. Only what changed reaches FluidSynth: each chorus setter
+// restarts the chorus's modulators, so resending it while another knob moves would click.
 void SF2PlayerProcessor::applyEffectSettings (bool force)
 {
     const auto s = currentEffectSettings();
     if (! force && s == appliedEffects)
         return;
 
+    const auto& a = appliedEffects;
+    using juce::exactlyEqual;
     auto* synth = engine->synth;
-    fluid_synth_reverb_on (synth, -1, s.reverbOn);
-    fluid_synth_set_reverb_group_level (synth, -1, s.reverbLevel);
-    fluid_synth_set_reverb_group_roomsize (synth, -1, s.reverbRoom);
-    fluid_synth_set_reverb_group_damp (synth, -1, s.reverbDamping);
-    fluid_synth_set_reverb_group_width (synth, -1, s.reverbWidth);
-    fluid_synth_chorus_on (synth, -1, s.chorusOn);
-    fluid_synth_set_chorus_group_level (synth, -1, s.chorusLevel);
-    fluid_synth_set_chorus_group_speed (synth, -1, s.chorusRate);
-    fluid_synth_set_chorus_group_depth (synth, -1, s.chorusDepth);
-    fluid_synth_set_chorus_group_nr (synth, -1, s.chorusVoices);
-    fluid_synth_set_fx_bypass (synth, s.sendOutputs);
+    if (force || s.reverbOn != a.reverbOn)                        fluid_synth_reverb_on (synth, -1, s.reverbOn);
+    if (force || ! exactlyEqual (s.reverbLevel, a.reverbLevel))     fluid_synth_set_reverb_group_level (synth, -1, s.reverbLevel);
+    if (force || ! exactlyEqual (s.reverbRoom, a.reverbRoom))       fluid_synth_set_reverb_group_roomsize (synth, -1, s.reverbRoom);
+    if (force || ! exactlyEqual (s.reverbDamping, a.reverbDamping)) fluid_synth_set_reverb_group_damp (synth, -1, s.reverbDamping);
+    if (force || ! exactlyEqual (s.reverbWidth, a.reverbWidth))     fluid_synth_set_reverb_group_width (synth, -1, s.reverbWidth);
+    if (force || s.chorusOn != a.chorusOn)                        fluid_synth_chorus_on (synth, -1, s.chorusOn);
+    if (force || ! exactlyEqual (s.chorusLevel, a.chorusLevel))     fluid_synth_set_chorus_group_level (synth, -1, s.chorusLevel);
+    if (force || ! exactlyEqual (s.chorusRate, a.chorusRate))       fluid_synth_set_chorus_group_speed (synth, -1, s.chorusRate);
+    if (force || ! exactlyEqual (s.chorusDepth, a.chorusDepth))     fluid_synth_set_chorus_group_depth (synth, -1, s.chorusDepth);
+    if (force || s.chorusVoices != a.chorusVoices)                fluid_synth_set_chorus_group_nr (synth, -1, s.chorusVoices);
+    if (force || s.sendOutputs != a.sendOutputs)                  fluid_synth_set_fx_bypass (synth, s.sendOutputs);
     appliedEffects = s;
 }
 
@@ -172,42 +195,55 @@ SF2PlayerProcessor::PlaySettings SF2PlayerProcessor::currentPlaySettings() const
 
 // Called with the engine lock held. The SoundFont's own values stay; these are offsets on
 // top (SF2's real-time generator offsets, the same as NRPN), so at their defaults nothing changes.
+// Only what changed is sent: the bend range and glide are also MIDI state a clip may set
+// (RPN 0, CC65 / CC5), which moving Attack must not overwrite.
 void SF2PlayerProcessor::applyPlaySettings (bool force)
 {
     const auto s = currentPlaySettings();
     if (! force && playApplied && s == appliedPlay)
         return;
+    const bool all = force || ! playApplied;
+    const auto& a = appliedPlay;
 
     auto* synth = engine->synth;
     // A multiplier on the envelope's times is an offset in timecents: 1200 per doubling.
     // Whole timecents: the knob's x1 is stored as 0.99999994, and even that -0.0001 moved the release.
-    const float attackCents = (float) juce::roundToInt (1200.0f * std::log2 (s.attack));
-    const float releaseCents = (float) juce::roundToInt (1200.0f * std::log2 (s.release));
+    auto timecents = [] (float multiplier) { return (float) juce::roundToInt (1200.0f * std::log2 (multiplier)); };
     for (int channel = 0; channel < numSynthChannels; ++channel)
     {
-        if (channel >= layerChannelOffset)   // the layer's level: SF2 attenuation, in centibels
-            fluid_synth_set_gen (synth, channel, GEN_ATTENUATION, (float) s.layerAttenuation);
-        fluid_synth_set_gen (synth, channel, GEN_VOLENVATTACK, attackCents);
-        fluid_synth_set_gen (synth, channel, GEN_VOLENVRELEASE, releaseCents);
-        fluid_synth_set_gen (synth, channel, GEN_FINETUNE, (float) s.fineTune);
-        fluid_synth_pitch_wheel_sens (synth, channel, s.bendRange);
+        if (channel >= layerChannelOffset && (all || s.layerAttenuation != a.layerAttenuation))
+            fluid_synth_set_gen (synth, channel, GEN_ATTENUATION, (float) s.layerAttenuation);   // centibels
+        if (all || ! juce::exactlyEqual (s.attack, a.attack))
+            fluid_synth_set_gen (synth, channel, GEN_VOLENVATTACK, timecents (s.attack));
+        if (all || ! juce::exactlyEqual (s.release, a.release))
+            fluid_synth_set_gen (synth, channel, GEN_VOLENVRELEASE, timecents (s.release));
+        if (all || s.fineTune != a.fineTune)
+            fluid_synth_set_gen (synth, channel, GEN_FINETUNE, (float) s.fineTune);
+        if (all || s.bendRange != a.bendRange)
+            fluid_synth_pitch_wheel_sens (synth, channel, s.bendRange);
 
-        // Glide: portamento between connected notes, its time in ms (linear mode: MSB * 128 + LSB).
-        fluid_synth_cc (synth, channel, 65, s.glide > 0 ? 127 : 0);
-        fluid_synth_cc (synth, channel, 5, s.glide / 128);
-        fluid_synth_cc (synth, channel, 37, s.glide % 128);
-        // FluidSynth's defaults (glide on each note, multi-retrigger legato), except: Legato glides
-        // only between connected notes, Mono starts every note afresh.
-        fluid_synth_set_portamento_mode (synth, channel, s.mode == 2 ? FLUID_CHANNEL_PORTAMENTO_MODE_LEGATO_ONLY
-                                                                     : FLUID_CHANNEL_PORTAMENTO_MODE_EACH_NOTE);
-        fluid_synth_set_legato_mode (synth, channel, s.mode == 1 ? FLUID_CHANNEL_LEGATO_MODE_RETRIGGER
-                                                                 : FLUID_CHANNEL_LEGATO_MODE_MULTI_RETRIGGER);
+        if (all || s.glide != a.glide)
+        {
+            // Glide: portamento, its time in ms (linear mode: MSB * 128 + LSB).
+            fluid_synth_cc (synth, channel, 65, s.glide > 0 ? 127 : 0);
+            fluid_synth_cc (synth, channel, 5, s.glide / 128);
+            fluid_synth_cc (synth, channel, 37, s.glide % 128);
+        }
+        if (all || s.mode != a.mode)
+        {
+            // FluidSynth's defaults (glide on each note, multi-retrigger legato), except: Legato glides
+            // only between connected notes, Mono starts every note afresh.
+            fluid_synth_set_portamento_mode (synth, channel, s.mode == 2 ? FLUID_CHANNEL_PORTAMENTO_MODE_LEGATO_ONLY
+                                                                         : FLUID_CHANNEL_PORTAMENTO_MODE_EACH_NOTE);
+            fluid_synth_set_legato_mode (synth, channel, s.mode == 1 ? FLUID_CHANNEL_LEGATO_MODE_RETRIGGER
+                                                                     : FLUID_CHANNEL_LEGATO_MODE_MULTI_RETRIGGER);
+        }
     }
-    if (force || ! playApplied || s.mode != appliedPlay.mode)
+    if (all || s.mode != a.mode)
     {
         fluid_synth_all_notes_off (synth, -1);
         fluid_synth_reset_basic_channel (synth, -1);
-        // Poly: as a fresh FluidSynth. Mono and Legato: each of the 16 channels plays one note at a time.
+        // Poly: as a fresh FluidSynth. Mono and Legato: each channel plays one note at a time.
         fluid_synth_set_basic_channel (synth, 0, s.mode == 0 ? FLUID_CHANNEL_MODE_OMNION_POLY : FLUID_CHANNEL_MODE_OMNIOFF_MONO,
                                        numSynthChannels);
     }
@@ -420,14 +456,23 @@ void SF2PlayerProcessor::prepareToPlay (double newSampleRate, int maximumExpecte
     const bool rateChanged = ! juce::exactlyEqual (newSampleRate, sampleRate);
     sampleRate = newSampleRate;
 
-    // FluidSynth takes its sample rate when created: build it again for the new one.
-    if (rateChanged && currentFile.existsAsFile())
-        if (auto fresh = createEngine (currentFile, sampleRate))
+    // FluidSynth takes its sample rate when created: build it again for the new one. If that
+    // fails (the file moved meanwhile), stop playing rather than play out of tune at the old rate.
+    if (rateChanged && currentFile != juce::File())
+    {
+        auto fresh = currentFile.existsAsFile() ? createEngine (currentFile, sampleRate) : nullptr;
+        if (fresh != nullptr)
         {
             applyPreset (*fresh, currentPreset);
             applyLayerPreset (*fresh, layerPreset);
-            swapEngine (std::move (fresh));
         }
+        else if (! currentFile.existsAsFile())
+        {
+            missingFile = currentFile;
+            sendChangeMessage();
+        }
+        swapEngine (std::move (fresh));
+    }
 }
 
 // ---------------------------------------------------------------------------- audio
@@ -470,7 +515,11 @@ void SF2PlayerProcessor::handleMidi (const juce::MidiMessage& m)
         }
     }
     else if (m.isProgramChange())
-        fluid_synth_program_change (synth, channel, m.getProgramChangeNumber());
+    {
+        // Never here: selecting a preset reads its samples from disk (applyPendingProgramChanges).
+        if (const auto scope = programFifo.write (1); scope.blockSize1 + scope.blockSize2 == 1)
+            programQueue[(size_t) (scope.blockSize1 == 1 ? scope.startIndex1 : scope.startIndex2)] = { channel, m.getProgramChangeNumber() };
+    }
     else
     {
         // Controllers, bends and pressure reach the layer too, so it follows the playing.
@@ -546,11 +595,22 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         // Never wait: while the message thread holds the engine (choosing an instrument
         // reads its samples from disk), this block stays silent instead.
         const juce::SpinLock::ScopedTryLockType lock (engineLock);
-        if (! lock.isLocked() || engine == nullptr)
+        if (! lock.isLocked())
+        {
+            for (const auto metadata : midi)   // kept for the next block
+                deferredMidi.addEvent (metadata.getMessage(), 0);
+            return;
+        }
+        if (engine == nullptr)   // no SoundFont: nothing to play the events
             return;
         applyEffectSettings (false);
         applyPlaySettings (false);
         sendOutputs = appliedEffects.sendOutputs;
+
+        // Events a skipped block kept, first.
+        for (const auto metadata : deferredMidi)
+            handleMidi (metadata.getMessage());
+        deferredMidi.clear();
 
         // Render up to each MIDI event, so notes start on the exact sample.
         int position = 0;
@@ -662,6 +722,11 @@ void SF2PlayerProcessor::getStateInformation (juce::MemoryBlock& destData)
         state.setProperty ("layerBank", presetList[(size_t) layerPreset].bank, nullptr);
         state.setProperty ("layerNumber", presetList[(size_t) layerPreset].number, nullptr);
     }
+    else if (savedLayerBank >= 0)   // the file is missing: keep what the project had
+    {
+        state.setProperty ("layerBank", savedLayerBank, nullptr);
+        state.setProperty ("layerNumber", savedLayerNumber, nullptr);
+    }
     if (auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
 }
@@ -690,15 +755,15 @@ void SF2PlayerProcessor::setStateInformation (const void* data, int sizeInBytes)
         if (loadSoundFont (file))
             return;
     }
-    if (file != juce::File())
-    {
-        missingFile = file;   // kept in the project; the editor says it's missing
-        swapEngine (nullptr);
-        currentFile = juce::File();
-        currentInfo = {};
-        presetList.clear();
-        sendChangeMessage();
-    }
+    // A missing file is kept in the project (the editor says so); a state without a file (a
+    // host's default) means no SoundFont. Either way the old one stops, so the sound, the
+    // editor and the next save agree.
+    missingFile = file;
+    swapEngine (nullptr);
+    currentFile = juce::File();
+    currentInfo = {};
+    presetList.clear();
+    sendChangeMessage();
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

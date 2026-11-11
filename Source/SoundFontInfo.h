@@ -107,6 +107,7 @@ private:
         struct Zone
         {
             int low = 0, high = 127, link = -1;
+            bool hasRange = false;   // generator 43 present in this zone
             std::optional<int> reverb, chorus;   // generators 16 and 15, in 0.1 %
         };
         // A hostile file can point every preset at every bag: indices are clamped to the chunks'
@@ -130,7 +131,7 @@ private:
                 {
                     const int oper = u16 (gens, (size_t) g * 4);
                     if (oper == 43)
-                        zone.low = byte (gens, (size_t) g * 4 + 2), zone.high = byte (gens, (size_t) g * 4 + 3);
+                        zone.low = byte (gens, (size_t) g * 4 + 2), zone.high = byte (gens, (size_t) g * 4 + 3), zone.hasRange = true;
                     else if (oper == linkGenerator)
                         zone.link = u16 (gens, (size_t) g * 4 + 2);
                     else if (oper == 16)
@@ -173,7 +174,10 @@ private:
                     const float chorus = amount (instZone, instGlobal, presetZone, presetGlobal, &Zone::chorus);
                     reverbMin = juce::jmin (reverbMin, reverb), reverbMax = juce::jmax (reverbMax, reverb);
                     chorusMin = juce::jmin (chorusMin, chorus), chorusMax = juce::jmax (chorusMax, chorus);
-                    const int zoneLow = juce::jmax (presetZone.low, instZone.low), zoneHigh = juce::jmin (presetZone.high, instZone.high);
+                    // A zone without its own key range takes its global zone's (SF2 2.04, 9.4).
+                    const Zone& presetRange = presetZone.hasRange ? presetZone : presetGlobal;
+                    const Zone& instRange = instZone.hasRange ? instZone : instGlobal;
+                    const int zoneLow = juce::jmax (presetRange.low, instRange.low), zoneHigh = juce::jmin (presetRange.high, instRange.high);
                     if (zoneLow <= zoneHigh)
                         low = juce::jmin (low, zoneLow), high = juce::jmax (high, zoneHigh);
                 }

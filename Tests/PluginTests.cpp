@@ -9,8 +9,14 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <functional>
 #include <sys/sysctl.h>
+
+struct PluginTestsAccess
+{
+    static juce::SpinLock& lock (SF2PlayerProcessor& p) { return p.engineLock; }
+};
 
 namespace
 {
@@ -357,6 +363,51 @@ int main()
         expect (rms (out, 2.5, 3.0) < 1e-4, "A layered note still stops after the layer is switched off", db (rms (out, 2.5, 3.0)));
     }
 
+    // ---- The audio thread never waits and never loses an event.
+    {
+        // A block that can't take the engine (an instrument loading) keeps its events: the
+        // note-off arriving then still stops the note.
+        Player held (testFont);
+        const auto out = held.render (2.0, [&] (int b, juce::MidiBuffer& m)
+        {
+            if (b == 0) m.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
+            if (b == blockOf (0.3))
+            {
+                const juce::SpinLock::ScopedLockType busy (PluginTestsAccess::lock (held.p));   // the message thread is loading
+                juce::AudioBuffer<float> buffer (6, block);
+                juce::MidiBuffer off;
+                off.addEvent (juce::MidiMessage::noteOff (1, 60), 0);
+                held.p.processBlock (buffer, off);   // skipped: silent, the note-off kept
+            }
+        });
+        // Compared with the same note let go normally, and with one never let go.
+        Player normal (testFont), stuck (testFont);
+        const auto released = normal.note (60, 100, 0.3, 2.0);
+        const auto ringing = stuck.note (60, 100, 3.0, 2.0);
+        const double kept = rms (out, 1.5, 2.0), expected = rms (released, 1.5, 2.0), never = rms (ringing, 1.5, 2.0);
+        expect (kept < never * 0.1 && std::abs (20 * std::log10 ((kept + 1e-12) / (expected + 1e-12))) < 3,
+                "A note-off arriving while an instrument loads still stops the note",
+                db (kept) + " (let go normally " + db (expected) + ", never let go " + db (never) + ")");
+
+        // A MIDI program change waits for the message thread (it loads samples from disk).
+        Player switching (testFont);
+        auto voicesOf = [&] (Player& pl)
+        {
+            pl.render (0.2, [] (int b, juce::MidiBuffer& m) { if (b == 0) m.addEvent (juce::MidiMessage::noteOn (1, 72, (juce::uint8) 100), 0); });
+            const int v = pl.p.activeVoices.load();
+            pl.render (0.1, [] (int b, juce::MidiBuffer& m) { if (b == 0) m.addEvent (juce::MidiMessage::allSoundOff (1), 0); });
+            return v;
+        };
+        const int squareVoices = voicesOf (switching);
+        switching.render (0.05, [] (int b, juce::MidiBuffer& m) { if (b == 0) m.addEvent (juce::MidiMessage::programChange (1, 0), 0); });
+        const int beforeApplied = voicesOf (switching);
+        switching.p.applyPendingProgramChanges();
+        const int afterApplied = voicesOf (switching);
+        expect (beforeApplied == squareVoices && afterApplied == 2 && squareVoices == 1,
+                "A MIDI program change is applied off the audio thread (square -> FM bells)",
+                juce::String (squareVoices) + " -> " + juce::String (beforeApplied) + " -> " + juce::String (afterApplied) + " voices");
+    }
+
     // ---- Tone, outputs and saved state.
     {
         Player plain (testFont), dark (testFont);
@@ -527,6 +578,46 @@ int main()
         expect (allRefused && ms < 3000, "Hostile files (garbage, truncated, a header alone, indices pointing everywhere) are refused quickly",
                 juce::String (ms, 0) + " ms");
         dir.deleteRecursively();
+    }
+
+    // ---- A key range given only in a global zone applies to the zones without one (SF2 2.04, 9.4).
+    {
+        juce::MemoryOutputStream pdta;
+        auto chunk = [&] (const char* id, std::initializer_list<int> shorts, int recordSize, int records)
+        {
+            juce::MemoryOutputStream body;
+            for (int v : shorts) body.writeShort ((short) v);
+            while ((int) body.getDataSize() < recordSize * records) body.writeByte (0);
+            pdta.write (id, 4); pdta.writeInt ((int) body.getDataSize()); pdta.write (body.getData(), body.getDataSize());
+        };
+        auto preset = [] (juce::MemoryOutputStream& o, const char* name, int number, int bag)
+        {
+            char padded[20] = {}; std::strncpy (padded, name, 19); o.write (padded, 20);
+            o.writeShort ((short) number); o.writeShort (0); o.writeShort ((short) bag); o.writeInt (0); o.writeInt (0); o.writeInt (0);
+        };
+        juce::MemoryOutputStream phdr;
+        preset (phdr, "Ranged", 0, 0);
+        preset (phdr, "EOP", 0, 2);
+        pdta.write ("phdr", 4); pdta.writeInt ((int) phdr.getDataSize()); pdta.write (phdr.getData(), phdr.getDataSize());
+        chunk ("pbag", { 0, 0, 1, 0, 2, 0 }, 4, 3);              // zone 0: global, zone 1: the instrument
+        chunk ("pgen", { 43, 48 | (72 << 8), 41, 0, 0, 0 }, 4, 3);   // keyRange 48-72 (lo, hi bytes), instrument 0
+        juce::MemoryOutputStream inst;
+        char instName[20] = "Inst"; inst.write (instName, 20); inst.writeShort (0);
+        char eoi[20] = "EOI"; inst.write (eoi, 20); inst.writeShort (1);
+        pdta.write ("inst", 4); pdta.writeInt ((int) inst.getDataSize()); pdta.write (inst.getData(), inst.getDataSize());
+        chunk ("ibag", { 0, 0, 1, 0 }, 4, 2);
+        chunk ("igen", { 53, 0, 0, 0 }, 4, 2);                   // sampleID 0, no range of its own
+        juce::MemoryOutputStream sf;
+        sf.write ("RIFF", 4); sf.writeInt ((int) pdta.getDataSize() + 16); sf.write ("sfbk", 4);
+        sf.write ("LIST", 4); sf.writeInt ((int) pdta.getDataSize() + 4); sf.write ("pdta", 4);
+        sf.write (pdta.getData(), pdta.getDataSize());
+        const auto file = juce::File::createTempFile ("ranged.sf2");
+        file.replaceWithData (sf.getData(), sf.getDataSize());
+        const auto info = SoundFontInfo::read (file);
+        const auto range = info.keyRanges.find ({ 0, 0 });
+        expect (range != info.keyRanges.end() && range->second == std::pair { 48, 72 }, "A global zone's key range applies to its zones",
+                range == info.keyRanges.end() ? juce::String ("no range") : juce::String (range->second.first) + "-" + juce::String (range->second.second));
+        file.deleteFile();
     }
 
     // ---- CPU: 64 string notes (256 voices) at 48 kHz in 128-sample blocks.

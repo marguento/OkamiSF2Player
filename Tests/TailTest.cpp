@@ -222,8 +222,14 @@ int main (int argc, char** argv)
         p.prepareToPlay (rate, block);
         p.loadSoundFont (sf2);
         p.selectPreset (preset);
-        p.parameters.getParameter ("fsReverbOn")->setValueNotifyingHost (0.0f);
-        p.parameters.getParameter ("fsChorusOn")->setValueNotifyingHost (0.0f);
+        const bool effects = std::getenv ("EFFECTS") != nullptr;   // EFFECTS=1: reverb and chorus on, chorus 15 ms deep
+        p.parameters.getParameter ("fsReverbOn")->setValueNotifyingHost (effects ? 1.0f : 0.0f);
+        p.parameters.getParameter ("fsChorusOn")->setValueNotifyingHost (effects ? 1.0f : 0.0f);
+        if (effects)
+        {
+            auto* depth = p.parameters.getParameter ("fsChorusDepth");
+            depth->setValueNotifyingHost (depth->convertTo0to1 (15.0f));
+        }
         const int key = juce::String (argv[5]).getIntValue();
         if (const char* interp = std::getenv ("INTERP")) p.interpolationOverride = std::atoi (interp);
         if (argc > 6)
