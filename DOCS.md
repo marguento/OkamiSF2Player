@@ -28,8 +28,11 @@ the plugin says so in a red line.
 - **File menu:** the last 12 SoundFonts opened, then "Open SoundFont...". The open one shows
   how many instruments it holds: `HQ_Orchestral... (195 instruments)`.
 - **Drag and drop** an `.sf2` or `.sf3` to open it.
-- **A moved or renamed file:** the project still remembers it, and the plugin names the one it
-  can't find in red. Choose it again and everything comes back.
+- **A moved or renamed file:** the project still remembers it, and the plugin says in red
+  "Can't find" with its name. Put it back (or plug its drive in) and it loads again by itself
+  within a second, with your instruments; or choose it again from the menu.
+- **A file that can't be read** (damaged, or still downloading from the cloud) says "Can't
+  open". It's tried again when it changes, or a minute later.
 - **Memory:** only the chosen instruments' samples are loaded. A 500 MB collection takes tens
   of MB per track. Changing instruments can leave a moment of silence while its samples load.
 
@@ -119,6 +122,23 @@ At their defaults (x1, Linear, 0, Poly, Off) they change nothing.
   connected notes.
 - **Mod wheel:** adds vibrato, as the SoundFont standard defines.
 
+## MIDI from clips
+
+- **Program Change** switches the instrument on that MIDI channel at once, so a note sent with
+  it already plays the new one, live and in exports. Send a **Bank Select** (CC0) before it for
+  the variation banks (`[1:025]` is bank 1, program 25). The first time a clip switches to an
+  instrument that isn't loaded yet, its samples are read from disk right then, which can cause a
+  short dropout live (never in an export); after that it stays in memory, so switching back is
+  instant.
+- **Controllers** work as the SoundFont defines them: volume (CC7), pan (CC10), expression
+  (CC11), sustain (CC64), mod wheel (CC1), reverb and chorus sends (CC91, CC93), pitch bend
+  (range set by **Bend**, or by RPN 0 from the clip).
+- **Reset All Controllers** (CC121) from a clip resets the clip's controllers; the plugin's own
+  knobs (Attack, Release, Fine, Glide, the layer's level) stay as you set them.
+- While an instrument is loading the plugin is silent for a moment, but it keeps what the clip
+  sent meanwhile (note-offs, pedals, the last position of every controller and bend), so no
+  note gets stuck.
+
 ## Saving
 
 The Ableton project keeps the file, both instruments and every knob. Changing the file or an
@@ -130,4 +150,6 @@ recent files list are kept by the plugin, for every project.
 - Sample rates from 8 to 192 kHz.
 - Up to 256 voices at once (orchestral instruments use 4-6 voices per note).
 - `.sf3` files are lossily compressed: they sound very close to their `.sf2`, not identical.
+- Instruments that clips switched to with Program Change stay in memory until the SoundFont is
+  reloaded.
 - The window can be enlarged from its bottom-right corner.
