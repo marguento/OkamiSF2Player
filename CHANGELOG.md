@@ -3,6 +3,19 @@
 The version shows next to the title (`project(... VERSION x.y.z)` in CMakeLists.txt). Each
 release bumps it and adds an entry here: one line per change a player would notice.
 
+## 1.2.1 — Nov 10, 2026
+
+- A note-off, pedal release or pitch-bend return that arrives while an instrument loads is no
+  longer lost (no more stuck notes).
+- Moving a reverb knob no longer clicks the chorus; moving a PLAY knob no longer resets the
+  bend range or glide a clip set.
+- A clip's Reset All Controllers no longer undoes Attack, Release, Fine, Glide or the layer's level.
+- The first note no longer stutters while the interpolation table is built.
+- Chorus depth reaches 20 ms at 192 kHz too.
+- A project restored without a SoundFont, or whose file went missing, behaves consistently, keeps
+  the layer's instrument, and loads the file again once it's back.
+- Key ranges given in a SoundFont's global zones are shown on the keyboard.
+
 ## 1.2.0 — Nov 10, 2026
 
 - Universal: Apple silicon and Intel Macs, from a signed and notarized installer.

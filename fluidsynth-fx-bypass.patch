@@ -63,21 +63,19 @@ index 55c4eb2..2c1c41d 100644
  
  /*
 diff --git a/src/rvoice/fluid_rvoice_dsp.cpp b/src/rvoice/fluid_rvoice_dsp.cpp
-index 4b5fba6..0fb1499 100644
+index 4b5fba6..5e71ba1 100644
 --- a/src/rvoice/fluid_rvoice_dsp.cpp
 +++ b/src/rvoice/fluid_rvoice_dsp.cpp
-@@ -796,6 +796,16 @@ fluid_rvoice_dsp_silence(fluid_rvoice_t *rvoice, fluid_real_t *FLUID_RESTRICT ds
+@@ -796,6 +796,14 @@ fluid_rvoice_dsp_silence(fluid_rvoice_t *rvoice, fluid_real_t *FLUID_RESTRICT ds
      return dsp_invoker<ProcessSilence>(rvoice, dsp_buf, looping);
  }
  
-+/* SF2 Player: builds the tabulated sinc kernels (a function-local static each, in this
-+ * translation unit) before any voice needs them. */
++/* SF2 Player: builds the tabulated 17-point sinc kernel (FLUID_INTERP_HIGH, what the plugin
++ * plays with; a function-local static in this translation unit) before any voice needs it. */
 +extern "C" void
 +fluid_rvoice_dsp_warm_sinc_tables(void)
 +{
-+    fluid_interp_sinc_kernel<11>(std::array<fluid_real_t, 11> {}, 0);
 +    fluid_interp_sinc_kernel<17>(std::array<fluid_real_t, 17> {}, 0);
-+    fluid_interp_sinc_kernel<25>(std::array<fluid_real_t, 25> {}, 0);
 +}
 +
  extern "C" int
@@ -425,7 +423,7 @@ index 0467c38..83d71f4 100644
  static int fluid_sffile_read_vorbis(SFData *sf, unsigned int start_byte, unsigned int end_byte, short **data)
  {
 diff --git a/src/synth/fluid_synth.c b/src/synth/fluid_synth.c
-index 5e2090d..5cb87ca 100644
+index 5e2090d..56c8a43 100644
 --- a/src/synth/fluid_synth.c
 +++ b/src/synth/fluid_synth.c
 @@ -28,6 +28,7 @@
@@ -456,15 +454,6 @@ index 5e2090d..5cb87ca 100644
      synth = FLUID_NEW(fluid_synth_t);
  
      if(synth == NULL)
-@@ -3815,7 +3820,7 @@ static void
- fluid_synth_set_sample_rate_LOCAL(fluid_synth_t *synth, float sample_rate)
- {
-     int i;
--    fluid_clip(sample_rate, 8000.0f, 96000.0f);
-+    fluid_clip(sample_rate, 8000.0f, 192000.0f);   /* SF2 Player: as the setting's range */
-     synth->sample_rate = sample_rate;
- 
-     synth->min_note_length_ticks = fluid_synth_get_min_note_length_LOCAL(synth);
 @@ -4646,6 +4651,19 @@ fluid_synth_process_LOCAL(fluid_synth_t *synth, int len, int nfx, float *fx[],
  }
  

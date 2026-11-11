@@ -12,15 +12,14 @@
 // player: its modulators, interpolation, reverb and chorus. The file is chosen
 // in the editor and remembered in the host's project.
 class SF2PlayerProcessor : public juce::AudioProcessor,
-                           public juce::ChangeBroadcaster,
-                           private juce::Timer
+                           public juce::ChangeBroadcaster
 {
 public:
     SF2PlayerProcessor();
     ~SF2PlayerProcessor() override;
 
     void prepareToPlay (double sampleRate, int maximumExpectedSamplesPerBlock) override;
-    void releaseResources() override {}
+    void releaseResources() override { deferredMidi.clear(); }
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
@@ -62,10 +61,6 @@ public:
     // The SoundFont the project names when it isn't on this Mac any more (moved, renamed or deleted).
     juce::File missingSoundFont() const { return missingFile; }
 
-    // MIDI program changes wait here: selecting a preset reads its samples from disk, which
-    // the audio thread must never do. The message thread applies them (a timer; tests call it).
-    void applyPendingProgramChanges();
-
     // Voices sounding after the last block (for the editor and tests).
     std::atomic<int> activeVoices { 0 };
     // Tests: render with another interpolation (FLUID_INTERP_*); -1 keeps the 7th order.
@@ -103,13 +98,13 @@ private:
 
     juce::SpinLock engineLock;   // guards `engine` between the audio and message threads
 
-    void timerCallback() override { applyPendingProgramChanges(); }
-    // Audio thread -> message thread: (channel, program) pairs.
-    juce::AbstractFifo programFifo { 64 };
-    std::array<std::pair<int, int>, 64> programQueue {};
     // Events of a block that couldn't take the engine: played at the start of the next one,
-    // so a note-off, a pedal release or a bend's return is never lost.
+    // so a note-off, a pedal release or a bend's return is never lost. Reserved up front; past
+    // the reserve only the events that end something are kept, so the audio thread doesn't grow it.
     juce::MidiBuffer deferredMidi;
+    static constexpr int deferredMidiReserve = 65536;
+    void deferMidi (const juce::MidiBuffer&);
+
     std::unique_ptr<Engine> engine;
 
     juce::File currentFile, missingFile;
@@ -166,6 +161,9 @@ private:
         }
     };
     PlaySettings appliedPlay;
+    // The plugin's per-channel settings (generator offsets, glide), again: a clip's Reset All
+    // Controllers (CC121) clears them in FluidSynth.
+    void applyChannelSettings (int channel, const PlaySettings&);
     bool playApplied = false;
     PlaySettings currentPlaySettings() const;
 

@@ -389,23 +389,29 @@ int main()
                 "A note-off arriving while an instrument loads still stops the note",
                 db (kept) + " (let go normally " + db (expected) + ", never let go " + db (never) + ")");
 
-        // A MIDI program change waits for the message thread (it loads samples from disk).
+        // A MIDI program change takes effect at once: a note sent with it plays the new instrument.
         Player switching (testFont);
-        auto voicesOf = [&] (Player& pl)
+        switching.render (0.2, [] (int b, juce::MidiBuffer& m)
         {
-            pl.render (0.2, [] (int b, juce::MidiBuffer& m) { if (b == 0) m.addEvent (juce::MidiMessage::noteOn (1, 72, (juce::uint8) 100), 0); });
-            const int v = pl.p.activeVoices.load();
-            pl.render (0.1, [] (int b, juce::MidiBuffer& m) { if (b == 0) m.addEvent (juce::MidiMessage::allSoundOff (1), 0); });
-            return v;
-        };
-        const int squareVoices = voicesOf (switching);
-        switching.render (0.05, [] (int b, juce::MidiBuffer& m) { if (b == 0) m.addEvent (juce::MidiMessage::programChange (1, 0), 0); });
-        const int beforeApplied = voicesOf (switching);
-        switching.p.applyPendingProgramChanges();
-        const int afterApplied = voicesOf (switching);
-        expect (beforeApplied == squareVoices && afterApplied == 2 && squareVoices == 1,
-                "A MIDI program change is applied off the audio thread (square -> FM bells)",
-                juce::String (squareVoices) + " -> " + juce::String (beforeApplied) + " -> " + juce::String (afterApplied) + " voices");
+            if (b == 0)
+            {
+                m.addEvent (juce::MidiMessage::programChange (1, 0), 0);   // FM Bells: two voices a note
+                m.addEvent (juce::MidiMessage::noteOn (1, 72, (juce::uint8) 100), 0);
+            }
+        });
+        expect (switching.p.activeVoices.load() == 2, "A MIDI program change applies to the note sent with it (square -> FM bells)",
+                juce::String (switching.p.activeVoices.load()) + " voices");
+
+        // Reset All Controllers (CC121) clears FluidSynth's generator offsets: the plugin puts its own back.
+        Player reset (testFont), tuned (testFont);
+        for (auto* pl : { &reset, &tuned }) pl->set ("fineTune", 50.0f);
+        const auto a = tuned.note (57);
+        const auto b = reset.render (2.0, [] (int bl, juce::MidiBuffer& m)
+        {
+            if (bl == 0) { m.addEvent (juce::MidiMessage::controllerEvent (1, 121, 0), 0); m.addEvent (juce::MidiMessage::noteOn (1, 57, (juce::uint8) 100), 0); }
+        });
+        expect (std::abs (cents (pitch (b, 0.2, 0.4), pitch (a, 0.2, 0.4))) < 3, "Fine tune survives a clip's Reset All Controllers",
+                juce::String (cents (pitch (b, 0.2, 0.4), pitch (a, 0.2, 0.4)), 1) + " cents off");
     }
 
     // ---- Tone, outputs and saved state.
