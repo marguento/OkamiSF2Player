@@ -3,8 +3,8 @@
 A free AU / VST3 instrument for Ableton Live on the Mac (Apple silicon and Intel) that plays
 SoundFonts (.sf2 and .sf3) through FluidSynth, the reference SoundFont player.
 
-**Why it exists.** Many of us composed with **Edirol HQ Orchestral**, Roland's orchestral plugin
-from the 2000s. It was discontinued and is 32-bit only, so it no longer loads in today's Ableton
+**Why it exists.** Many of us composed with **Edirol HQ Orchestral** (also called Edirol
+Orchestral or Roland HQ Orchestral), Roland's orchestral VSTi from the 2000s. It was discontinued and is 32-bit only, so it no longer loads in today's Ableton
 or on Apple silicon. The
 [HQ Orchestral SoundFont Collection](https://musical-artifacts.com/artifacts/817), a free .sf2
 (195 instruments) that carries its name, is the way back to that sound. Okami SF2 Player was made to play that collection in
