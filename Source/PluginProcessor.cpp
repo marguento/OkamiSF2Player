@@ -1002,7 +1002,9 @@ void SF2PlayerProcessor::setStateInformation (const void* data, int sizeInBytes)
 
     auto state = juce::ValueTree::fromXml (*xml);
     // The writer first, the parameters only once this project's file is published: a save
-    // while another writer holds the mutex then gets the old project whole, never a mix.
+    // while another writer holds the mutex (a long load) gets the old project whole. Only a
+    // save in the microseconds between the two could still pair them; closing that would make
+    // saving wait on stateMutex, which the design rules out.
     const StateWriter writer (*this);
     const auto path = state.getProperty ("sf2Path").toString();
     const juce::File file = juce::File::isAbsolutePath (path) ? juce::File (path) : juce::File();

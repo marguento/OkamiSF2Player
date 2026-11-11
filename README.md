@@ -103,9 +103,10 @@ FluidSynth's build downloads its `gcem` submodule from GitHub the first time if 
   the preset list, the info, both instruments). Writers (the message thread, `prepareToPlay`
   and `setStateInformation`, which a host may call from another thread) change it under
   `stateMutex`, always through a `StateWriter`, which publishes a new snapshot when the
-  outermost one ends. Readers (`state()`: the editor, `getStateInformation`, any thread) take
-  the current snapshot under a tiny SpinLock: they never wait for a load and never see half a
-  change. A restored project's file and instruments are published before its load starts, so
+  outermost one ends, and only then tells the editor (a change message sent earlier could
+  show the old snapshot). Readers (`state()`: the editor, `getStateInformation`, any thread)
+  take the current snapshot under a tiny SpinLock: they never wait for a load and never see
+  half a change; the editor takes one per operation and passes it down. A restored project's file and instruments are published before its load starts, so
   a save meanwhile is consistent. `stateMutex` is never taken on the audio thread, and always
   before `engineLock`.
 - **Message-thread housekeeping** (a 10 Hz timer, `runMessageThreadTasks`): tells the host the
@@ -123,7 +124,7 @@ FluidSynth's build downloads its `gcem` submodule from GitHub the first time if 
   `fluid_synth_process`. Built-in effects: the effect channels are added to main. Send outputs:
   FluidSynth hands out the raw sends (patch) and they go to buses 2 and 3.
 - **State ownership:** parameters live in the `AudioProcessorValueTreeState`; the file, the
-  instrument and the layer instrument are plain members saved with it; recent files and
+  instrument and the layer instrument are members behind the published `State`, saved with it; recent files and
   favorites live in the editor's settings file (shared by every instance and project).
 
 ## Key systems
@@ -207,9 +208,8 @@ wrong result:
   program change applies to the note sent with it, back and forth; Fine survives CC121.
 - **Outputs and formats:** send outputs, SF3, in tune at 44.1, 96 and 192 kHz.
 - **State and files:** the saved state (file, instruments, knobs), saving without waiting for a
-  load, a missing file kept, a file
-  lost during a rate change reported then reloaded, a failed rebuild not undoing a newer file,
-  global key ranges, hostile files refused quickly.
+  load, a missing file kept, a file lost during a rate change reported then reloaded, a failed
+  rebuild not undoing a newer file, global key ranges, hostile files refused quickly.
 - **CPU:** 64 string notes under 30 % of a 128-sample block (reported, not judged, under
   Rosetta).
 
@@ -228,9 +228,12 @@ get-task-allow), builds a signed installer that always installs into `/Library/A
 notarizes and staples it: `dist/Okami-SF2-Player-<version>.pkg` and its SHA-256.
 
 It needs "Developer ID Application" and "Developer ID Installer" certificates in the keychain.
-Apple lets only the team's **Account Holder** create them (Xcode → Settings → Apple Accounts →
-the team → Manage Certificates → +), signed in with that Apple ID; neither an Admin nor an App
-Store Connect API key can. Notarization uses an App Store Connect API key set in
+Only the team's **Account Holder** can create them, and the reliable way is the web: make a key
+and a certificate request (`openssl req -new -newkey rsa:2048 -nodes ...`), upload it at
+developer.apple.com → Certificates → + → Developer ID, download the certificate and import it
+with its key. Xcode's Manage Certificates and the App Store Connect API refused it here even
+signed in as the Account Holder (the API also has no Installer type). Keep an encrypted .p12
+backup of each, outside any repository: a lost private key means revoking and starting over. Notarization uses an App Store Connect API key (`NOTARY_KEY`, `NOTARY_KEY_ID`, `NOTARY_ISSUER`) set in
 `scripts/release.env` (ignored by git). Then attach the .pkg to a GitHub release:
 `gh release create v<version> dist/*.pkg dist/*.sha256 --notes-file <notes>`.
 

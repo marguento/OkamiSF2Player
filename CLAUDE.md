@@ -41,8 +41,9 @@ GitHub noreply email (`git config user.email` is set to it in this repo).
   `build/`, `dist/`, `ThirdParty/` or `scripts/release.env` (ignored).
 - A user-visible change bumps `VERSION` in CMakeLists.txt and adds a CHANGELOG.md line.
 - Review loop (PLAYBOOK 19c): `/code-review high <range>` after each batch, fix, review the
-  fixes again, until a pass comes back clean. Eight passes on Nov 10-11, 2026, each finding
-  real issues in the previous fixes (mostly threading); keep going until one is clean.
+  fixes again, until a pass comes back clean. Nine passes on Nov 10-11, 2026: the first eight each found real
+  issues in the previous fixes (mostly threading), the ninth (over 1.2.6) was clean. Start again
+  after the next batch of changes.
 - Measure, don't guess (PLAYBOOK gotcha 20d): `TailTest <file> <preset> perf` prints CPU per
   block on the Release build; `PluginTests` fails above 30 % for 64 string notes.
 - Look at the UI without touching the user's screen: `TailTest <file> <preset> snap out.png`.
