@@ -254,7 +254,7 @@ static std::unique_ptr<SF2PlayerProcessor::Engine> createEngine (const juce::Fil
     if (engine->settings == nullptr)
         return nullptr;
 
-    fluid_settings_setnum (engine->settings, "synth.sample-rate", juce::jlimit (8000.0, 96000.0, sampleRate));
+    fluid_settings_setnum (engine->settings, "synth.sample-rate", juce::jlimit (8000.0, 192000.0, sampleRate));
     fluid_settings_setnum (engine->settings, "synth.gain", synthGain);
     fluid_settings_setint (engine->settings, "synth.polyphony", 256);
     fluid_settings_setint (engine->settings, "synth.threadsafe-api", 0);   // the plugin's own lock serialises calls

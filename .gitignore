@@ -3,3 +3,6 @@ ThirdParty/JUCE/
 ThirdParty/fluidsynth/
 ThirdParty/fluidsynth-install/
 .DS_Store
+ThirdParty/ogg/
+ThirdParty/vorbis/
+ThirdParty/xiph-install/

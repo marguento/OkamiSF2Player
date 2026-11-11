@@ -135,9 +135,18 @@ index d9c5b87..86c4612 100644
  void fluid_rvoice_mixer_set_ladspa(fluid_rvoice_mixer_t *mixer,
                                     fluid_ladspa_fx_t *ladspa_fx, int audio_groups);
 diff --git a/src/synth/fluid_synth.c b/src/synth/fluid_synth.c
-index 5e2090d..16d61dd 100644
+index 5e2090d..b9343ac 100644
 --- a/src/synth/fluid_synth.c
 +++ b/src/synth/fluid_synth.c
+@@ -255,7 +255,7 @@ void fluid_synth_settings(fluid_settings_t *settings)
+     fluid_settings_register_int(settings, "synth.audio-groups", 1, 1, 128, 0);
+     fluid_settings_register_int(settings, "synth.effects-channels", 2, 2, 2, 0);
+     fluid_settings_register_int(settings, "synth.effects-groups", 1, 1, 128, 0);
+-    fluid_settings_register_num(settings, "synth.sample-rate", 44100.0, 8000.0, 96000.0, 0);
++    fluid_settings_register_num(settings, "synth.sample-rate", 44100.0, 8000.0, 192000.0, 0);   /* SF2 Player: hosts run up to 192 kHz */
+     fluid_settings_register_int(settings, "synth.device-id", 16, 0, 127, 0);
+ #ifdef ENABLE_MIXER_THREADS
+     fluid_settings_register_int(settings, "synth.cpu-cores", 1, 1, 256, 0);
 @@ -4646,6 +4646,19 @@ fluid_synth_process_LOCAL(fluid_synth_t *synth, int len, int nfx, float *fx[],
  }
  

@@ -81,18 +81,18 @@ double rms (const std::vector<float>& x, double from, double to)
 }
 
 // The fundamental between `from` and `to` seconds, by autocorrelation (50 Hz to 2 kHz).
-double pitch (const std::vector<float>& x, double from, double to)
+double pitch (const std::vector<float>& x, double from, double to, double sr = rate)
 {
-    const size_t a = (size_t) (from * rate), n = (size_t) ((to - from) * rate);
+    const size_t a = (size_t) (from * sr), n = (size_t) ((to - from) * sr);
     double best = 0; int bestLag = 0;
-    for (int lag = (int) (rate / 2000); lag <= (int) (rate / 50); ++lag)
+    for (int lag = (int) (sr / 2000); lag <= (int) (sr / 50); ++lag)
     {
         double sum = 0;
         for (size_t i = 0; i + (size_t) lag < n; ++i) sum += (double) x[a + i] * x[a + i + (size_t) lag];
         sum /= (double) (n - (size_t) lag);
         if (sum > best * 1.02) best = sum, bestLag = lag;   // the first strong peak, not a later multiple
     }
-    return bestLag > 0 ? rate / bestLag : 0.0;
+    return bestLag > 0 ? sr / bestLag : 0.0;
 }
 
 double cents (double f, double reference) { return 1200.0 * std::log2 (f / reference); }
@@ -262,6 +262,30 @@ int main()
         spreadA = cents (hi, lo);
         expect (spreadB > spreadA + 10, "Mod wheel adds vibrato (the SoundFont default modulator)",
                 juce::String (spreadA, 0) + " -> " + juce::String (spreadB, 0) + " cents of pitch swing");
+    }
+
+    // ---- Sample rates: the same A3 (220 Hz) at 44.1, 96 and 192 kHz, with the reverb and chorus on.
+    for (const double sr : { 44100.0, 96000.0, 192000.0 })
+    {
+        SF2PlayerProcessor p;
+        p.setRateAndBufferSizeDetails (sr, block);
+        p.prepareToPlay (sr, block);
+        p.loadSoundFont (testFont);
+        juce::AudioBuffer<float> buffer (6, block);
+        std::vector<float> out;
+        for (int b = 0; b < (int) (1.5 * sr / block); ++b)
+        {
+            juce::MidiBuffer midi;
+            if (b == 0) midi.addEvent (juce::MidiMessage::noteOn (1, 57, (juce::uint8) 100), 0);
+            if (b == (int) (0.5 * sr / block)) midi.addEvent (juce::MidiMessage::noteOff (1, 57), 0);
+            p.processBlock (buffer, midi);
+            for (int i = 0; i < block; ++i) out.push_back (buffer.getSample (0, i));
+        }
+        const double f = pitch (out, 0.2, 0.4, sr);
+        double tail = 0;
+        for (size_t i = (size_t) (0.9 * sr); i < (size_t) (1.2 * sr); ++i) tail = juce::jmax (tail, (double) std::abs (out[i]));
+        expect (std::abs (cents (f, 220.0)) < 30 && tail > 1e-6, "At " + juce::String (sr / 1000, 1) + " kHz: in tune, with a reverb tail",
+                juce::String (f, 1) + " Hz, tail " + db (tail));
     }
 
     // ---- Layer and split (the test font has one instrument: it layers with itself).
