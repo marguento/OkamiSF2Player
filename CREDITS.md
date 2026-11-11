@@ -11,6 +11,14 @@ Okami SF2 Player is built on the work of others. Thank you.
 | [AudioUnitSDK](https://github.com/apple/AudioUnitSDK) (inside JUCE) | Apple | Apache-2.0 | the AU format |
 | Vintage Dreams Waves v2 (`Tests/fonts`) | Ian Wilson | freeware, redistributed unaltered with its notice | the test suite (the .sf3 is FluidSynth's conversion, made with his permission) |
 
+## Edirol HQ Orchestral
+
+The reason this plugin exists: **Edirol HQ Orchestral**, the orchestral sound module plugin by
+Roland Corporation (sold under its Edirol brand in the 2000s, now discontinued). Its strings,
+brass and woodwinds shaped a lot of music, ours included. Okami SF2 Player isn't affiliated with
+or endorsed by Roland, contains none of its software or samples, and doesn't run the original
+plugin: it plays SoundFonts. Edirol and Roland are trademarks of Roland Corporation.
+
 ## The HQ Orchestral SoundFont Collection
 
 Okami SF2 Player was made to play the

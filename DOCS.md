@@ -10,7 +10,10 @@ that changes nothing.
    `/Library/Audio/Plug-Ins` as AU and VST3 (Apple silicon and Intel, macOS 13 or later).
 2. Get a SoundFont: the plugin was made for the
    [HQ Orchestral SoundFont Collection](https://musical-artifacts.com/artifacts/817), a free
-   download of 522 MB with 195 instruments.
+   download of 522 MB with 195 instruments that carries the name of Roland's discontinued
+   Edirol HQ Orchestral. It isn't included with the plugin: download it from that page.
+   [docs/HQ-Orchestral-sends.md](docs/HQ-Orchestral-sends.md) lists what each of its
+   instruments sends to the reverb and chorus.
 3. Restart Ableton Live, or rescan plug-ins in its preferences.
 
 ## Putting it in Ableton

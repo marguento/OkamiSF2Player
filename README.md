@@ -1,12 +1,21 @@
 # Okami SF2 Player
 
-An AU / VST3 instrument (plus a standalone app) that plays SoundFonts (.sf2 and .sf3) through
-FluidSynth, the reference SoundFont player, made for Ableton Live on the Mac. At its defaults it
-plays exactly what FluidSynth plays (the test suite checks it bit for bit); every control on top
-starts neutral.
+A free AU / VST3 instrument for Ableton Live on the Mac (Apple silicon and Intel) that plays
+SoundFonts (.sf2 and .sf3) through FluidSynth, the reference SoundFont player.
+
+**Why it exists.** Many of us composed with **Edirol HQ Orchestral**, Roland's orchestral plugin
+from the 2000s. It was discontinued and is 32-bit only, so it no longer loads in today's Ableton
+or on Apple silicon. The
+[HQ Orchestral SoundFont Collection](https://musical-artifacts.com/artifacts/817), a free .sf2
+(195 instruments) that carries its name, is the way back to that sound. Okami SF2 Player was made to play that collection in
+Ableton again, as faithfully as possible: at its defaults it plays exactly what FluidSynth plays
+(the test suite checks it bit for bit), and every control on top starts neutral. **The .sf2 is
+not included:** download it separately from that page and open it in the plugin. Any other
+SoundFont works too.
 
 How to use it: [DOCS.md](DOCS.md). Versions: [CHANGELOG.md](CHANGELOG.md). Credits and
-licenses: [CREDITS.md](CREDITS.md).
+licenses: [CREDITS.md](CREDITS.md). What each HQ Orchestral instrument sends to the reverb and
+chorus: [docs/HQ-Orchestral-sends.md](docs/HQ-Orchestral-sends.md).
 
 ![Okami SF2 Player playing the HQ Orchestral collection's violin](docs/screenshot.png)
 
@@ -86,6 +95,7 @@ FluidSynth's build downloads its `gcem` submodule from GitHub the first time if 
 | `fluidsynth-fx-bypass.patch` | every change to FluidSynth (see Key systems) |
 | `scripts/release.sh` | builds, tests, signs, packages and notarizes a release |
 | `DOCS.md`, `CHANGELOG.md`, `CREDITS.md`, `CLAUDE.md` | user guide, versions, credits, notes for Claude sessions |
+| `docs/HQ-Orchestral-sends.md` | each HQ Orchestral instrument's reverb and chorus sends |
 
 ## Architecture
 
