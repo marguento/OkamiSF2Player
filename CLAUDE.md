@@ -4,7 +4,8 @@ A JUCE AU/VST3 instrument that plays SoundFonts through FluidSynth, for Ableton 
 user's M4 Mac. README.md has the build, structure, architecture, settings, tests and release;
 DOCS.md the user guide; CHANGELOG.md the versions; CREDITS.md the credits and licenses.
 
-Repo https://github.com/marguento/OkamiSF2Player (`main`, created Nov 10, 2026), private until
+Repo https://github.com/marguento/OkamiSF2Player (`main`; deleted and created again on Nov 11, 2026,
+so no copy of the scrubbed history stays on GitHub; see Releasing), private until
 the user approves publishing it (the PLAYBOOK's "every repo private" rule gets an exception
 here, at the user's request). History rewritten on Nov 10 before publishing: the old test piano
 (unclear license) and a comment naming another SoundFont removed, every commit under the
