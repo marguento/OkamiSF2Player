@@ -431,7 +431,8 @@ void SF2PlayerEditor::refresh()
     infoLabel.setColour (juce::Label::textColourId, missing != juce::File() ? SF2Look::warning : SF2Look::dim);
     if (missing != juce::File())
     {
-        infoLabel.setText ("Can't find " + missing.getFileName() + " (moved or renamed?). Choose it again above.",
+        infoLabel.setText (missing.existsAsFile() ? "Can't open " + missing.getFileName() + " (damaged, or not a SoundFont?). Choose another above."
+                                                  : "Can't find " + missing.getFileName() + " (moved or renamed?). Choose it again above.",
                            juce::dontSendNotification);
         infoLabel.setTooltip (missing.getFullPathName());
     }

@@ -3,6 +3,15 @@
 The version shows next to the title (`project(... VERSION x.y.z)` in CMakeLists.txt). Each
 release bumps it and adds an entry here: one line per change a player would notice.
 
+## 1.2.2 — Nov 11, 2026
+
+- Instruments a clip switches to with Program Change stay in memory, so switching back never
+  reads them from disk again.
+- A missing SoundFont loads again by itself within a second of reappearing (a drive plugged
+  in); a damaged one says so ("Can't open") and isn't retried until it changes.
+- Dense MIDI during an instrument load can't run the plugin out of room: past a limit only
+  lasting changes are kept (note-offs, pedals, program and bank, the last pitch bend).
+
 ## 1.2.1 — Nov 10, 2026
 
 - A note-off, pedal release or pitch-bend return that arrives while an instrument loads is no

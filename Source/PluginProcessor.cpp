@@ -112,10 +112,62 @@ SF2PlayerProcessor::SF2PlayerProcessor()
 {
     for (auto& channel : playedNote)
         channel.fill (-1);
-    deferredMidi.ensureSize (deferredMidiReserve);
+    deferredBend.fill (-1);
+    for (auto& request : pinRequest)
+        request = -1;
+    startTimerHz (10);
 }
 
-SF2PlayerProcessor::~SF2PlayerProcessor() = default;
+SF2PlayerProcessor::~SF2PlayerProcessor()
+{
+    stopTimer();
+}
+
+void SF2PlayerProcessor::runMessageThreadTasks()
+{
+    // Instruments a clip switched to: pinned while still selected, so their samples are
+    // already in memory and pinning reads nothing.
+    for (int channel = 0; channel < numMidiChannels; ++channel)
+        if (const int request = pinRequest[(size_t) channel].exchange (-1); request >= 0)
+        {
+            const juce::SpinLock::ScopedLockType lock (engineLock);
+            if (engine != nullptr)
+                fluid_synth_pin_preset (engine->synth, engine->fontId, request / 128, request % 128);
+        }
+
+    if (++housekeepingTicks % 10 != 0)   // the file checks: once a second
+        return;
+
+    if (engineLost.exchange (false))
+    {
+        // prepareToPlay couldn't rebuild the engine: the missing-file state, with the project's
+        // instruments kept by bank:program.
+        if (juce::isPositiveAndBelow (currentPreset, (int) presetList.size()))
+            savedBank = presetList[(size_t) currentPreset].bank, savedNumber = presetList[(size_t) currentPreset].number;
+        if (juce::isPositiveAndBelow (layerPreset, (int) presetList.size()))
+            savedLayerBank = presetList[(size_t) layerPreset].bank, savedLayerNumber = presetList[(size_t) layerPreset].number;
+        missingFile = currentFile;
+        if (currentFile.existsAsFile())
+            failedFileTime = currentFile.getLastModificationTime();
+        currentFile = juce::File();
+        currentInfo = {};
+        presetList.clear();
+        sendChangeMessage();
+    }
+
+    if (currentFile == juce::File() && missingFile.existsAsFile() && missingFile.getLastModificationTime() != failedFileTime)
+    {
+        const auto file = missingFile;
+        const juce::ScopedValueSetter<bool> restoring (restoringState, true);
+        currentFile = file;   // so loadSoundFont keeps the project's instruments
+        if (! loadSoundFont (file))
+        {
+            currentFile = juce::File();
+            failedFileTime = file.getLastModificationTime();   // tried; again only if the file changes
+            sendChangeMessage();
+        }
+    }
+}
 
 SF2PlayerProcessor::EffectSettings SF2PlayerProcessor::currentEffectSettings() const
 {
@@ -160,6 +212,13 @@ void SF2PlayerProcessor::applyEffectSettings (bool force)
     appliedEffects = s;
 }
 
+// A multiplier on the envelope's times is an offset in timecents: 1200 per doubling. Whole
+// timecents: the knob's x1 is stored as 0.99999994, and even that -0.0001 moved the release.
+static float timecents (float multiplier)
+{
+    return (float) juce::roundToInt (1200.0f * std::log2 (multiplier));
+}
+
 SF2PlayerProcessor::PlaySettings SF2PlayerProcessor::currentPlaySettings() const
 {
     auto value = [this] (const char* id) { return parameters.getRawParameterValue (id)->load(); };
@@ -187,30 +246,37 @@ void SF2PlayerProcessor::applyPlaySettings (bool force)
     const auto& a = appliedPlay;
 
     auto* synth = engine->synth;
-    // A multiplier on the envelope's times is an offset in timecents: 1200 per doubling.
-    // Whole timecents: the knob's x1 is stored as 0.99999994, and even that -0.0001 moved the release.
-    auto timecents = [] (float multiplier) { return (float) juce::roundToInt (1200.0f * std::log2 (multiplier)); };
     for (int channel = 0; channel < numSynthChannels; ++channel)
     {
-        if (channel >= layerChannelOffset && (all || s.layerAttenuation != a.layerAttenuation))
+        if (all)
+        {
+            applyChannelSettings (channel, s);
+            fluid_synth_pitch_wheel_sens (synth, channel, s.bendRange);
+            fluid_synth_set_portamento_mode (synth, channel, s.mode == 2 ? FLUID_CHANNEL_PORTAMENTO_MODE_LEGATO_ONLY
+                                                                         : FLUID_CHANNEL_PORTAMENTO_MODE_EACH_NOTE);
+            fluid_synth_set_legato_mode (synth, channel, s.mode == 1 ? FLUID_CHANNEL_LEGATO_MODE_RETRIGGER
+                                                                     : FLUID_CHANNEL_LEGATO_MODE_MULTI_RETRIGGER);
+            continue;
+        }
+        if (channel >= layerChannelOffset && s.layerAttenuation != a.layerAttenuation)
             fluid_synth_set_gen (synth, channel, GEN_ATTENUATION, (float) s.layerAttenuation);   // centibels
-        if (all || ! juce::exactlyEqual (s.attack, a.attack))
+        if (! juce::exactlyEqual (s.attack, a.attack))
             fluid_synth_set_gen (synth, channel, GEN_VOLENVATTACK, timecents (s.attack));
-        if (all || ! juce::exactlyEqual (s.release, a.release))
+        if (! juce::exactlyEqual (s.release, a.release))
             fluid_synth_set_gen (synth, channel, GEN_VOLENVRELEASE, timecents (s.release));
-        if (all || s.fineTune != a.fineTune)
+        if (s.fineTune != a.fineTune)
             fluid_synth_set_gen (synth, channel, GEN_FINETUNE, (float) s.fineTune);
-        if (all || s.bendRange != a.bendRange)
+        if (s.bendRange != a.bendRange)
             fluid_synth_pitch_wheel_sens (synth, channel, s.bendRange);
 
-        if (all || s.glide != a.glide)
+        if (s.glide != a.glide)
         {
             // Glide: portamento, its time in ms (linear mode: MSB * 128 + LSB).
             fluid_synth_cc (synth, channel, 65, s.glide > 0 ? 127 : 0);
             fluid_synth_cc (synth, channel, 5, s.glide / 128);
             fluid_synth_cc (synth, channel, 37, s.glide % 128);
         }
-        if (all || s.mode != a.mode)
+        if (s.mode != a.mode)
         {
             // FluidSynth's defaults (glide on each note, multi-retrigger legato), except: Legato glides
             // only between connected notes, Mono starts every note afresh.
@@ -232,10 +298,11 @@ void SF2PlayerProcessor::applyPlaySettings (bool force)
     playApplied = true;
 }
 
+// The per-channel settings FluidSynth keeps as generator offsets and controllers: all of them
+// on a fresh engine, again after a clip's Reset All Controllers (CC121) cleared them.
 void SF2PlayerProcessor::applyChannelSettings (int channel, const PlaySettings& s)
 {
     auto* synth = engine->synth;
-    auto timecents = [] (float multiplier) { return (float) juce::roundToInt (1200.0f * std::log2 (multiplier)); };
     if (channel >= layerChannelOffset)
         fluid_synth_set_gen (synth, channel, GEN_ATTENUATION, (float) s.layerAttenuation);
     fluid_synth_set_gen (synth, channel, GEN_VOLENVATTACK, timecents (s.attack));
@@ -254,12 +321,39 @@ void SF2PlayerProcessor::deferMidi (const juce::MidiBuffer& midi)
     for (const auto metadata : midi)
     {
         const auto m = metadata.getMessage();
-        // Past the reserve, only what ends something: note-offs, pedals up, all-notes-off.
-        const bool ending = m.isNoteOff() || m.isAllNotesOff() || m.isAllSoundOff() || m.isResetAllControllers()
-                         || (m.isController() && m.getControllerValue() < 64 && (m.getControllerNumber() == 64 || m.getControllerNumber() == 66));
-        if (deferredMidi.data.size() + 32 < deferredMidiReserve || ending)
-            deferredMidi.addEvent (m, 0);
+        if (m.getRawDataSize() > 3)
+            continue;   // sysex: copying it could allocate, and nothing here plays it
+        if (numDeferred >= deferredNormal && m.isPitchWheel() && juce::isPositiveAndBelow (m.getChannel() - 1, 16))
+        {
+            deferredBend[(size_t) m.getChannel() - 1] = m.getPitchWheelValue();   // only the last one matters
+            continue;
+        }
+        // Past `deferredNormal`, what changes lasting state: note-offs, pedals up, resets,
+        // program and bank changes.
+        const bool lasting = m.isNoteOff() || m.isAllNotesOff() || m.isAllSoundOff() || m.isResetAllControllers()
+                          || m.isProgramChange()
+                          || (m.isController() && (m.getControllerNumber() == 0 || m.getControllerNumber() == 32
+                                                   || ((m.getControllerNumber() == 64 || m.getControllerNumber() == 66
+                                                        || m.getControllerNumber() == 67) && m.getControllerValue() < 64)));
+        if (numDeferred < (lasting ? deferredCapacity : deferredNormal))
+            deferredEvents[(size_t) numDeferred++] = m;
     }
+}
+
+void SF2PlayerProcessor::playDeferredMidi()
+{
+    for (int i = 0; i < numDeferred; ++i)
+        handleMidi (deferredEvents[(size_t) i]);
+    for (int channel = 0; channel < 16; ++channel)
+        if (deferredBend[(size_t) channel] >= 0)
+            handleMidi (juce::MidiMessage::pitchWheel (channel + 1, deferredBend[(size_t) channel]));
+    clearDeferredMidi();
+}
+
+void SF2PlayerProcessor::clearDeferredMidi()
+{
+    numDeferred = 0;
+    deferredBend.fill (-1);
 }
 
 int SF2PlayerProcessor::transposeFor (int note) const
@@ -467,44 +561,21 @@ void SF2PlayerProcessor::prepareToPlay (double newSampleRate, int maximumExpecte
     const bool rateChanged = ! juce::exactlyEqual (newSampleRate, sampleRate);
     sampleRate = newSampleRate;
 
-    // A file that went missing and is back (a drive plugged in again): load it, with the
-    // project's instruments.
-    if (currentFile == juce::File() && missingFile.existsAsFile())
+    // FluidSynth takes its sample rate when created: build it again for the new one. If that
+    // fails (the file moved or can't be read), stop playing rather than play out of tune at the
+    // old rate; the message thread turns it into the missing-file state (this may run on
+    // another thread, so the preset list isn't touched here).
+    if (rateChanged && currentFile != juce::File())
     {
-        const auto file = missingFile;
-        currentFile = file;
-        const juce::ScopedValueSetter<bool> restoring (restoringState, true);
-        if (! loadSoundFont (file))
-            currentFile = juce::File();
-        return;
-    }
-
-    // FluidSynth takes its sample rate when created: build it again for the new one (or try
-    // again, when an earlier rebuild failed). If that fails (the file moved or can't be read),
-    // stop playing rather than play out of tune at the old rate, and say so like a missing file.
-    if (currentFile != juce::File() && (rateChanged || engine == nullptr))
-    {
-        if (auto fresh = currentFile.existsAsFile() ? createEngine (currentFile, sampleRate) : nullptr)
+        auto fresh = currentFile.existsAsFile() ? createEngine (currentFile, sampleRate) : nullptr;
+        if (fresh != nullptr)
         {
             applyPreset (*fresh, currentPreset);
             applyLayerPreset (*fresh, layerPreset);
-            swapEngine (std::move (fresh));
         }
         else
-        {
-            if (juce::isPositiveAndBelow (currentPreset, (int) presetList.size()))   // kept for the project
-            {
-                savedBank = presetList[(size_t) currentPreset].bank, savedNumber = presetList[(size_t) currentPreset].number;
-                if (juce::isPositiveAndBelow (layerPreset, (int) presetList.size()))
-                    savedLayerBank = presetList[(size_t) layerPreset].bank, savedLayerNumber = presetList[(size_t) layerPreset].number;
-            }
-            missingFile = currentFile;
-            swapEngine (nullptr);
-            currentFile = juce::File();
-            currentInfo = {};
-            presetList.clear();
-            sendChangeMessage();
-        }
+            engineLost = true;
+        swapEngine (std::move (fresh));
     }
 }
 
@@ -553,6 +624,9 @@ void SF2PlayerProcessor::handleMidi (const juce::MidiMessage& m)
         // export renders it exactly. The first switch to an instrument not in memory reads its
         // samples from disk here (dynamic sample loading): a possible glitch live, once.
         fluid_synth_program_change (synth, channel, m.getProgramChangeNumber());
+        int font = 0, bank = 0, program = 0;
+        if (fluid_synth_get_program (synth, channel, &font, &bank, &program) == FLUID_OK && program >= 0)
+            pinRequest[(size_t) channel] = bank * 128 + program;   // pinned by the message thread
     }
     else
     {
@@ -638,7 +712,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         }
         if (engine == nullptr)   // no SoundFont: nothing to play these events, or older ones
         {
-            deferredMidi.clear();
+            clearDeferredMidi();
             return;
         }
         applyEffectSettings (false);
@@ -646,9 +720,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         sendOutputs = appliedEffects.sendOutputs;
 
         // Events a skipped block kept, first.
-        for (const auto metadata : deferredMidi)
-            handleMidi (metadata.getMessage());
-        deferredMidi.clear();
+        playDeferredMidi();
 
         // Render up to each MIDI event, so notes start on the exact sample.
         int position = 0;
@@ -797,6 +869,8 @@ void SF2PlayerProcessor::setStateInformation (const void* data, int sizeInBytes)
     // host's default) means no SoundFont. Either way the old one stops, so the sound, the
     // editor and the next save agree.
     missingFile = file;
+    if (file.existsAsFile())   // there but unreadable: not retried until it changes
+        failedFileTime = file.getLastModificationTime();
     swapEngine (nullptr);
     currentFile = juce::File();
     currentInfo = {};

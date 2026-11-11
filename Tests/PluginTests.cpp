@@ -389,6 +389,28 @@ int main()
                 "A note-off arriving while an instrument loads still stops the note",
                 db (kept) + " (let go normally " + db (expected) + ", never let go " + db (never) + ")");
 
+        // A long load with dense controller traffic: past the reserve, bends collapse to the last
+        // one, and the note-off and the bend's return still arrive.
+        Player busy (testFont);
+        busy.render (0.1, [] (int b, juce::MidiBuffer& m) { if (b == 0) m.addEvent (juce::MidiMessage::noteOn (1, 57, (juce::uint8) 100), 0); });
+        {
+            const juce::SpinLock::ScopedLockType loading (PluginTestsAccess::lock (busy.p));
+            juce::AudioBuffer<float> buffer (6, block);
+            for (int b = 0; b < 40; ++b)   // 40 skipped blocks of 200 bends each: 8,000 events
+            {
+                juce::MidiBuffer m;
+                for (int i = 0; i < 200; ++i) m.addEvent (juce::MidiMessage::pitchWheel (1, 8192 + (i % 2 == 0 ? 4000 : -4000)), i);
+                if (b == 39) { m.addEvent (juce::MidiMessage::pitchWheel (1, 8192), 255); }
+                busy.p.processBlock (buffer, m);
+            }
+        }
+        const auto centred = busy.render (0.5, [] (int, juce::MidiBuffer&) {});
+        Player straight (testFont);
+        const auto reference = straight.note (57, 100, 1.0, 0.6);
+        expect (std::abs (cents (pitch (centred, 0.2, 0.4), pitch (reference, 0.2, 0.4))) < 5,
+                "8,000 events during a load: the last pitch bend (back to centre) still arrives",
+                juce::String (cents (pitch (centred, 0.2, 0.4), pitch (reference, 0.2, 0.4)), 1) + " cents off centre");
+
         // A MIDI program change takes effect at once: a note sent with it plays the new instrument.
         Player switching (testFont);
         switching.render (0.2, [] (int b, juce::MidiBuffer& m)
@@ -399,8 +421,27 @@ int main()
                 m.addEvent (juce::MidiMessage::noteOn (1, 72, (juce::uint8) 100), 0);
             }
         });
-        expect (switching.p.activeVoices.load() == 2, "A MIDI program change applies to the note sent with it (square -> FM bells)",
-                juce::String (switching.p.activeVoices.load()) + " voices");
+        const int firstSwitch = switching.p.activeVoices.load();
+        switching.p.runMessageThreadTasks();   // pins FM Bells: switching back won't read it from disk
+        auto playAfter = [&] (int program)
+        {
+            // All Sound Off a block before: in the same instant as a note, FluidSynth itself keeps
+            // the old voices (checked against bare FluidSynth).
+            switching.render (0.2, [program] (int b, juce::MidiBuffer& m)
+            {
+                if (b == 0)
+                    m.addEvent (juce::MidiMessage::allSoundOff (1), 0);
+                if (b == 1)
+                {
+                    m.addEvent (juce::MidiMessage::programChange (1, program), 0);
+                    m.addEvent (juce::MidiMessage::noteOn (1, 72, (juce::uint8) 100), 0);
+                }
+            });
+            return switching.p.activeVoices.load();
+        };
+        const int back = playAfter (testPreset), again = playAfter (0);
+        expect (firstSwitch == 2 && back == 1 && again == 2, "A MIDI program change applies to the note sent with it, back and forth",
+                juce::String (firstSwitch) + ", " + juce::String (back) + ", " + juce::String (again) + " voices");
 
         // Reset All Controllers (CC121) clears FluidSynth's generator offsets: the plugin puts its own back.
         Player reset (testFont), tuned (testFont);
@@ -412,6 +453,28 @@ int main()
         });
         expect (std::abs (cents (pitch (b, 0.2, 0.4), pitch (a, 0.2, 0.4))) < 3, "Fine tune survives a clip's Reset All Controllers",
                 juce::String (cents (pitch (b, 0.2, 0.4), pitch (a, 0.2, 0.4)), 1) + " cents off");
+    }
+
+    // ---- A file that goes missing during a rate change, then comes back.
+    {
+        const auto copy = juce::File::createTempFile (".sf2");
+        testFont.copyFileTo (copy);
+        SF2PlayerProcessor p;
+        p.setRateAndBufferSizeDetails (rate, block);
+        p.prepareToPlay (rate, block);
+        p.loadSoundFont (copy);
+        p.selectPreset (testPreset);
+        const auto moved = copy.getSiblingFile ("moved-away.sf2");
+        copy.moveFileTo (moved);
+        p.prepareToPlay (44100.0, block);   // can't rebuild: silent, and the message thread says so
+        for (int i = 0; i < 10; ++i) p.runMessageThreadTasks();
+        const bool reported = p.missingSoundFont() == copy && p.presets().empty();
+        moved.moveFileTo (copy);
+        for (int i = 0; i < 10; ++i) p.runMessageThreadTasks();
+        expect (reported && p.soundFontFile() == copy && p.selectedPreset() == testPreset,
+                "A file lost during a rate change is reported, then reloaded with its instrument once back",
+                juce::String (reported ? "reported" : "not reported") + ", then preset " + juce::String (p.selectedPreset()));
+        copy.deleteFile();
     }
 
     // ---- Tone, outputs and saved state.

@@ -12,7 +12,8 @@
 // player: its modulators, interpolation, reverb and chorus. The file is chosen
 // in the editor and remembered in the host's project.
 class SF2PlayerProcessor : public juce::AudioProcessor,
-                           public juce::ChangeBroadcaster
+                           public juce::ChangeBroadcaster,
+                           private juce::Timer
 {
 public:
     SF2PlayerProcessor();
@@ -61,6 +62,12 @@ public:
     // The SoundFont the project names when it isn't on this Mac any more (moved, renamed or deleted).
     juce::File missingSoundFont() const { return missingFile; }
 
+    // Message-thread housekeeping, ten times a second (a timer; tests call it directly):
+    // keeps in memory the instruments a clip switched to (so switching back reads nothing from
+    // disk), turns a failed engine rebuild into the missing-file state, and loads a missing
+    // file again once it's back (a drive plugged in) unless that same file already failed.
+    void runMessageThreadTasks();
+
     // Voices sounding after the last block (for the editor and tests).
     std::atomic<int> activeVoices { 0 };
     // Tests: render with another interpolation (FLUID_INTERP_*); -1 keeps the 7th order.
@@ -98,12 +105,25 @@ private:
 
     juce::SpinLock engineLock;   // guards `engine` between the audio and message threads
 
-    // Events of a block that couldn't take the engine: played at the start of the next one,
-    // so a note-off, a pedal release or a bend's return is never lost. Reserved up front; past
-    // the reserve only the events that end something are kept, so the audio thread doesn't grow it.
-    juce::MidiBuffer deferredMidi;
-    static constexpr int deferredMidiReserve = 65536;
+    // Events of a block that couldn't take the engine, played at the start of the next one, so
+    // a note-off, a pedal release or a bend's return is never lost. A fixed array of short
+    // messages (no allocation, O(1) per event): past `deferredNormal` only events that change
+    // lasting state are kept, and pitch bends collapse to the last one per channel.
+    static constexpr int deferredCapacity = 4096, deferredNormal = 3584;
+    std::array<juce::MidiMessage, deferredCapacity> deferredEvents;
+    int numDeferred = 0;
+    std::array<int, 16> deferredBend;   // -1: none
     void deferMidi (const juce::MidiBuffer&);
+    void playDeferredMidi();
+    void clearDeferredMidi();
+
+    void timerCallback() override { runMessageThreadTasks(); }
+    // Audio thread -> message thread: the preset each channel switched to (bank * 128 + program, -1 none).
+    std::array<std::atomic<int>, 16> pinRequest;
+    // Set when prepareToPlay couldn't rebuild the engine; the message thread updates the state.
+    std::atomic<bool> engineLost { false };
+    juce::Time failedFileTime;   // modification time of a file that failed to load: not retried
+    int housekeepingTicks = 0;
 
     std::unique_ptr<Engine> engine;
 
