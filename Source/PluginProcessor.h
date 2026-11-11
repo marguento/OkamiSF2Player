@@ -55,18 +55,19 @@ public:
     void selectPreset (int presetIndex);
     // The second instrument, for Layer and Split (playMode-like parameter "layerMode").
     void selectLayerPreset (int presetIndex);
-    int selectedLayerPreset() const { return layerPreset; }
-    const std::vector<Preset>& presets() const { return presetList; }   // message thread
-    juce::File soundFontFile() const { return currentFile; }
-    const SoundFontInfo& soundFontInfo() const { return currentInfo; }
-    int selectedPreset() const { return currentPreset; }
+    // Copies, read under stateMutex: a host may restore a project on another thread meanwhile.
+    int selectedLayerPreset() const { const std::lock_guard<std::recursive_mutex> l (stateMutex); return layerPreset; }
+    std::vector<Preset> presets() const { const std::lock_guard<std::recursive_mutex> l (stateMutex); return presetList; }
+    juce::File soundFontFile() const { const std::lock_guard<std::recursive_mutex> l (stateMutex); return currentFile; }
+    SoundFontInfo soundFontInfo() const { const std::lock_guard<std::recursive_mutex> l (stateMutex); return currentInfo; }
+    int selectedPreset() const { const std::lock_guard<std::recursive_mutex> l (stateMutex); return currentPreset; }
     // The SoundFont the project names when it isn't on this Mac any more (moved, renamed or deleted).
-    juce::File missingSoundFont() const { return missingFile; }
+    juce::File missingSoundFont() const { const std::lock_guard<std::recursive_mutex> l (stateMutex); return missingFile; }
 
     // Message-thread housekeeping, ten times a second (a timer; tests call it directly):
     // keeps in memory the instruments a clip switched to (so switching back reads nothing from
-    // disk), turns a failed engine rebuild into the missing-file state, and loads a missing
-    // file again once it's back (a drive plugged in) unless that same file already failed.
+    // disk), and loads a missing file again once it's back (a drive plugged in), or an
+    // unreadable one when it changes (with a growing wait between tries).
     void runMessageThreadTasks();
 
     // Voices sounding after the last block (for the editor and tests).
@@ -122,18 +123,27 @@ private:
 
     void timerCallback() override { runMessageThreadTasks(); }
     // Audio thread -> message thread: presets a clip switched to (bank * 128 + program).
+    // A channel's request is queued only when it differs from that channel's last one.
     juce::AbstractFifo pinFifo { 256 };
     std::array<int, 256> pinQueue {};
-    // Set when prepareToPlay couldn't rebuild the engine; the message thread updates the state.
-    std::atomic<bool> engineLost { false }, lostWhileReadable { false };
+    std::array<int, 16> lastPinRequest;   // audio thread only
     int housekeepingTicks = 0;
 
-    // A file that failed to load is retried when it changes (time or size) or a minute later.
+    // A file that failed to load is retried when it changes (time or size), or after a wait
+    // that doubles from one minute to thirty.
+    juce::File failedFile;
     juce::Time failedFileTime;
     juce::int64 failedFileSize = -1;
-    juce::uint32 failedAtMs = 0;
+    juce::uint32 failedAtMs = 0, retryWaitMs = 60000;
     void recordFailure (const juce::File&);
     bool shouldRetry (const juce::File&) const;
+
+    // What getStateInformation saves about the file and instruments, kept current by whoever
+    // changes them: reading it never waits for a SoundFont to load.
+    struct SavedSoundFont { juce::String path; int preset = 0, bank = -1, number = -1, layerBank = -1, layerNumber = -1; };
+    SavedSoundFont savedSoundFont;
+    juce::SpinLock savedSoundFontLock;
+    void updateSavedSoundFont();   // under stateMutex
 
     // No SoundFont, the file kept for the project (shown as missing, or unreadable). The one
     // way into that state; `keepInstruments` saves the current ones by bank:program first.
@@ -142,7 +152,13 @@ private:
     // Guards what the message thread and prepareToPlay (which a host may call from another
     // thread) share: the file, the preset list and choices, the sample rate. Never taken on the
     // audio thread; always before engineLock.
-    std::recursive_mutex stateMutex;
+    mutable std::recursive_mutex stateMutex;
+    // Notifies the host (VST3 "dirty") outside stateMutex, so its handler can't deadlock with
+    // a prepareToPlay waiting for the mutex.
+    std::atomic<bool> projectChangePending { false };
+    void flushProjectChanged();
+    // Past the deferred reserve, true once a value was collapsed (else nothing to replay).
+    bool anyCollapsed = false;
 
     std::unique_ptr<Engine> engine;
 

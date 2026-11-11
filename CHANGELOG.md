@@ -3,6 +3,12 @@
 The version shows next to the title (`project(... VERSION x.y.z)` in CMakeLists.txt). Each
 release bumps it and adds an entry here: one line per change a player would notice.
 
+## 1.2.4 — Nov 11, 2026
+
+- Saving the project never waits for a SoundFont that's loading.
+- A damaged SoundFont is retried less and less often (1 to 30 minutes), not every minute.
+- A controller's final value (volume, pan) survives a Reset All Controllers sent during a load.
+
 ## 1.2.3 — Nov 11, 2026
 
 - During an instrument load, a fade or pan move (any controller) keeps its final value, and a

@@ -59,9 +59,13 @@ GitHub noreply email (`git config user.email` is set to it in this repo).
 - `stateMutex` (recursive) guards the file, the preset list and choices and the sample rate
   between the message thread and `prepareToPlay`; take it before `engineLock`, never on the
   audio thread.
-- `runMessageThreadTasks` (10 Hz timer; tests call it directly) pins presets, turns
-  `engineLost` into the missing state, reloads a returning file. `enterMissingState` is the only
-  way into the missing state.
+- `runMessageThreadTasks` (10 Hz timer; tests call it directly) tells the host the project
+  changed (outside `stateMutex`, so its handler can't deadlock with `prepareToPlay`), pins
+  presets, and reloads a returning or changed file. `enterMissingState` is the only way into
+  the missing state (`prepareToPlay` uses it when a rebuild fails).
+- `getStateInformation` never takes `stateMutex`: it reads `savedSoundFont`, a snapshot under
+  a tiny SpinLock that `updateSavedSoundFont` refreshes whenever the file or an instrument
+  changes. Editor accessors return copies under `stateMutex`.
 
 ## FluidSynth
 

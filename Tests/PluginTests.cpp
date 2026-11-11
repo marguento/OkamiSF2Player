@@ -11,11 +11,13 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <thread>
 #include <sys/sysctl.h>
 
 struct PluginTestsAccess
 {
     static juce::SpinLock& lock (SF2PlayerProcessor& p) { return p.engineLock; }
+    static std::recursive_mutex& state (SF2PlayerProcessor& p) { return p.stateMutex; }
 };
 
 namespace
@@ -489,6 +491,30 @@ int main()
         });
         expect (std::abs (cents (pitch (b, 0.2, 0.4), pitch (a, 0.2, 0.4))) < 3, "Fine tune survives a clip's Reset All Controllers",
                 juce::String (cents (pitch (b, 0.2, 0.4), pitch (a, 0.2, 0.4)), 1) + " cents off");
+    }
+
+    // ---- Saving never waits: getStateInformation while another thread holds the state (a
+    // SoundFont loading) returns at once, with the file and instrument.
+    {
+        Player saving (testFont);
+        std::atomic<bool> holding { false }, release { false };
+        std::thread loader ([&]
+        {
+            const std::lock_guard<std::recursive_mutex> busy (PluginTestsAccess::state (saving.p));
+            holding = true;
+            while (! release) std::this_thread::sleep_for (std::chrono::milliseconds (1));
+        });
+        while (! holding) std::this_thread::sleep_for (std::chrono::milliseconds (1));
+        juce::MemoryBlock block;
+        const auto start = juce::Time::getMillisecondCounterHiRes();
+        saving.p.getStateInformation (block);
+        const double ms = juce::Time::getMillisecondCounterHiRes() - start;
+        release = true;
+        loader.join();
+        auto xml = juce::AudioProcessor::getXmlFromBinary (block.getData(), (int) block.getSize());
+        expect (ms < 50 && xml != nullptr && xml->getStringAttribute ("sf2Path") == testFont.getFullPathName()
+                    && xml->getIntAttribute ("presetNumber") == testPreset,
+                "Saving the project doesn't wait for a SoundFont loading", juce::String (ms, 1) + " ms");
     }
 
     // ---- A file that goes missing during a rate change, then comes back.

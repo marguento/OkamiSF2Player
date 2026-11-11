@@ -100,11 +100,17 @@ FluidSynth's build downloads its `gcem` submodule from GitHub the first time if 
   continuous values (controllers, pressure, bends) keep only their last value per channel,
   while note-offs, pedals, program and bank changes, RPN/NRPN and resets keep their order.
 - **Shared state** (the file, the preset list and choices, the sample rate) is guarded by
-  `stateMutex`, taken by the message thread and by `prepareToPlay` (which a host may call from
-  another thread), never by the audio thread, and always before `engineLock`.
-- **Message-thread housekeeping** (a 10 Hz timer, `runMessageThreadTasks`): pins the presets
-  a clip switched to, turns a failed engine rebuild into the missing-file state, and reloads a
-  missing file once it's back.
+  `stateMutex`, taken by the message thread, by `prepareToPlay` and `setStateInformation`
+  (which a host may call from another thread) and by the editor's accessors (which return
+  copies); never by the audio thread, and always before `engineLock`.
+- **Saving never waits:** `getStateInformation` reads a small snapshot of the file and the
+  instruments (`savedSoundFont`, under its own SpinLock), kept current by whoever changes them,
+  so a host saving while a SoundFont loads isn't held up.
+- **Message-thread housekeeping** (a 10 Hz timer, `runMessageThreadTasks`): tells the host the
+  project changed (outside `stateMutex`, so the host's handler can't deadlock with a waiting
+  `prepareToPlay`), pins the presets a clip switched to, and reloads a missing file once it's
+  back or an unreadable one once it changes (otherwise after a wait doubling from 1 to 30
+  minutes).
 - **Settings reach FluidSynth from the audio thread:** `processBlock` compares the parameters
   with what it last applied (`EffectSettings`, `PlaySettings`) and sends only what changed, so
   moving one knob never resets another setting (or MIDI state a clip set).
@@ -187,7 +193,7 @@ Settings file `~/Library/Application Support/SF2 Player/SF2 Player.settings`: `r
 
 ## Tests
 
-`ctest` runs `PluginTests` (41 checks). Each renders through the real processor and fails on a
+`ctest` runs `PluginTests` (42 checks). Each renders through the real processor and fails on a
 wrong result:
 
 - **Fidelity:** bit-identical output to FluidSynth at the defaults.
@@ -197,7 +203,8 @@ wrong result:
   during a load keep the last bend and volume; a reset isn't undone by an earlier bend; a
   program change applies to the note sent with it, back and forth; Fine survives CC121.
 - **Outputs and formats:** send outputs, SF3, in tune at 44.1, 96 and 192 kHz.
-- **State and files:** the saved state (file, instruments, knobs), a missing file kept, a file
+- **State and files:** the saved state (file, instruments, knobs), saving without waiting for a
+  load, a missing file kept, a file
   lost during a rate change reported then reloaded, a failed rebuild not undoing a newer file,
   global key ranges, hostile files refused quickly.
 - **CPU:** 64 string notes under 30 % of a 128-sample block (reported, not judged, under

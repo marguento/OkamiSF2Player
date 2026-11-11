@@ -32,7 +32,8 @@ the plugin says so in a red line.
   "Can't find" with its name. Put it back (or plug its drive in) and it loads again by itself
   within a second, with your instruments; or choose it again from the menu.
 - **A file that can't be read** (damaged, or still downloading from the cloud) says "Can't
-  open". It's tried again when it changes, or a minute later.
+  open". It's tried again as soon as it changes, and otherwise after a wait that grows from one
+  minute to thirty.
 - **Memory:** only the chosen instruments' samples are loaded. A 500 MB collection takes tens
   of MB per track. Changing instruments can leave a moment of silence while its samples load.
 
