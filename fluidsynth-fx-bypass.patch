@@ -1,0 +1,160 @@
+diff --git a/include/fluidsynth/synth.h b/include/fluidsynth/synth.h
+index e886f62..aa060e3 100644
+--- a/include/fluidsynth/synth.h
++++ b/include/fluidsynth/synth.h
+@@ -382,6 +382,7 @@ FLUIDSYNTH_API int fluid_synth_write_float(fluid_synth_t *synth, int len,
+ FLUID_DEPRECATED FLUIDSYNTH_API int fluid_synth_nwrite_float(fluid_synth_t *synth, int len,
+         float **left, float **right,
+         float **fx_left, float **fx_right);
++FLUIDSYNTH_API void fluid_synth_set_fx_bypass(fluid_synth_t *synth, int on);
+ FLUIDSYNTH_API int fluid_synth_process(fluid_synth_t *synth, int len,
+                                        int nfx, float *fx[],
+                                        int nout, float *out[]);
+diff --git a/src/rvoice/fluid_rvoice_dsp_sinc.hpp b/src/rvoice/fluid_rvoice_dsp_sinc.hpp
+index 0ed470a..c4185e9 100644
+--- a/src/rvoice/fluid_rvoice_dsp_sinc.hpp
++++ b/src/rvoice/fluid_rvoice_dsp_sinc.hpp
+@@ -124,7 +124,7 @@ static inline fluid_real_t kaiser_signalsmith(fluid_real_t i_shifted)
+  *           sinc(n*pi) = 0 for all non-zero integers n).
+  */
+ template<int SINC_ORDER>
+-static inline fluid_real_t fluid_interp_sinc_kernel(const std::array<fluid_real_t, SINC_ORDER> &s, fluid_real_t x)
++static inline fluid_real_t fluid_interp_sinc_kernel_direct(const std::array<fluid_real_t, SINC_ORDER> &s, fluid_real_t x)
+ {
+     static_assert(SINC_ORDER >= 1 && SINC_ORDER != 2, "SINC_ORDER must be at least 1 and not equal to 2");
+ 
+@@ -180,3 +180,51 @@ static inline fluid_real_t fluid_interp_sinc_kernel(const std::array<fluid_real_
+      * modulation artifacts (harmonic distortion) as fractional phase varies. */
+     return result / sum;
+ }
++
++
++/* SF2 Player: the kernel above computes SINC_ORDER sines and cosines for every output
++ * sample of every voice. Its coefficients depend only on the fractional phase x, so
++ * they are tabulated once per order (1024 phases, each row normalized like the direct
++ * kernel) and interpolated linearly between neighbouring phases. The result stays within
++ * about -120 dB of the direct kernel. */
++template<int SINC_ORDER>
++struct fluid_sinc_table
++{
++    static constexpr int phases = 1024;
++    std::array<std::array<fluid_real_t, SINC_ORDER>, phases + 1> rows;
++
++    fluid_sinc_table()
++    {
++        for(int p = 0; p <= phases; p++)
++        {
++            std::array<fluid_real_t, SINC_ORDER> unit {};
++            for(int i = 0; i < SINC_ORDER; i++)
++            {
++                unit.fill(0);
++                unit[i] = 1;
++                rows[p][i] = fluid_interp_sinc_kernel_direct<SINC_ORDER>(unit, (fluid_real_t)p / phases);
++            }
++        }
++    }
++};
++
++template<int SINC_ORDER>
++static inline fluid_real_t fluid_interp_sinc_kernel(const std::array<fluid_real_t, SINC_ORDER> &s, fluid_real_t x)
++{
++    static const fluid_sinc_table<SINC_ORDER> table;
++    constexpr int phases = fluid_sinc_table<SINC_ORDER>::phases;
++
++    fluid_real_t position = x * phases;
++    int row = (int)position;
++    row = row < 0 ? 0 : (row >= phases ? phases - 1 : row);
++    const fluid_real_t frac = position - (fluid_real_t)row;
++    const auto &a = table.rows[row];
++    const auto &b = table.rows[row + 1];
++
++    fluid_real_t result = 0;
++    for(int i = 0; i < SINC_ORDER; i++)
++    {
++        result += (a[i] + frac * (b[i] - a[i])) * s[i];
++    }
++    return result;
++}
+diff --git a/src/rvoice/fluid_rvoice_mixer.c b/src/rvoice/fluid_rvoice_mixer.c
+index d8b6c18..b99c627 100644
+--- a/src/rvoice/fluid_rvoice_mixer.c
++++ b/src/rvoice/fluid_rvoice_mixer.c
+@@ -102,6 +102,7 @@ struct _fluid_rvoice_mixer_t
+     int with_reverb;        /**< Should the synth use the built-in reverb unit? */
+     int with_chorus;        /**< Should the synth use the built-in chorus unit? */
+     int mix_fx_to_out;      /**< Should the effects be mixed in with the primary output? */
++    int fx_bypass;          /**< SF2 Player: hand out the effect sends unprocessed (mono, in both channels) */
+ 
+ #ifdef SIGNALSMITH_SUPPORT
+     fluid_limiter_t *limiter;
+@@ -182,7 +183,21 @@ fluid_rvoice_mixer_process_fx(fluid_rvoice_mixer_t *mixer, int current_blockcoun
+         chorus_process_func = fluid_chorus_processreplace;
+     }
+ 
+-    if(mixer->with_reverb || mixer->with_chorus)
++    if(mixer->fx_bypass && !mix_fx_to_out)
++    {
++        /* SF2 Player: the sends themselves, for the host's own effects. Each effect
++         * buffer's left channel holds its mono send; copy it to the right one. */
++        fluid_real_t *send_l = fluid_align_ptr(mixer->buffers.fx_left_buf, FLUID_DEFAULT_ALIGNMENT);
++        fluid_real_t *send_r = fluid_align_ptr(mixer->buffers.fx_right_buf, FLUID_DEFAULT_ALIGNMENT);
++        int b, size = current_blockcount * FLUID_BUFSIZE * sizeof(fluid_real_t);
++
++        for(b = 0; b < mixer->buffers.fx_buf_count; b++)
++        {
++            int offset = b * FLUID_MIXER_MAX_BUFFERS_DEFAULT * FLUID_BUFSIZE;
++            FLUID_MEMCPY(&send_r[offset], &send_l[offset], size);
++        }
++    }
++    else if(mixer->with_reverb || mixer->with_chorus)
+     {
+ #if ENABLE_MIXER_THREADS && !defined(WITH_PROFILING)
+         int fx_mixer_threads = mixer->fx_units;
+@@ -1248,6 +1263,11 @@ void fluid_rvoice_mixer_set_mix_fx(fluid_rvoice_mixer_t *mixer, int on)
+     mixer->mix_fx_to_out = on;
+ }
+ 
++void fluid_rvoice_mixer_set_fx_bypass(fluid_rvoice_mixer_t *mixer, int on)
++{
++    mixer->fx_bypass = on;
++}
++
+ DECLARE_FLUID_RVOICE_FUNCTION(fluid_rvoice_mixer_set_chorus_params)
+ {
+     fluid_rvoice_mixer_t *mixer = obj;
+diff --git a/src/rvoice/fluid_rvoice_mixer.h b/src/rvoice/fluid_rvoice_mixer.h
+index d9c5b87..86c4612 100644
+--- a/src/rvoice/fluid_rvoice_mixer.h
++++ b/src/rvoice/fluid_rvoice_mixer.h
+@@ -83,6 +83,7 @@ DECLARE_FLUID_RVOICE_FUNCTION(fluid_rvoice_mixer_reset_chorus);
+ 
+ 
+ void fluid_rvoice_mixer_set_mix_fx(fluid_rvoice_mixer_t *mixer, int on);
++void fluid_rvoice_mixer_set_fx_bypass(fluid_rvoice_mixer_t *mixer, int on);
+ #ifdef LADSPA
+ void fluid_rvoice_mixer_set_ladspa(fluid_rvoice_mixer_t *mixer,
+                                    fluid_ladspa_fx_t *ladspa_fx, int audio_groups);
+diff --git a/src/synth/fluid_synth.c b/src/synth/fluid_synth.c
+index 5e2090d..16d61dd 100644
+--- a/src/synth/fluid_synth.c
++++ b/src/synth/fluid_synth.c
+@@ -4646,6 +4646,19 @@ fluid_synth_process_LOCAL(fluid_synth_t *synth, int len, int nfx, float *fx[],
+ }
+ 
+ 
++/**
++ * SF2 Player: when on, fluid_synth_process() hands out the reverb and chorus sends
++ * unprocessed (each mono send in both channels of its effect buffers) instead of the
++ * built-in effects' output, so a host's own effects can take them. The reverb or chorus
++ * must still be on (fluid_synth_reverb_on / fluid_synth_chorus_on) for its send to run.
++ * Call it from the thread that renders.
++ */
++void fluid_synth_set_fx_bypass(fluid_synth_t *synth, int on)
++{
++    fluid_return_if_fail(synth != NULL);
++    fluid_rvoice_mixer_set_fx_bypass(synth->eventhandler->mixer, on);
++}
++
+ /**
+  * Synthesize a block of floating point audio samples to audio buffers.
+  * @param synth FluidSynth instance

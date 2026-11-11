@@ -1,0 +1,5 @@
+build/
+ThirdParty/JUCE/
+ThirdParty/fluidsynth/
+ThirdParty/fluidsynth-install/
+.DS_Store
