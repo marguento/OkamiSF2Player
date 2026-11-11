@@ -87,13 +87,14 @@ GitHub noreply email (`git config user.email` is set to it in this repo).
 `scripts/release.env`, ignored by git: never put them in a tracked file (the repo is meant to
 go public).
 
-Developer ID (Nov 11, 2026): only the Account Holder can create the "Developer ID
-Application" and "Developer ID Installer" certificates. Tried both ways and Apple refused:
-`POST /v1/certificates` with the App Store Connect key ("can only be performed by the Account
-Holder"; the API doesn't even offer DEVELOPER_ID_INSTALLER) and Xcode signed in as
-the user's Apple ID, whose role on the "Israel Villalobos" team is Admin. The user
-has to sign in to Xcode with the Account Holder's Apple ID and create them (Settings → Apple
-Accounts → the team → Manage Certificates → +), or have that role transferred.
+Developer ID (Nov 11, 2026): both certificates are in the login keychain, "Developer ID
+Application: Israel Villalobos (VDGLR9P76K)" and "Developer ID Installer: ..." (expire Dec 11,
+2027), allowed for codesign, productbuild, pkgbuild and productsign. Encrypted .p12 backups are kept outside this repo. How they were made: the App Store Connect API refuses
+(`POST /v1/certificates` says only the Account Holder can, and has no Installer type) and so
+did Xcode, although the user's Apple ID is the Account Holder; developer.apple.com's web form
+works (a CSR from `openssl req`, uploaded in the user's Chrome). The API can then read the
+Application certificate (GET /v1/certificates/<id>) but not the Installer one: download that
+from its web page. Renew both before Dec 2027 the same way.
 
 ## Plugin identity
 
