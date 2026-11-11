@@ -38,6 +38,7 @@ struct RangeKeyboard : juce::MidiKeyboardComponent
 {
     using MidiKeyboardComponent::MidiKeyboardComponent;
     int lowKey = 0, highKey = 127;
+    int splitKey = -1;   // Split: the keys below it play the second instrument (tinted)
 
     void drawWhiteNote (int note, juce::Graphics&, juce::Rectangle<float> area, bool isDown, bool isOver,
                         juce::Colour lineColour, juce::Colour textColour) override;
@@ -99,6 +100,9 @@ private:
 
     // Favourites, kept for every project: "<file name>|<bank>:<program>" in the settings file.
     static constexpr int favouriteIdBase = 100000;   // list ids of the copies under "Favorites"
+    // A list id back to the instrument's index (favorites are copies with their own ids).
+    static int presetIndexOf (int id) { return id > favouriteIdBase ? id - favouriteIdBase - 1 : id - 1; }
+    int addInstruments (juce::ComboBox&, const juce::String& query) const;
     juce::String favouriteKey (int presetIndex) const;
     bool isFavourite (int presetIndex) const;
     void toggleFavourite();
@@ -111,6 +115,16 @@ private:
     juce::Label toneLabel { {}, "Tone" };
     juce::AudioProcessorValueTreeState::SliderAttachment toneAttachment;
     juce::ToggleButton sendsToggle { "Effects to separate outputs" };
+
+    // The second instrument: Off / Layer / Split, which one, the split key and its level.
+    juce::Label layerLabel { {}, "Layer" }, layerLevelLabel { {}, "Level" };
+    juce::ComboBox layerModeBox, layerPresetBox;
+    juce::AudioProcessorValueTreeState::ComboBoxAttachment layerModeAttachment;
+    juce::Slider splitSlider { juce::Slider::IncDecButtons, juce::Slider::TextBoxLeft };
+    juce::AudioProcessorValueTreeState::SliderAttachment splitAttachment;
+    juce::Slider layerLevelSlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
+    juce::AudioProcessorValueTreeState::SliderAttachment layerLevelAttachment;
+    void refreshLayerControls();
     juce::AudioProcessorValueTreeState::ButtonAttachment sendsAttachment;
 
     juce::ToggleButton reverbToggle, chorusToggle;

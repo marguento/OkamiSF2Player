@@ -264,6 +264,46 @@ int main()
                 juce::String (spreadA, 0) + " -> " + juce::String (spreadB, 0) + " cents of pitch swing");
     }
 
+    // ---- Layer and split (the test font has one instrument: it layers with itself).
+    {
+        Player single (testFont), layered (testFont), quieter (testFont);
+        layered.set ("layerMode", 1.0f);
+        quieter.set ("layerMode", 1.0f);
+        quieter.set ("layerLevel", -6.0f);
+        const double one = rms (single.note (60), 0.1, 0.5), two = rms (layered.note (60), 0.1, 0.5), lower = rms (quieter.note (60), 0.1, 0.5);
+        expect (std::abs (20 * std::log10 (two / one) - 6.02) < 0.3, "Layer: the second instrument plays every note too (same one: +6 dB)",
+                juce::String (20 * std::log10 (two / one), 2) + " dB");
+        // The layer 6 dB down: one + half of one = +3.5 dB over the single instrument.
+        expect (std::abs (20 * std::log10 (lower / one) - 3.52) < 0.3, "Layer level -6 dB lowers the second instrument by 6 dB",
+                juce::String (20 * std::log10 (lower / one), 2) + " dB over one");
+
+        Player split (testFont);
+        split.set ("layerMode", 2.0f);
+        split.set ("splitKey", 60.0f);
+        split.render (0.3, [] (int b, juce::MidiBuffer& m) { if (b == 0) m.addEvent (juce::MidiMessage::noteOn (1, 48, (juce::uint8) 100), 0); });
+        const int below = split.p.activeVoices.load();
+        Player above (testFont);
+        above.set ("layerMode", 2.0f);
+        above.set ("splitKey", 60.0f);
+        above.render (0.3, [] (int b, juce::MidiBuffer& m) { if (b == 0) m.addEvent (juce::MidiMessage::noteOn (1, 72, (juce::uint8) 100), 0); });
+        const int high = above.p.activeVoices.load();
+        Player single2 (testFont);
+        single2.render (0.3, [] (int b, juce::MidiBuffer& m) { if (b == 0) m.addEvent (juce::MidiMessage::noteOn (1, 72, (juce::uint8) 100), 0); });
+        expect (below == single2.p.activeVoices.load() && high == below, "Split: each note plays on one side only",
+                juce::String (below) + " and " + juce::String (high) + " voices");
+
+        // Switching the layer off while a note is held still stops it.
+        Player held (testFont);
+        held.set ("layerMode", 1.0f);
+        const auto out = held.render (3.0, [&] (int b, juce::MidiBuffer& m)
+        {
+            if (b == 0) m.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
+            if (b == blockOf (0.2)) held.set ("layerMode", 0.0f);
+            if (b == blockOf (0.4)) m.addEvent (juce::MidiMessage::noteOff (1, 60), 0);
+        });
+        expect (rms (out, 2.5, 3.0) < 1e-4, "A layered note still stops after the layer is switched off", db (rms (out, 2.5, 3.0)));
+    }
+
     // ---- Tone, outputs and saved state.
     {
         Player plain (testFont), dark (testFont);
@@ -321,6 +361,35 @@ int main()
         auto back = juce::AudioProcessor::getXmlFromBinary (again.getData(), (int) again.getSize());
         expect (missing.missingSoundFont().getFileName() == "Gone.sf2" && back->getStringAttribute ("sf2Path") == "/nowhere/Gone.sf2",
                 "A missing file stays named in the project");
+    }
+
+    if (hq.existsAsFile())
+    {
+        juce::MemoryBlock state;
+        {
+            Player saved (hq, 40);
+            saved.p.selectLayerPreset (48);
+            saved.set ("layerMode", 1.0f);
+            saved.p.getStateInformation (state);
+        }
+        SF2PlayerProcessor restored;
+        restored.setStateInformation (state.getData(), (int) state.getSize());
+        expect (restored.selectedPreset() == 40 && restored.selectedLayerPreset() == 48, "The project restores the instrument and the layer's",
+                juce::String (restored.selectedPreset()) + ", " + juce::String (restored.selectedLayerPreset()));
+    }
+    if (hq.existsAsFile())
+    {
+        // Violin (keys 55-96) over Strings below C4: a low G2 can only sound through the strings.
+        auto play = [&] (int mode, int key)
+        {
+            Player pl (hq, 40);
+            pl.p.selectLayerPreset (48);
+            pl.set ("layerMode", (float) mode);
+            pl.set ("splitKey", 60.0f);
+            return rms (pl.note (key, 100, 0.5, 0.5), 0.1, 0.4);
+        };
+        expect (play (0, 43) < 1e-6 && play (2, 43) > 1e-3, "Split: notes below the split play the second instrument",
+                "G2 alone " + db (play (0, 43)) + ", split " + db (play (2, 43)));
     }
 
     // ---- CPU: 64 string notes (256 voices) at 48 kHz in 128-sample blocks.

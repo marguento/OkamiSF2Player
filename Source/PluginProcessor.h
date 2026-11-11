@@ -51,6 +51,9 @@ public:
     // Message thread only.
     bool loadSoundFont (const juce::File& file);
     void selectPreset (int presetIndex);
+    // The second instrument, for Layer and Split (playMode-like parameter "layerMode").
+    void selectLayerPreset (int presetIndex);
+    int selectedLayerPreset() const { return layerPreset; }
     std::vector<Preset> presets() const { return presetList; }
     juce::File soundFontFile() const { return currentFile; }
     const SoundFontInfo& soundFontInfo() const { return currentInfo; }
@@ -75,6 +78,9 @@ public:
 
     struct Engine;   // a FluidSynth instance with the SoundFont loaded
 
+    // FluidSynth runs 32 channels: 0-15 play the instrument, 16-31 the layer (channel + 16).
+    static constexpr int layerChannelOffset = 16, numSynthChannels = 32;
+
 private:
     static constexpr int numMidiChannels = 16;
 
@@ -85,6 +91,9 @@ private:
     void applyEffectSettings (bool force);
     void applyPlaySettings (bool force);
     void applyPreset (Engine&, int presetIndex);
+    void applyLayerPreset (Engine&, int presetIndex);
+    int layerPreset = 0;
+    int savedLayerBank = -1, savedLayerNumber = -1;
     void swapEngine (std::unique_ptr<Engine>);
 
     juce::SpinLock engineLock;   // guards `engine` between the audio and message threads
@@ -135,10 +144,12 @@ private:
     {
         float attack = 1, release = 1;   // envelope time multipliers
         int fineTune = 0, bendRange = 2, mode = 0, glide = 0;   // cents, semitones, Poly/Mono/Legato, ms
+        int layerAttenuation = 0;   // centibels, on the layer's channels
         bool operator== (const PlaySettings& o) const
         {
             return juce::exactlyEqual (attack, o.attack) && juce::exactlyEqual (release, o.release)
-                && fineTune == o.fineTune && bendRange == o.bendRange && mode == o.mode && glide == o.glide;
+                && fineTune == o.fineTune && bendRange == o.bendRange && mode == o.mode && glide == o.glide
+                && layerAttenuation == o.layerAttenuation;
         }
     };
     PlaySettings appliedPlay;

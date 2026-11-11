@@ -104,6 +104,12 @@ int main (int argc, char** argv)
         p.selectPreset (preset);
         if (argc > 5)
             p.parameters.getParameter ("sendOutputs")->setValueNotifyingHost (1.0f);
+        if (const char* layer = std::getenv ("LAYER"))   // "2" = split, with the strings below C4
+        {
+            p.selectLayerPreset (48);
+            auto* parameter = p.parameters.getParameter ("layerMode");
+            parameter->setValueNotifyingHost (parameter->convertTo0to1 ((float) std::atoi (layer)));
+        }
         std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
         editor->setVisible (true);
         auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f);

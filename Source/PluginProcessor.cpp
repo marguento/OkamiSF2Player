@@ -74,6 +74,16 @@ static juce::AudioProcessorValueTreeState::ParameterLayout makeLayout()
                                          juce::AudioParameterIntAttributes().withStringFromValueFunction ([] (int v, int)
                                          { return v == 0 ? juce::String ("Off") : juce::String (v) + " ms"; })));
 
+    // A second instrument: Off, Layer (both play every note) or Split (notes below the split key
+    // play the second one). Off by default: only the instrument plays.
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "layerMode", 5 }, "Layer Mode",
+                                                              juce::StringArray { "Off", "Layer", "Split" }, 0));
+    layout.add (std::make_unique<juce::AudioParameterInt> (juce::ParameterID { "splitKey", 5 }, "Split Key", 1, 127, 60,
+                                         juce::AudioParameterIntAttributes().withStringFromValueFunction ([] (int v, int)
+                                         { return juce::MidiMessage::getMidiNoteName (v, true, true, 4); })));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "layerLevel", 5 }, "Layer Level", range (-30.0f, 0.0f, 0.5f), 0.0f,
+                                         Attributes().withLabel ("dB")));
+
     // Off: the built-in reverb and chorus play in the main output. On: their sends go out
     // unprocessed on the Reverb and Chorus outputs, for Ableton's own effects.
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "sendOutputs", 3 }, "Send Outputs", false));
@@ -156,6 +166,7 @@ SF2PlayerProcessor::PlaySettings SF2PlayerProcessor::currentPlaySettings() const
     s.bendRange = juce::roundToInt (value ("bendRange"));
     s.mode = juce::roundToInt (value ("playMode"));
     s.glide = juce::roundToInt (value ("glide"));
+    s.layerAttenuation = juce::roundToInt (-value ("layerLevel") * 10.0f);
     return s;
 }
 
@@ -172,8 +183,10 @@ void SF2PlayerProcessor::applyPlaySettings (bool force)
     // Whole timecents: the knob's x1 is stored as 0.99999994, and even that -0.0001 moved the release.
     const float attackCents = (float) juce::roundToInt (1200.0f * std::log2 (s.attack));
     const float releaseCents = (float) juce::roundToInt (1200.0f * std::log2 (s.release));
-    for (int channel = 0; channel < numMidiChannels; ++channel)
+    for (int channel = 0; channel < numSynthChannels; ++channel)
     {
+        if (channel >= layerChannelOffset)   // the layer's level: SF2 attenuation, in centibels
+            fluid_synth_set_gen (synth, channel, GEN_ATTENUATION, (float) s.layerAttenuation);
         fluid_synth_set_gen (synth, channel, GEN_VOLENVATTACK, attackCents);
         fluid_synth_set_gen (synth, channel, GEN_VOLENVRELEASE, releaseCents);
         fluid_synth_set_gen (synth, channel, GEN_FINETUNE, (float) s.fineTune);
@@ -196,7 +209,7 @@ void SF2PlayerProcessor::applyPlaySettings (bool force)
         fluid_synth_reset_basic_channel (synth, -1);
         // Poly: as a fresh FluidSynth. Mono and Legato: each of the 16 channels plays one note at a time.
         fluid_synth_set_basic_channel (synth, 0, s.mode == 0 ? FLUID_CHANNEL_MODE_OMNION_POLY : FLUID_CHANNEL_MODE_OMNIOFF_MONO,
-                                       numMidiChannels);
+                                       numSynthChannels);
     }
     appliedPlay = s;
     playApplied = true;
@@ -245,7 +258,7 @@ static std::unique_ptr<SF2PlayerProcessor::Engine> createEngine (const juce::Fil
     fluid_settings_setnum (engine->settings, "synth.gain", synthGain);
     fluid_settings_setint (engine->settings, "synth.polyphony", 256);
     fluid_settings_setint (engine->settings, "synth.threadsafe-api", 0);   // the plugin's own lock serialises calls
-    fluid_settings_setint (engine->settings, "synth.midi-channels", 16);
+    fluid_settings_setint (engine->settings, "synth.midi-channels", SF2PlayerProcessor::numSynthChannels);
     // Only the samples of the instruments in use are read into memory: a 500 MB
     // collection costs each track only its own instrument's samples.
     fluid_settings_setint (engine->settings, "synth.dynamic-sample-loading", 1);
@@ -265,6 +278,32 @@ static std::unique_ptr<SF2PlayerProcessor::Engine> createEngine (const juce::Fil
     // its sines per sample: the 25-point one took 146 % of a block at 64 notes; this takes 11 %).
     fluid_synth_set_interp_method (engine->synth, -1, FLUID_INTERP_HIGH);
     return engine;
+}
+
+void SF2PlayerProcessor::applyLayerPreset (Engine& e, int presetIndex)
+{
+    if (presetIndex < 0 || presetIndex >= (int) presetList.size())
+        return;
+    const auto& p = presetList[(size_t) presetIndex];
+    for (int channel = layerChannelOffset; channel < numSynthChannels; ++channel)
+        fluid_synth_program_select (e.synth, channel, e.fontId, p.bank, p.number);
+}
+
+void SF2PlayerProcessor::selectLayerPreset (int presetIndex)
+{
+    if (presetIndex < 0 || presetIndex >= (int) presetList.size())
+        return;
+    {
+        const juce::SpinLock::ScopedLockType lock (engineLock);
+        if (engine == nullptr)
+            return;
+        for (int channel = layerChannelOffset; channel < numSynthChannels; ++channel)
+            fluid_synth_all_notes_off (engine->synth, channel);
+        applyLayerPreset (*engine, presetIndex);
+    }
+    layerPreset = presetIndex;
+    sendChangeMessage();
+    markProjectChanged();
 }
 
 void SF2PlayerProcessor::applyPreset (Engine& e, int presetIndex)
@@ -326,8 +365,16 @@ bool SF2PlayerProcessor::loadSoundFont (const juce::File& file)
             if (list[i].bank == savedBank && list[i].number == savedNumber)
                 preset = (int) i;
     savedBank = savedNumber = -1;
+    int layer = (file == currentFile) ? juce::jlimit (0, juce::jmax (0, (int) list.size() - 1), layerPreset) : 0;
+    if (savedLayerBank >= 0)
+        for (size_t i = 0; i < list.size(); ++i)
+            if (list[i].bank == savedLayerBank && list[i].number == savedLayerNumber)
+                layer = (int) i;
+    savedLayerBank = savedLayerNumber = -1;
     presetList = std::move (list);
     applyPreset (*fresh, preset);
+    applyLayerPreset (*fresh, layer);
+    layerPreset = layer;
     swapEngine (std::move (fresh));
 
     currentFile = file;
@@ -378,6 +425,7 @@ void SF2PlayerProcessor::prepareToPlay (double newSampleRate, int maximumExpecte
         if (auto fresh = createEngine (currentFile, sampleRate))
         {
             applyPreset (*fresh, currentPreset);
+            applyLayerPreset (*fresh, layerPreset);
             swapEngine (std::move (fresh));
         }
 }
@@ -390,6 +438,8 @@ void SF2PlayerProcessor::handleMidi (const juce::MidiMessage& m)
     if (channel < 0 || channel >= numMidiChannels)
         return;
     auto* synth = engine->synth;
+    const int layer = channel + layerChannelOffset;
+    const int layerMode = juce::roundToInt (parameters.getRawParameterValue ("layerMode")->load());   // 0 off, 1 layer, 2 split
 
     if (m.isNoteOn())
     {
@@ -399,7 +449,13 @@ void SF2PlayerProcessor::handleMidi (const juce::MidiMessage& m)
         if (! juce::isPositiveAndBelow (note, 128))
             return;   // transposed off the keyboard
         playedNote[(size_t) channel][(size_t) m.getNoteNumber()] = (juce::int16) note;
-        fluid_synth_noteon (synth, channel, note, curvedVelocity (m.getVelocity()));
+        const int velocity = curvedVelocity (m.getVelocity());
+        // Split: the key as played (not transposed) picks the side.
+        const bool lower = layerMode == 2 && m.getNoteNumber() < juce::roundToInt (parameters.getRawParameterValue ("splitKey")->load());
+        if (! lower)
+            fluid_synth_noteon (synth, channel, note, velocity);
+        if (layerMode == 1 || lower)
+            fluid_synth_noteon (synth, layer, note, velocity);
     }
     else if (m.isNoteOff())
     {
@@ -407,21 +463,36 @@ void SF2PlayerProcessor::handleMidi (const juce::MidiMessage& m)
         const int note = played >= 0 ? played : transposeFor (m.getNoteNumber());
         played = -1;
         if (juce::isPositiveAndBelow (note, 128))
+        {
+            // Both sides: the mode or the split may have changed while the key was down.
             fluid_synth_noteoff (synth, channel, note);
+            fluid_synth_noteoff (synth, layer, note);
+        }
     }
-    else if (m.isController())   // volume, pan, expression, sustain, mod wheel, CC91/93, bank select...
-        fluid_synth_cc (synth, channel, m.getControllerNumber(), m.getControllerValue());
-    else if (m.isPitchWheel())
-        fluid_synth_pitch_bend (synth, channel, m.getPitchWheelValue());
     else if (m.isProgramChange())
         fluid_synth_program_change (synth, channel, m.getProgramChangeNumber());
-    else if (m.isChannelPressure())
-        fluid_synth_channel_pressure (synth, channel, m.getChannelPressureValue());
-    else if (m.isAftertouch())
+    else
     {
-        const int played = playedNote[(size_t) channel][(size_t) m.getNoteNumber()];
-        if (played >= 0)
-            fluid_synth_key_pressure (synth, channel, played, m.getAfterTouchValue());
+        // Controllers, bends and pressure reach the layer too, so it follows the playing.
+        for (const int target : { channel, layer })
+        {
+            if (m.isController())   // volume, pan, expression, sustain, mod wheel, CC91/93, bank select...
+            {
+                if (target == layer && (m.getControllerNumber() == 0 || m.getControllerNumber() == 32))
+                    continue;   // bank select is for the instrument
+                fluid_synth_cc (synth, target, m.getControllerNumber(), m.getControllerValue());
+            }
+            else if (m.isPitchWheel())
+                fluid_synth_pitch_bend (synth, target, m.getPitchWheelValue());
+            else if (m.isChannelPressure())
+                fluid_synth_channel_pressure (synth, target, m.getChannelPressureValue());
+            else if (m.isAftertouch())
+            {
+                const int played = playedNote[(size_t) channel][(size_t) m.getNoteNumber()];
+                if (played >= 0)
+                    fluid_synth_key_pressure (synth, target, played, m.getAfterTouchValue());
+            }
+        }
     }
 }
 
@@ -586,6 +657,11 @@ void SF2PlayerProcessor::getStateInformation (juce::MemoryBlock& destData)
         state.setProperty ("presetBank", savedBank, nullptr);
         state.setProperty ("presetNumber", savedNumber, nullptr);
     }
+    if (juce::isPositiveAndBelow (layerPreset, (int) presetList.size()))
+    {
+        state.setProperty ("layerBank", presetList[(size_t) layerPreset].bank, nullptr);
+        state.setProperty ("layerNumber", presetList[(size_t) layerPreset].number, nullptr);
+    }
     if (auto xml = state.createXml())
         copyXmlToBinary (*xml, destData);
 }
@@ -604,6 +680,8 @@ void SF2PlayerProcessor::setStateInformation (const void* data, int sizeInBytes)
     currentPreset = (int) state.getProperty ("preset", 0);
     savedBank = (int) state.getProperty ("presetBank", -1);
     savedNumber = (int) state.getProperty ("presetNumber", -1);
+    savedLayerBank = (int) state.getProperty ("layerBank", -1);
+    savedLayerNumber = (int) state.getProperty ("layerNumber", -1);
 
     const juce::ScopedValueSetter<bool> restoring (restoringState, true);
     if (file.existsAsFile())

@@ -115,6 +115,8 @@ void RangeKeyboard::drawWhiteNote (int note, juce::Graphics& g, juce::Rectangle<
 {
     const bool playable = note >= lowKey && note <= highKey;
     auto fill = playable ? juce::Colour (0xffd9d9de) : juce::Colour (0xff4a4a52);
+    if (note < splitKey)   // played by the second instrument
+        fill = juce::Colour (0xffb9c9d4);
     if (isOver) fill = fill.brighter (0.1f);
     if (isDown) fill = SF2Look::accent;
     g.setColour (fill);
@@ -128,6 +130,8 @@ void RangeKeyboard::drawBlackNote (int note, juce::Graphics& g, juce::Rectangle<
 {
     const bool playable = note >= lowKey && note <= highKey;
     auto fill = playable ? juce::Colour (0xff222226) : juce::Colour (0xff2e2e34);
+    if (note < splitKey)
+        fill = juce::Colour (0xff2a3a46);
     if (isOver) fill = fill.brighter (0.2f);
     if (isDown) fill = SF2Look::accent.darker (0.2f);
     g.setColour (fill);
@@ -160,6 +164,9 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     : AudioProcessorEditor (p), player (p),
       gainAttachment (p.parameters, "gain", gainSlider),
       toneAttachment (p.parameters, "tone", toneSlider),
+      layerModeAttachment (p.parameters, "layerMode", layerModeBox),
+      splitAttachment (p.parameters, "splitKey", splitSlider),
+      layerLevelAttachment (p.parameters, "layerLevel", layerLevelSlider),
       sendsAttachment (p.parameters, "sendOutputs", sendsToggle),
       reverbOnAttachment (p.parameters, "fsReverbOn", reverbToggle),
       chorusOnAttachment (p.parameters, "fsChorusOn", chorusToggle),
@@ -220,10 +227,8 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     presetBox.setTextWhenNothingSelected ("No instruments");
     presetBox.onChange = [this]
     {
-        if (const int id = presetBox.getSelectedId(); id > favouriteIdBase)
-            player.selectPreset (id - favouriteIdBase - 1);   // its copy under Favorites
-        else if (id > 0)
-            player.selectPreset (id - 1);
+        if (const int id = presetBox.getSelectedId(); id > 0)
+            player.selectPreset (presetIndexOf (id));
     };
     addAndMakeVisible (presetBox);
 
@@ -267,6 +272,29 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     glide.slider.setTooltip ("Slide from one note to the next (Legato: only between connected notes)");
     glide.slider.setSkewFactorFromMidPoint (250.0);   // half a turn is 250 ms: short glides need the room
 
+    layerLabel.setColour (juce::Label::textColourId, SF2Look::dim);
+    layerLevelLabel.setColour (juce::Label::textColourId, SF2Look::dim);
+    layerModeBox.addItemList ({ "Off", "Layer", "Split" }, 1);
+    layerModeBox.setSelectedItemIndex (juce::roundToInt (p.parameters.getRawParameterValue ("layerMode")->load()), juce::dontSendNotification);
+    layerModeBox.setTooltip ("Layer: a second instrument plays every note too. Split: it plays the keys below the split.");
+    layerModeBox.onChange = [this] { refreshLayerControls(); };
+    layerPresetBox.setTextWhenNothingSelected ("Second instrument");
+    layerPresetBox.onChange = [this]
+    {
+        if (const int id = layerPresetBox.getSelectedId(); id > 0)
+            player.selectLayerPreset (presetIndexOf (id));
+    };
+    splitSlider.setTooltip ("Split: keys below this one play the second instrument");
+    splitSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 44, 22);
+    splitSlider.setIncDecButtonsMode (juce::Slider::incDecButtonsDraggable_Vertical);
+    splitSlider.onValueChange = [this] { refreshLayerControls(); };
+    layerLevelSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 64, 20);
+    layerLevelSlider.setTextValueSuffix (" dB");
+    layerLevelSlider.setColour (juce::Slider::textBoxOutlineColourId, SF2Look::line);
+    layerLevelSlider.setTooltip ("The second instrument's level");
+    for (auto* c : std::initializer_list<juce::Component*> { &layerLabel, &layerModeBox, &layerPresetBox, &splitSlider, &layerLevelLabel, &layerLevelSlider })
+        addAndMakeVisible (c);
+
     fillEffectPresets();
     for (auto* box : { &reverbPresets, &chorusPresets })
     {
@@ -302,9 +330,10 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     refresh();
     startTimerHz (20);
     setResizable (true, true);
-    setResizeLimits (620, 570, 1600, 1200);
+    setResizeLimits (620, 606, 1600, 1200);
     if (getHeight() == 0)
-        setSize (620, 592);
+        setSize (620, 628);
+    refreshLayerControls();
 }
 
 SF2PlayerEditor::~SF2PlayerEditor()
@@ -426,9 +455,9 @@ void SF2PlayerEditor::refresh()
         const bool first = getHeight() == 0;
         infoLabel.setVisible (showInfo);
         if (first)
-            setSize (620, showInfo ? 592 : 570);
+            setSize (620, showInfo ? 628 : 606);
         else
-            setSize (getWidth(), juce::jmax (570, getHeight() + (showInfo ? 22 : -22)));
+            setSize (getWidth(), juce::jmax (606, getHeight() + (showInfo ? 22 : -22)));
     }
 
     const int index = player.selectedPreset();
@@ -491,11 +520,14 @@ static juce::String presetLabel (const SF2PlayerProcessor::Preset& p)
 // A General MIDI collection (most of bank 0 filled) is listed by family, its variation banks
 // beside their originals; any other font under a heading per bank. The search matches names
 // and family names ("brass", "flutes").
-void SF2PlayerEditor::fillPresetBox()
+// Fills `box` with the instruments: favorites first (copies, ids from favouriteIdBase), then a
+// General MIDI collection (most of bank 0 filled) by family, its variation banks beside their
+// originals; any other font under a heading per bank. The query matches names and family names
+// ("brass", "flutes"). Returns how many instruments it lists, favorites not counted twice.
+int SF2PlayerEditor::addInstruments (juce::ComboBox& box, const juce::String& query) const
 {
     const auto presets = player.presets();
-    const auto query = searchBox.getText().trim();
-    presetBox.clear (juce::dontSendNotification);
+    box.clear (juce::dontSendNotification);
 
     const auto bankZero = std::count_if (presets.begin(), presets.end(), [] (const auto& p) { return p.bank == 0; });
     const bool byFamily = bankZero >= 64;
@@ -509,9 +541,6 @@ void SF2PlayerEditor::fillPresetBox()
             return std::tuple (familyOf (x), x.number, x.bank) < std::tuple (familyOf (y), y.number, y.bank);
         });
 
-    int lastGroup = -1, shown = 0;
-
-    // Favorites first, as copies with their own ids (the same instrument stays in its family too).
     bool favouritesHeading = false;
     for (const auto i : order)
     {
@@ -519,10 +548,11 @@ void SF2PlayerEditor::fillPresetBox()
         if (! isFavourite ((int) i) || (query.isNotEmpty() && ! p.name.containsIgnoreCase (query)))
             continue;
         if (! favouritesHeading)
-            presetBox.addSectionHeading (juce::String::fromUTF8 ("\xe2\x98\x85 Favorites")), favouritesHeading = true;
-        presetBox.addItem (presetLabel (p), favouriteIdBase + (int) i + 1);
+            box.addSectionHeading (juce::String::fromUTF8 ("\xe2\x98\x85 Favorites")), favouritesHeading = true;
+        box.addItem (presetLabel (p), favouriteIdBase + (int) i + 1);
     }
 
+    int lastGroup = -1, shown = 0;
     for (const auto i : order)
     {
         const auto& p = presets[i];
@@ -533,12 +563,19 @@ void SF2PlayerEditor::fillPresetBox()
             continue;
         if (group != lastGroup)
         {
-            presetBox.addSectionHeading (heading);
+            box.addSectionHeading (heading);
             lastGroup = group;
         }
-        presetBox.addItem (presetLabel (p), (int) i + 1);
+        box.addItem (presetLabel (p), (int) i + 1);
         ++shown;
     }
+    return shown;
+}
+
+void SF2PlayerEditor::fillPresetBox()
+{
+    const auto presets = player.presets();
+    const int shown = addInstruments (presetBox, searchBox.getText().trim());
 
     presetBox.setSelectedId (player.selectedPreset() + 1, juce::dontSendNotification);
     if (presetBox.getSelectedId() == 0 && ! presets.empty())   // the current one is filtered out
@@ -549,6 +586,9 @@ void SF2PlayerEditor::fillPresetBox()
     previousButton.setEnabled (shown > 1);
     nextButton.setEnabled (shown > 1);
     refreshFavouriteButton();
+
+    addInstruments (layerPresetBox, {});
+    layerPresetBox.setSelectedId (player.selectedLayerPreset() + 1, juce::dontSendNotification);
 }
 
 juce::String SF2PlayerEditor::favouriteKey (int presetIndex) const
@@ -682,6 +722,19 @@ void SF2PlayerEditor::preview()
     previewNote = (60 >= p.lowKey && 60 <= p.highKey) ? 60 : (p.lowKey + p.highKey) / 2;
     player.keyboardState.noteOn (1, previewNote, 0.8f);
     previewTicks = 14;   // 20 Hz timer: 0.7 s
+}
+
+// The layer's controls fade when it's off; the split key only matters in Split; the keyboard
+// tints the keys the second instrument plays.
+void SF2PlayerEditor::refreshLayerControls()
+{
+    const int mode = layerModeBox.getSelectedItemIndex();   // 0 off, 1 layer, 2 split
+    layerPresetBox.setAlpha (mode > 0 ? 1.0f : 0.4f);
+    layerLevelSlider.setAlpha (mode > 0 ? 1.0f : 0.4f);
+    layerLevelLabel.setAlpha (mode > 0 ? 1.0f : 0.4f);
+    splitSlider.setAlpha (mode == 2 ? 1.0f : 0.4f);
+    keyboard.splitKey = mode == 2 ? juce::roundToInt (splitSlider.getValue()) : -1;
+    keyboard.repaint();
 }
 
 void SF2PlayerEditor::changeListenerCallback (juce::ChangeBroadcaster*)
@@ -826,6 +879,18 @@ void SF2PlayerEditor::resized()
     gainSlider.setBounds (row);
     toneLabel.setBounds (toneRow.removeFromLeft (40));
     toneSlider.setBounds (toneRow);
+
+    area.removeFromTop (10);
+    row = area.removeFromTop (26);
+    layerLabel.setBounds (row.removeFromLeft (44));
+    layerModeBox.setBounds (row.removeFromLeft (84));
+    row.removeFromLeft (6);
+    layerLevelSlider.setBounds (row.removeFromRight (140));
+    layerLevelLabel.setBounds (row.removeFromRight (40));
+    row.removeFromRight (6);
+    splitSlider.setBounds (row.removeFromRight (100));
+    row.removeFromRight (6);
+    layerPresetBox.setBounds (row);
 
     area.removeFromTop (12);
     auto panels = area.removeFromTop (118);
