@@ -3,7 +3,7 @@
 An AU / VST3 instrument (plus a standalone app) that plays SoundFonts (.sf2 and .sf3) through
 FluidSynth, the reference SoundFont player, made for Ableton Live on Apple silicon. At its
 defaults it plays exactly what FluidSynth plays (the test suite checks it bit for bit); every
-control on top starts neutral. How to use it: DOCS.md. Versions: CHANGELOG.md.
+control on top starts neutral. How to use it: DOCS.md. Versions: CHANGELOG.md. Credits and licenses: CREDITS.md.
 
 ## Tech stack
 
@@ -58,7 +58,7 @@ auval -v aumu Sf2p Mrgt
 | `Tests/PluginTests.cpp` | the test suite (what `ctest` runs) |
 | `Tests/TailTest.cpp` | tools: render a note to WAV, CPU per block, list sends, snapshot the editor |
 | `Tests/RenderTest.cpp` | plays a note offline and prints the presets with key ranges |
-| `Tests/test.sf2` | a small piano for the tests (from TinySoundFont's repository) |
+| `Tests/fonts/` | Vintage Dreams Waves .sf2 and .sf3 (Ian Wilson, freeware, unaltered, with its notice) for the tests |
 | `fluidsynth-fx-bypass.patch` | every change to FluidSynth (see below) |
 | `DOCS.md`, `CHANGELOG.md`, `CLAUDE.md` | user guide, versions, notes for Claude sessions |
 
@@ -151,6 +151,7 @@ checks that collection (195 instruments, 125 with reverb sends, 47 with chorus).
 
 ## License
 
-FluidSynth is LGPL-2.1, linked statically with the changes in fluidsynth-fx-bypass.patch;
-libogg and libvorbis are BSD-style. Fine for personal use; distributing the plugin would need
-FluidSynth's source and a way to relink against another build.
+Okami SF2 Player's own code is AGPLv3 (`LICENSE`). FluidSynth is LGPL-2.1, linked statically
+with the changes in fluidsynth-fx-bypass.patch; the build steps above rebuild it from source,
+so it can be replaced as the LGPL requires. libogg and libvorbis are BSD. Every project used,
+and the HQ collection's status, are in CREDITS.md.

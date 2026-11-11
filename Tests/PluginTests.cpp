@@ -1,10 +1,11 @@
 // The plugin's tests: each check renders through the real processor and fails the run
-// (exit code 1) when a result is off. `ctest` runs it with Tests/test.sf2; with the HQ
+// (exit code 1) when a result is off. `ctest` runs it with Tests/fonts; with the HQ
 // Orchestral collection in ~/Downloads it also checks that collection and the CPU use.
 #include "../Source/PluginProcessor.h"
 #include "../Source/SoundFontInfo.h"
 #include <fluidsynth.h>
 #include <juce_events/juce_events.h>
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -13,6 +14,7 @@
 namespace
 {
 constexpr double rate = 48000.0;
+constexpr int testPreset = 2;   // Vintage Dreams Waves: "Simple Square Floot"
 constexpr int block = 256;
 int failures = 0, checks = 0;
 
@@ -28,7 +30,7 @@ juce::String db (double v) { return juce::String (v > 0 ? 20 * std::log10 (v) : 
 struct Player
 {
     SF2PlayerProcessor p;
-    explicit Player (const juce::File& sf2, int preset = 0, bool effects = false)
+    explicit Player (const juce::File& sf2, int preset = testPreset, bool effects = false)
     {
         auto layout = p.getBusesLayout();
         p.setBusesLayout (layout);
@@ -81,19 +83,30 @@ double rms (const std::vector<float>& x, double from, double to)
     return b > a ? std::sqrt (sum / (double) (b - a)) : 0.0;
 }
 
-// The fundamental between `from` and `to` seconds, by autocorrelation (50 Hz to 2 kHz).
+// The fundamental between `from` and `to` seconds, by autocorrelation (50 Hz to 2 kHz): the
+// first peak within 10 % of the highest, so a multiple of the period isn't taken for it.
 double pitch (const std::vector<float>& x, double from, double to, double sr = rate)
 {
     const size_t a = (size_t) (from * sr), n = (size_t) ((to - from) * sr);
-    double best = 0; int bestLag = 0;
-    for (int lag = (int) (sr / 2000); lag <= (int) (sr / 50); ++lag)
+    const int minLag = (int) (sr / 2000), maxLag = (int) (sr / 50);
+    std::vector<double> r ((size_t) maxLag + 2, 0.0);
+    for (int lag = minLag; lag <= maxLag + 1; ++lag)
     {
         double sum = 0;
         for (size_t i = 0; i + (size_t) lag < n; ++i) sum += (double) x[a + i] * x[a + i + (size_t) lag];
-        sum /= (double) (n - (size_t) lag);
-        if (sum > best * 1.02) best = sum, bestLag = lag;   // the first strong peak, not a later multiple
+        r[(size_t) lag] = sum / (double) (n - (size_t) lag);
     }
-    return bestLag > 0 ? sr / bestLag : 0.0;
+    const double best = *std::max_element (r.begin() + minLag, r.end());
+    for (int lag = minLag + 1; lag <= maxLag; ++lag)
+        if (r[(size_t) lag] >= 0.9 * best && r[(size_t) lag] >= r[(size_t) lag - 1] && r[(size_t) lag] >= r[(size_t) lag + 1])
+        {
+            // Parabolic interpolation around the peak for a fractional lag.
+            const double l = r[(size_t) lag - 1], c = r[(size_t) lag], h = r[(size_t) lag + 1];
+            const double denominator = l - 2 * c + h;
+            const double shift = std::abs (denominator) > 1e-12 ? 0.5 * (l - h) / denominator : 0.0;
+            return sr / ((double) lag + shift);
+        }
+    return 0.0;
 }
 
 double cents (double f, double reference) { return 1200.0 * std::log2 (f / reference); }
@@ -151,12 +164,16 @@ void fidelityTests (const juce::File& sf2, int preset, int key, const juce::Stri
 int main()
 {
     juce::ScopedJuceInitialiser_GUI gui;
-    const auto testFont = juce::File (__FILE__).getSiblingFile ("test.sf2");
+    // Vintage Dreams Waves (Ian Wilson, freeware, redistributed unaltered: Tests/fonts), the font
+    // FluidSynth tests with; its "Simple Square Floot" is a plain tone, easy to measure.
+    const auto fonts = juce::File (__FILE__).getSiblingFile ("fonts");
+    const auto testFont = fonts.getChildFile ("VintageDreamsWaves-v2.sf2");
     const auto hq = juce::File::getSpecialLocation (juce::File::userHomeDirectory)
                         .getChildFile ("Downloads/HQ_Orchestral_Soundfont_Collection_v3.0.sf2");
 
     // ---- Fidelity: nothing added at the defaults.
-    fidelityTests (testFont, 0, 60, "test.sf2 piano");
+    fidelityTests (testFont, testPreset, 60, "Vintage Dreams square");
+    fidelityTests (testFont, 0, 72, "Vintage Dreams FM bells");
     if (hq.existsAsFile())
     {
         fidelityTests (hq, 40, 67, "HQ Violin");
@@ -272,6 +289,7 @@ int main()
         p.setRateAndBufferSizeDetails (sr, block);
         p.prepareToPlay (sr, block);
         p.loadSoundFont (testFont);
+        p.selectPreset (testPreset);
         juce::AudioBuffer<float> buffer (6, block);
         std::vector<float> out;
         for (int b = 0; b < (int) (1.5 * sr / block); ++b)
@@ -292,6 +310,8 @@ int main()
     // ---- Layer and split (the test font has one instrument: it layers with itself).
     {
         Player single (testFont), layered (testFont), quieter (testFont);
+        layered.p.selectLayerPreset (testPreset);
+        quieter.p.selectLayerPreset (testPreset);
         layered.set ("layerMode", 1.0f);
         quieter.set ("layerMode", 1.0f);
         quieter.set ("layerLevel", -6.0f);
@@ -303,11 +323,13 @@ int main()
                 juce::String (20 * std::log10 (lower / one), 2) + " dB over one");
 
         Player split (testFont);
+        split.p.selectLayerPreset (testPreset);
         split.set ("layerMode", 2.0f);
         split.set ("splitKey", 60.0f);
         split.render (0.3, [] (int b, juce::MidiBuffer& m) { if (b == 0) m.addEvent (juce::MidiMessage::noteOn (1, 48, (juce::uint8) 100), 0); });
         const int below = split.p.activeVoices.load();
         Player above (testFont);
+        above.p.selectLayerPreset (testPreset);
         above.set ("layerMode", 2.0f);
         above.set ("splitKey", 60.0f);
         above.render (0.3, [] (int b, juce::MidiBuffer& m) { if (b == 0) m.addEvent (juce::MidiMessage::noteOn (1, 72, (juce::uint8) 100), 0); });
@@ -419,8 +441,7 @@ int main()
 
     // ---- SF3: the same font compressed plays the same instruments, close to the uncompressed one.
     {
-        const auto fonts = juce::File (__FILE__).getParentDirectory().getSiblingFile ("ThirdParty/fluidsynth/sf2");
-        const auto sf2 = fonts.getChildFile ("VintageDreamsWaves-v2.sf2"), sf3 = fonts.getChildFile ("VintageDreamsWaves-v2.sf3");
+        const auto sf2 = testFont, sf3 = fonts.getChildFile ("VintageDreamsWaves-v2.sf3");
         if (sf2.existsAsFile() && sf3.existsAsFile())
         {
             Player a (sf2), b (sf3);
