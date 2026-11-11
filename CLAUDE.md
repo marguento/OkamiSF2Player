@@ -1,8 +1,7 @@
 # CLAUDE.md — Okami SF2 Player
 
 A JUCE AU/VST3 instrument that plays SoundFonts through FluidSynth, for Ableton Live on the
-user's M4 Mac. README.md has the build, structure, architecture and settings; DOCS.md the user guide
-(Spanish); CHANGELOG.md the versions.
+user's M4 Mac. README.md has the build, structure, architecture and settings; DOCS.md the user guide; CHANGELOG.md the versions.
 Private repo https://github.com/marguento/OkamiSF2Player (`main`, created Nov 10, 2026). It stays private (PLAYBOOK security checklist 4).
 
 ## The rule that matters most
@@ -19,6 +18,9 @@ Private repo https://github.com/marguento/OkamiSF2Player (`main`, created Nov 10
   sinc (`HIGHEST`): too slow for real time, don't use it.
 
 ## Work loop
+
+- Everything written in the repo is in English by default (docs, comments, commits, UI);
+  another language only when the user asks for it (PLAYBOOK gotcha 15b).
 
 - Build: `cmake --build build` (also installs the AU and VST3). Then
   `./build/PluginTests_artefacts/Release/PluginTests` (or `ctest --test-dir build`) and

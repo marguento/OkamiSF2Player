@@ -3,7 +3,7 @@
 An AU / VST3 instrument (plus a standalone app) that plays SoundFonts (.sf2 and .sf3) through
 FluidSynth, the reference SoundFont player, made for Ableton Live on Apple silicon. At its
 defaults it plays exactly what FluidSynth plays (the test suite checks it bit for bit); every
-control on top starts neutral. How to use it: DOCS.md (Spanish). Versions: CHANGELOG.md.
+control on top starts neutral. How to use it: DOCS.md. Versions: CHANGELOG.md.
 
 ## Tech stack
 

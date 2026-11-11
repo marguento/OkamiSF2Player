@@ -1,126 +1,124 @@
-# Okami SF2 Player — Guía de uso
+# Okami SF2 Player — User Guide
 
-Un instrumento para Ableton Live que toca SoundFonts (`.sf2` y `.sf3`). Con todo en sus
-valores de fábrica suena exactamente como el SoundFont original. Cada control empieza en una
-posición que no cambia nada.
+An instrument for Ableton Live that plays SoundFonts (`.sf2` and `.sf3`). With everything at
+its default it sounds exactly like the original SoundFont: every control starts at a position
+that changes nothing.
 
-## Ponerlo en Ableton
+## Putting it in Ableton
 
-1. En el navegador de Ableton: **Plug-Ins → Marguento → Okami SF2 Player** (AU o VST3).
-   Arrástralo a una pista MIDI.
-2. Elige un SoundFont en el menú de arriba o arrastra un `.sf2` / `.sf3` a la ventana.
-3. Elige un instrumento y toca.
+1. In Ableton's browser: **Plug-Ins → Marguento → Okami SF2 Player** (AU or VST3). Drag it to
+   a MIDI track.
+2. Choose a SoundFont in the top menu, or drag an `.sf2` / `.sf3` onto the window.
+3. Choose an instrument and play.
 
-Si no suena, revisa la velocidad de las notas del clip. Con velocidad 1–15 casi no se oye, y
-el plugin lo avisa con una línea roja.
+If nothing sounds, check the notes' velocity in the clip: at 1-15 they're nearly silent, and
+the plugin says so in a red line.
 
-## Archivo
+## File
 
-- **Menú de archivo:** los últimos 12 SoundFonts abiertos, y al final "Open SoundFont...". El
-  abierto muestra cuántos instrumentos tiene: `HQ_Orchestral... (195 instruments)`.
-- **Arrastrar y soltar** un `.sf2` o `.sf3` lo abre.
-- **Archivo movido o renombrado:** el proyecto lo sigue recordando y el plugin dice en rojo
-  cuál no encuentra. Vuelve a elegirlo y regresa todo.
-- **Memoria:** solo se cargan las muestras de los instrumentos elegidos. Una colección de
-  500 MB ocupa decenas de MB por pista. Al cambiar de instrumento puede haber un instante de
-  silencio mientras se leen sus muestras.
+- **File menu:** the last 12 SoundFonts opened, then "Open SoundFont...". The open one shows
+  how many instruments it holds: `HQ_Orchestral... (195 instruments)`.
+- **Drag and drop** an `.sf2` or `.sf3` to open it.
+- **A moved or renamed file:** the project still remembers it, and the plugin names the one it
+  can't find in red. Choose it again and everything comes back.
+- **Memory:** only the chosen instruments' samples are loaded. A 500 MB collection takes tens
+  of MB per track. Changing instruments can leave a moment of silence while its samples load.
 
-## Instrumentos
+## Instruments
 
-- **Lista por familias** cuando el SoundFont sigue el estándar General MIDI: Piano,
-  Chromatic Percussion, Organ, Guitar, Bass, Strings, Ensemble & Choir, Brass, Reed
-  (Sax, Oboe, Clarinet), Pipe (Flutes), Synth Lead, Synth Pad, Synth Effects, Ethnic,
-  Percussive, Sound Effects y Drum Kits. Los demás SoundFonts se agrupan por banco.
-- **El número en gris** después del nombre es su lugar MIDI: `[040]` es el programa 40 del
-  banco 0, y `[1:025]` es el programa 25 del banco 1 (las variaciones). Sirve para cambiar de
-  instrumento con un Program Change desde un clip.
-- **Buscar:** escribe parte del nombre ("flute") o una familia ("brass"). Enter elige el
-  primero; Esc borra la búsqueda.
-- **★ Favoritos:** la estrella marca el instrumento elegido. Los favoritos salen arriba de la
-  lista, en todas tus pistas y proyectos. Otro clic lo quita.
-- **▶** toca una nota corta del instrumento (Do central, o el centro de su rango).
-- **`<` `>`** pasan al instrumento anterior o siguiente de la lista.
-- **El teclado** ilumina las notas que llegan, toca al hacer clic (más abajo en la tecla =
-  más fuerte) y oscurece las teclas que el instrumento no tiene.
+- **Listed by family** when the SoundFont follows the General MIDI standard: Piano, Chromatic
+  Percussion, Organ, Guitar, Bass, Strings, Ensemble & Choir, Brass, Reed (Sax, Oboe,
+  Clarinet), Pipe (Flutes), Synth Lead, Synth Pad, Synth Effects, Ethnic, Percussive, Sound
+  Effects and Drum Kits. Other SoundFonts are grouped by bank.
+- **The dim number** after the name is its MIDI slot: `[040]` is program 40 of bank 0, and
+  `[1:025]` program 25 of bank 1 (the variations). A Program Change in a clip with that number
+  switches to it.
+- **Search:** type part of a name ("flute") or a family ("brass"). Return picks the first
+  match; Esc clears the search.
+- **★ Favorites:** the star marks the chosen instrument. Favorites appear at the top of the
+  list, in every track and project. Click again to remove it.
+- **▶** plays a short note of the instrument (middle C, or the middle of its range).
+- **`<` `>`** step to the previous or next instrument in the list.
+- **The keyboard** lights the notes that arrive, plays on click (lower on a key = louder) and
+  dims the keys the instrument doesn't have.
 
-## Gain y Tone
+## Gain and Tone
 
-- **Gain:** volumen de salida, de −24 a +12 dB. 0 dB es el original.
-- **Tone:** corta los agudos, para el siseo de grabaciones viejas (por ejemplo el roce del
-  arco en el violín). Hasta la derecha está **Off**. Entre 5 y 8 kHz suaviza el siseo sin
-  apagar el sonido; abajo de 3 kHz ya suena opaco.
+- **Gain:** output level, -24 to +12 dB. 0 dB is the original.
+- **Tone:** cuts the highs, for the hiss of old recordings (a violin's bow noise, for example).
+  All the way right is **Off**. 5-8 kHz softens hiss without dulling the sound; below 3 kHz it
+  sounds muffled.
 
-## Layer (segundo instrumento)
+## Layer (a second instrument)
 
-- **Off:** solo suena el instrumento principal.
-- **Layer:** un segundo instrumento suena en cada nota junto al principal (por ejemplo
-  cuerdas + piano).
-- **Split:** las teclas abajo de la nota de split tocan el segundo instrumento y el resto el
-  principal (por ejemplo bajo a la izquierda, flauta a la derecha). El teclado pinta en azul
-  la zona del segundo instrumento.
-- **Nota de split:** de C#-1 a G9, C4 por defecto. Se cambia con − / + o arrastrando.
-- **Level:** volumen del segundo instrumento, de −30 a 0 dB.
-- El segundo instrumento sigue los pedales, el pitch bend y los controladores del clip.
+- **Off:** only the main instrument plays.
+- **Layer:** a second instrument plays every note along with the main one (strings + piano,
+  for example).
+- **Split:** keys below the split note play the second instrument, the rest the main one (bass
+  on the left, flute on the right, for example). The keyboard tints the second instrument's
+  zone blue.
+- **Split note:** C#-1 to G9, C4 by default. Change it with − / + or by dragging.
+- **Level:** the second instrument's volume, -30 to 0 dB.
+- The second instrument follows the clip's pedals, pitch bend and controllers.
 
-## Reverb y Chorus
+## Reverb and Chorus
 
-Cada SoundFont dice **cuánto** manda cada instrumento a la reverb y al chorus; el plugin pone
-**una** reverb y **un** chorus compartidos (como una mesa de mezcla). El encabezado de cada
-panel dice lo que manda el instrumento elegido: `sends 10 %` o `sends nothing`.
+Each SoundFont says **how much** each instrument sends to the reverb and the chorus; the
+plugin provides **one** shared reverb and **one** shared chorus (like a mixing desk). Each
+panel's header says what the chosen instrument sends: `sends 10 %` or `sends nothing`.
 
-- **✓** prende o apaga el efecto.
-- **Presets de reverb:** Default (el de FluidSynth), Room, Studio, Hall, Church, Cathedral.
-  **Presets de chorus:** Default, Subtle, Wide, Ensemble. Mueven las perillas; si las cambias
-  a mano dice "Custom".
-- **Reverb:** Level 0–100 %, Room (tamaño de la sala), Damping (cuánto se apagan los agudos de
-  la cola), Width (amplitud estéreo).
-- **Chorus:** Level 0–200 %, Rate 0.1–5 Hz, Depth 0–20 ms, Voices 1–10.
-- **Instrumentos sin envío:** muchos no mandan nada (en la colección HQ, las cuerdas). Para
-  darles reverb, sube el **CC91** en el clip (hasta +20 %; el **CC93** hace lo mismo con el
-  chorus) o pon una reverb de Ableton en la pista.
+- **✓** turns the effect on or off.
+- **Reverb presets:** Default (FluidSynth's), Room, Studio, Hall, Church, Cathedral.
+  **Chorus presets:** Default, Subtle, Wide, Ensemble. They move the knobs; change one by hand
+  and the menu says "Custom".
+- **Reverb:** Level 0-100 %, Room (size), Damping (how fast the tail's highs fade), Width
+  (stereo spread).
+- **Chorus:** Level 0-200 %, Rate 0.1-5 Hz, Depth 0-20 ms, Voices 1-10.
+- **Instruments that send nothing:** many don't (in the HQ collection, the strings). To give
+  them reverb, raise **CC91** in the clip (up to +20 %; **CC93** does the same for chorus), or
+  put an Ableton reverb on the track.
 
 ### Effects to separate outputs
 
-Con esta casilla, la reverb y el chorus del plugin se apagan y lo que cada instrumento manda
-sale **seco** por dos salidas aparte, "Reverb Send" y "Chorus Send", con las proporciones del
-SoundFont. La salida principal queda sin efectos. En Ableton:
+With this box checked, the plugin's reverb and chorus switch off and what each instrument
+sends leaves **dry** on two outputs of their own, "Reverb Send" and "Chorus Send", in the
+SoundFont's proportions. The main output is dry. In Ableton:
 
-1. Crea una pista de audio.
-2. En **Audio From** elige la pista del plugin y luego **Reverb Send**.
-3. Pon **Monitor** en **In** y agrega una reverb al 100 % wet.
+1. Create an audio track.
+2. In **Audio From**, choose the plugin's track, then **Reverb Send**.
+3. Set **Monitor** to **In** and add a reverb at 100 % wet.
 
-Varias pistas pueden mandar a esa misma pista y compartir una reverb.
+Several tracks can send to that track and share one reverb.
 
 ## PLAY
 
-En sus valores de fábrica (x1, Linear, 0, Poly, Off) no cambian nada.
+At their defaults (x1, Linear, 0, Poly, Off) they change nothing.
 
-- **Attack:** cuánto tarda en entrar la nota, de x0.25 a x4 del tiempo original.
-- **Release:** cuánto tarda en apagarse al soltar la tecla, de x0.25 a x4. Más corto también
-  acorta colas con ruido.
-- **Velocity:** de −100 a +100. Positivo hace más fuertes las notas suaves; negativo, más
-  suaves. **Linear** = como se tocan.
-- **Transpose:** de −24 a +24 semitonos. Usa las muestras de la nota resultante, como si
-  tocaras otra tecla.
-- **Fine:** afinación fina de −100 a +100 cents.
-- **Bend:** rango del pitch bend, de ±1 a ±24 semitonos (±2 es el estándar).
-- **Mode:** **Poly** (normal), **Mono** (una nota a la vez; cada nota empieza de nuevo),
-  **Legato** (una nota a la vez; si las notas se tocan unidas, la siguiente no vuelve a
-  atacar, ideal para violín, flauta o sax).
-- **Glide:** deslizamiento de una nota a la siguiente, de 0 (Off) a 2000 ms. En Legato solo
-  entre notas unidas.
-- **Rueda de modulación:** agrega vibrato, como define el estándar SoundFont.
+- **Attack:** how long a note takes to come in, x0.25 to x4 of the original time.
+- **Release:** how long it takes to fade after the key is let go, x0.25 to x4. Shorter also
+  cuts noisy tails.
+- **Velocity:** -100 to +100. Positive makes soft notes louder; negative, softer. **Linear** =
+  as played.
+- **Transpose:** -24 to +24 semitones. It uses the samples of the resulting note, as if you
+  played another key.
+- **Fine:** fine tuning, -100 to +100 cents.
+- **Bend:** the pitch bend range, ±1 to ±24 semitones (±2 is the standard).
+- **Mode:** **Poly** (normal), **Mono** (one note at a time; each note starts afresh),
+  **Legato** (one note at a time; when notes are played connected, the next doesn't attack
+  again: for violin, flute or sax lines).
+- **Glide:** sliding from one note to the next, 0 (Off) to 2000 ms. In Legato, only between
+  connected notes.
+- **Mod wheel:** adds vibrato, as the SoundFont standard defines.
 
-## Guardado
+## Saving
 
-El proyecto de Ableton guarda el archivo, los dos instrumentos y todas las perillas. Al
-cambiar de archivo o de instrumento, Ableton marca el proyecto como modificado y pregunta si
-guardar al cerrarlo. Los favoritos y la lista de archivos recientes se guardan en el plugin,
-para todos los proyectos.
+The Ableton project keeps the file, both instruments and every knob. Changing the file or an
+instrument marks the project changed, so Ableton asks to save on closing. Favorites and the
+recent files list are kept by the plugin, for every project.
 
-## Límites
+## Limits
 
-- Frecuencias de muestreo de 8 a 192 kHz.
-- Hasta 256 voces a la vez (los instrumentos orquestales usan 4–6 voces por nota).
-- Los `.sf3` están comprimidos con pérdida: suenan muy parecido a su `.sf2`, no idénticos.
-- La ventana se puede agrandar desde la esquina inferior derecha.
+- Sample rates from 8 to 192 kHz.
+- Up to 256 voices at once (orchestral instruments use 4-6 voices per note).
+- `.sf3` files are lossily compressed: they sound very close to their `.sf2`, not identical.
+- The window can be enlarged from its bottom-right corner.
