@@ -22,6 +22,7 @@ release bumps it and adds an entry here: one line per change a player would noti
   after choosing them. A moved file is named, not forgotten.
 - Works at 44.1 to 192 kHz (it played an octave low above 96 kHz).
 - The window can be resized.
+- .sf3 (compressed) SoundFonts open too.
 
 ## 1.0.0 — Nov 2026
 

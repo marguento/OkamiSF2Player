@@ -1,93 +1,156 @@
 # Okami SF2 Player
 
-An AU / VST3 instrument (plus a standalone app) that plays any SoundFont (.sf2) through
-FluidSynth, the reference SF2 player. At its defaults it plays exactly what FluidSynth plays
-(the test suite checks it bit for bit); every control on top starts neutral. Native arm64,
-JUCE 8.0.15, FluidSynth 2.6.2 (patched, see below). Version and changes: CHANGELOG.md.
+An AU / VST3 instrument (plus a standalone app) that plays SoundFonts (.sf2 and .sf3) through
+FluidSynth, the reference SoundFont player, made for Ableton Live on Apple silicon. At its
+defaults it plays exactly what FluidSynth plays (the test suite checks it bit for bit); every
+control on top starts neutral. How to use it: DOCS.md (Spanish). Versions: CHANGELOG.md.
 
-## Build
+## Tech stack
+
+| Part | What | Notes |
+|---|---|---|
+| Plugin framework | JUCE 8.0.15 | AU, VST3, Standalone; CMake + Ninja, no Xcode project |
+| Synth engine | FluidSynth 2.6.2, static, float | patched: `fluidsynth-fx-bypass.patch` |
+| SF3 decoding | libvorbisfile / libvorbis 1.3.7, libogg 1.3.5 | static, from xiph.org |
+| Target | macOS 13+, arm64 | built and used on an M4 with macOS 27 |
+| Identity | manufacturer `Mrgt`, plugin `Sf2p`, AU `aumu` | never change: projects find the plugin by them |
+
+## Getting started
 
 ```sh
 brew install cmake ninja
+# ThirdParty/ holds JUCE, fluidsynth, ogg and vorbis checkouts (not in git; clone them there).
 
-# FluidSynth, once: a static library without audio drivers, in float precision, with
-# fluidsynth-fx-bypass.patch applied (send outputs, a tabulated sinc kernel, 192 kHz).
-cd ThirdParty/fluidsynth && git apply ../../fluidsynth-fx-bypass.patch && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -Denable-floats=ON \
-  -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 \
-  -DCMAKE_INSTALL_PREFIX=../fluidsynth-install -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
-  -DBUILD_SHARED_LIBS=OFF -Denable-framework=OFF -Denable-coreaudio=OFF -Denable-coremidi=OFF \
-  -Denable-aufile=OFF -Denable-dbus=OFF -Denable-ipv6=OFF -Denable-jack=OFF -Denable-ladspa=OFF \
-  -Denable-libsndfile=OFF -Denable-midishare=OFF -Denable-network=OFF -Denable-oss=OFF \
-  -Denable-sdl3=OFF -Denable-pulseaudio=OFF -Denable-pipewire=OFF -Denable-readline=OFF \
-  -Denable-openmp=OFF -Denable-native-dls=OFF -Denable-signalsmith=OFF -Denable-alsa=OFF \
+# libogg and libvorbis, once (static, into ThirdParty/xiph-install):
+cd ThirdParty && I=$PWD/xiph-install
+for lib in ogg vorbis; do (cd $lib && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+  -DBUILD_SHARED_LIBS=OFF -DCMAKE_PREFIX_PATH=$I -DCMAKE_INSTALL_PREFIX=$I -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+  && cmake --build build && cmake --install build); done
+
+# FluidSynth, once: no audio drivers, float, the patch applied, SF3 through libvorbisfile:
+cd fluidsynth && git apply ../../fluidsynth-fx-bypass.patch && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -Denable-floats=ON -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 \
+  -DCMAKE_INSTALL_PREFIX=../fluidsynth-install -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DBUILD_SHARED_LIBS=OFF \
+  -DCMAKE_C_FLAGS="-DSF2PLAYER_VORBISFILE=1 -I$I/include" -DCMAKE_CXX_FLAGS="-DSF2PLAYER_VORBISFILE=1 -I$I/include" \
+  -DCMAKE_EXE_LINKER_FLAGS="$I/lib/libvorbisfile.a $I/lib/libvorbis.a $I/lib/libogg.a" \
+  -Denable-framework=OFF -Denable-coreaudio=OFF -Denable-coremidi=OFF -Denable-aufile=OFF -Denable-dbus=OFF \
+  -Denable-ipv6=OFF -Denable-jack=OFF -Denable-ladspa=OFF -Denable-libsndfile=OFF -Denable-midishare=OFF \
+  -Denable-network=OFF -Denable-oss=OFF -Denable-sdl3=OFF -Denable-pulseaudio=OFF -Denable-pipewire=OFF \
+  -Denable-readline=OFF -Denable-openmp=OFF -Denable-native-dls=OFF -Denable-signalsmith=OFF -Denable-alsa=OFF \
   -Denable-systemd=OFF -Denable-portaudio=OFF && cmake --build build && cmake --install build && cd ../..
 
+# The plugin (also installs the AU and VST3 into ~/Library/Audio/Plug-Ins):
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ctest --test-dir build --output-on-failure
+auval -v aumu Sf2p Mrgt
 ```
 
-The build copies the plugins to `~/Library/Audio/Plug-Ins/Components` (AU) and
-`~/Library/Audio/Plug-Ins/VST3`. Check the AU with `auval -v aumu Sf2p Mrgt`.
+## Project structure
+
+| File | What it holds |
+|---|---|
+| `CMakeLists.txt` | the plugin target, three console test targets, ctest, the version |
+| `Source/PluginProcessor.h/.cpp` | parameters, the FluidSynth engine (created, swapped under a lock), MIDI routing (transpose, velocity curve, layer/split), rendering into six channels, tone filter, gain, outputs, saved state |
+| `Source/PluginEditor.h/.cpp` | the look (`SF2Look`), the keyboard with ranges and the split tint, every control, instrument lists by family with favorites, effect presets, preview |
+| `Source/SoundFontInfo.h` | reads what FluidSynth doesn't expose from the file itself: name, author, comment, each preset's key range and reverb/chorus sends (bounded against hostile files) |
+| `Tests/PluginTests.cpp` | the test suite (what `ctest` runs) |
+| `Tests/TailTest.cpp` | tools: render a note to WAV, CPU per block, list sends, snapshot the editor |
+| `Tests/RenderTest.cpp` | plays a note offline and prints the presets with key ranges |
+| `Tests/test.sf2` | a small piano for the tests (from TinySoundFont's repository) |
+| `fluidsynth-fx-bypass.patch` | every change to FluidSynth (see below) |
+| `DOCS.md`, `CHANGELOG.md`, `CLAUDE.md` | user guide, versions, notes for Claude sessions |
+
+## Architecture
+
+- **One FluidSynth per plugin instance** (`Engine`: settings, synth, font id). Loading a file or
+  changing the sample rate builds a new one off the audio thread and swaps it in under a
+  `SpinLock`; the old one is freed outside the lock. The audio thread only *try*-locks: while
+  the message thread holds it (reading samples from disk), that block stays silent.
+- **Every FluidSynth call happens under that lock.** Settings reach FluidSynth from the audio
+  thread: `processBlock` compares the parameters with what it last applied
+  (`EffectSettings`, `PlaySettings`) and sends only changes.
+- **32 FluidSynth channels:** MIDI channels 1-16 play the instrument on 0-15, and the layer on
+  16-31. Note-offs go to both sides and use the note actually played (`playedNote`), so a
+  transpose or a layer change mid-note never leaves a note stuck.
+- **Six rendered channels per block** (`work`): main L/R, reverb L/R, chorus L/R, from
+  `fluid_synth_process`. Built-in effects: the effect channels are added to main. Send
+  outputs: FluidSynth hands out the raw sends (patch) and they go to buses 2 and 3.
+- **State ownership:** parameters live in the `AudioProcessorValueTreeState`; the file, the
+  instrument and the layer instrument are plain members saved with it; recent files and
+  favorites live in the editor's settings file (shared by every instance and project).
+
+## Key systems
+
+- **Fidelity.** Extra controls are FluidSynth's own mechanisms: SF2 generator offsets
+  (`fluid_synth_set_gen`, the same as NRPN: attack, release, fine tune, layer attenuation),
+  its legato/portamento/basic-channel modes, pitch-wheel sensitivity. Offsets are rounded so a
+  default adds exactly 0 (a knob's x1 was stored as 0.99999994 and moved the release once).
+- **Interpolation.** `FLUID_INTERP_HIGH`, FluidSynth's 17-point sinc, within -63 to -85 dB of
+  its 25-point one, closer to ideal than the 4th-order default (-43 dB). FluidSynth 2.6
+  computes its sinc's sines per sample; the patch tabulates the kernel (1024 phases, linear
+  between), about 10x faster: 64 string notes take about 10 % of a 128-sample block.
+- **The FluidSynth patch** (`fluidsynth-fx-bypass.patch`): `fluid_synth_set_fx_bypass` (raw
+  sends for the separate outputs), the tabulated sinc, a sample-rate cap of 192 kHz instead of
+  96 (it played an octave low above), and SF3 decoding through libvorbisfile without
+  libsndfile (checked against ffmpeg's decoder: within one 16-bit step, every sample exactly
+  as long as in the .sf2 original).
+- **Memory.** Dynamic sample loading: only the chosen instruments' samples are in RAM (a
+  522 MB collection costs a track tens of MB).
+- **Hostile files.** FluidSynth validates a file before our reader runs; our reader still
+  clamps every index to its chunk and bounds its total work. Tested with garbage, truncated
+  and crafted files.
+- **Host integration.** Choosing a file or an instrument calls
+  `updateHostDisplay (withNonParameterStateChanged)`, so Ableton asks to save. The instrument
+  is saved by bank:program, a missing file's path is kept and shown.
+
+## Settings reference
+
+Parameters (automatable, saved in the project; IDs with their version):
+
+| ID | Range | Default | Notes |
+|---|---|---|---|
+| `gain` | -24 to +12 dB | 0 | after the synth |
+| `tone` | 1 kHz to 20 kHz | 20 kHz = Off | 4-pole Butterworth low-pass |
+| `fsReverbOn` | bool | on | |
+| `fsReverbLevel`, `fsReverbRoom`, `fsReverbDamping`, `fsReverbWidth` | 0-1 | 0.7, 0.5, 0.2, 0.8 | FluidSynth's defaults |
+| `fsChorusOn` | bool | on | |
+| `fsChorusLevel` | 0-2 | 0.6 | |
+| `fsChorusRate` | 0.1-5 Hz | 0.2 | |
+| `fsChorusDepth` | 0-20 ms | 4.25 | |
+| `fsChorusVoices` | 1-10 | 3 | |
+| `sendOutputs` | bool | off | raw sends on the Reverb / Chorus Send outputs |
+| `attack`, `release` | x0.25 to x4 | x1 | envelope time multipliers (timecent offsets) |
+| `velocityCurve` | -100 to +100 | 0 = Linear | exponent 2^(-v/50) |
+| `transpose` | -24 to +24 st | 0 | on the note number |
+| `fineTune` | -100 to +100 ct | 0 | |
+| `bendRange` | 1-24 st | 2 | |
+| `playMode` | Poly / Mono / Legato | Poly | |
+| `glide` | 0-2000 ms | 0 = Off | portamento, linear time mode |
+| `layerMode` | Off / Layer / Split | Off | |
+| `splitKey` | 1-127 | 60 (C4) | keys below it play the layer in Split |
+| `layerLevel` | -30 to 0 dB | 0 | SF2 attenuation on channels 16-31 |
+
+Saved alongside the parameters: `sf2Path`, `preset`, `presetBank`, `presetNumber`,
+`layerBank`, `layerNumber` (state tag `SF2Player`).
+
+Settings file `~/Library/Application Support/SF2 Player/SF2 Player.settings`: `recentFiles`
+(last 12) and `favorites` (`<file name>|<bank>:<program>`, one per line).
 
 ## Tests
 
-`build/PluginTests_artefacts/Release/PluginTests` (what `ctest` runs) renders through the real
-processor and fails on any wrong result: bit-identical output to FluidSynth at the defaults,
-each PLAY control (by level and by measured pitch), layer and split, tone, send outputs, 44.1 /
-96 / 192 kHz, the saved state, hostile .sf2 files, and CPU (64 string notes under 30 % of a
-128-sample block). With `~/Downloads/HQ_Orchestral_Soundfont_Collection_v3.0.sf2` present it
-also checks that collection.
+`ctest` runs `PluginTests`: bit-identical output to FluidSynth at the defaults; each PLAY
+control measured (level, pitch by autocorrelation); layer and split; tone; send outputs; SF3;
+44.1 / 96 / 192 kHz in tune; saved state; hostile files; CPU under 30 % of a block for 64
+string notes. With `~/Downloads/HQ_Orchestral_Soundfont_Collection_v3.0.sf2` present it also
+checks that collection (195 instruments, 125 with reverb sends, 47 with chorus).
 
-`TailTest` has tools for looking into a sound: `<file> <preset> wav <out.wav> <key> [tone Hz]`
-renders one note, `<file> <preset> perf` prints CPU per block (`INTERP=4..7` picks the
-interpolation), `<file> sends` lists every preset's sends, `<file> <preset> snap <out.png>`
-saves a picture of the editor (`LAYER=2` for split) without touching the screen.
-
-## Use
-
-- **File:** the menu keeps the last 12 SoundFonts and shows how many instruments the open one
-  holds; dropping an .sf2 on the plugin loads it. A file that moved is named in red.
-- **Instruments:** a General MIDI collection (64+ presets in bank 0) is listed by family
-  (Piano, Strings, Brass, Pipe (Flutes)...): bank 0 by program number, variation banks by their
-  names. Each shows its number dimmer: `[040]`, or `[1:025]` for bank 1. The search matches
-  names and families. ★ marks a favorite (kept for every project, listed first); ▶ plays a
-  note; `<` `>` step through the list. Every MIDI channel plays the chosen instrument;
-  program change and bank select on a channel switch that channel.
-- **Only the chosen instruments' samples are in memory** (dynamic sample loading): a 500 MB
-  collection costs a track tens of MB. Choosing another reads its samples from disk; the
-  plugin stays silent for those blocks rather than make the audio thread wait.
-- **Gain** after the synth. **Tone** is a 24 dB/octave high cut, off at the right end, for the
-  hiss some recordings carry (the HQ violin's bow noise sits at 2-6 kHz: try 5 kHz).
-- **Layer:** Off, Layer (a second instrument plays every note) or Split (it plays the keys below
-  the split key, tinted on the keyboard), with its own level. It runs on FluidSynth channels
-  16-31 and follows the controllers, bends and pressure.
-- **Reverb and chorus:** FluidSynth's own, shared by every note, set by four knobs or a preset.
-  Each panel says how much the chosen instrument sends ("sends 10 %"); many send nothing
-  (the HQ collection's strings): raise CC91 / CC93 in the clip, up to +20 %.
-- **Effects to separate outputs:** the sends leave dry, in each instrument's own proportions, on
-  the "Reverb Send" and "Chorus Send" outputs, and the main output is dry. In Ableton: an audio
-  track with Audio From the plugin's track, then "Reverb Send", Monitor In, a reverb at 100 %
-  wet. Several tracks can feed it and share one reverb.
-- **PLAY:** Attack and Release multiply the envelope's times (x1 = the SoundFont's), Velocity
-  bends the response (Linear = as played), Transpose (semitones) and Fine (cents), Bend (the
-  pitch wheel's range, ±2 by default), Mode (Poly; Mono: one note per channel; Legato: one
-  note, connected notes don't restart) and Glide (ms). They are SF2 generator offsets, the
-  same as NRPN, rounded so the defaults add exactly nothing.
-- The mod wheel adds vibrato through the SoundFont's default modulator.
-- The keyboard lights the notes that arrive, plays on click (lower on a key = louder) and dims
-  the keys the instrument doesn't cover. A red line warns about notes at velocity 1-15.
-- The window can be resized.
-
-The project keeps the file, both instruments (by bank:program) and every knob. Choosing a file
-or an instrument marks the project changed (VST3), so Ableton asks to save.
-
-## Not yet
-
-- SF3 (compressed) files: FluidSynth reads them through libsndfile + libvorbis, not built yet.
+`TailTest` tools: `<file> <preset> wav <out.wav> <key> [tone Hz]`, `<file> <preset> perf`
+(`INTERP=4..7`), `<file> sends`, `<file> <preset> snap <out.png> [sends]` (`LAYER=2` for split).
 
 ## License
 
-FluidSynth is LGPL-2.1, linked statically, with the changes in fluidsynth-fx-bypass.patch.
-Fine for personal use; distributing the plugin would need FluidSynth's source and a way to
-relink against another build.
+FluidSynth is LGPL-2.1, linked statically with the changes in fluidsynth-fx-bypass.patch;
+libogg and libvorbis are BSD-style. Fine for personal use; distributing the plugin would need
+FluidSynth's source and a way to relink against another build.

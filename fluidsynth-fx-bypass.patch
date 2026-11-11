@@ -134,6 +134,223 @@ index d9c5b87..86c4612 100644
  #ifdef LADSPA
  void fluid_rvoice_mixer_set_ladspa(fluid_rvoice_mixer_t *mixer,
                                     fluid_ladspa_fx_t *ladspa_fx, int audio_groups);
+diff --git a/src/sfloader/fluid_sffile.c b/src/sfloader/fluid_sffile.c
+index 0467c38..83d71f4 100644
+--- a/src/sfloader/fluid_sffile.c
++++ b/src/sfloader/fluid_sffile.c
+@@ -28,6 +28,11 @@
+ #if LIBSNDFILE_SUPPORT
+ #include <float.h>
+ #include <sndfile.h>
++#elif SF2PLAYER_VORBISFILE
++/* SF2 Player: SF3 through libvorbisfile directly, without libsndfile (which, for Ogg
++ * Vorbis, hands the stream to the same libvorbis decoder). */
++#include <math.h>
++#include <vorbis/vorbisfile.h>
+ #endif
+ 
+ /*=================================sfload.c========================
+@@ -709,7 +714,7 @@ static int process_info(SFData *sf, int size)
+ 
+             if(sf->version.major == 3)
+             {
+-#if !LIBSNDFILE_SUPPORT
++#if !LIBSNDFILE_SUPPORT && !SF2PLAYER_VORBISFILE
+                 FLUID_LOG(FLUID_WARN,
+                           "Sound font version is %d.%d but fluidsynth was compiled without"
+                           " support for (v3.x)",
+@@ -2828,6 +2833,191 @@ error_exit:
+     sf_close(sndfile);
+     return -1;
+ }
++#elif SF2PLAYER_VORBISFILE
++
++/* The compressed sample is the byte range [start, end] of the sample chunk, read through the
++ * SoundFont's own file callbacks, as the libsndfile path above does. */
++typedef struct
++{
++    SFData *sffile;
++    long long start, end, offset;
++} fluid_ov_data_t;
++
++static long long fluid_ov_length(const fluid_ov_data_t *d)
++{
++    return (d->end + 1) - d->start;
++}
++
++static size_t fluid_ov_read(void *ptr, size_t size, size_t nmemb, void *user_data)
++{
++    fluid_ov_data_t *d = user_data;
++    SFData *sf = d->sffile;
++    long long count = (long long)size * (long long)nmemb, remain = fluid_ov_length(d) - d->offset;
++
++    if(size == 0 || count <= 0 || remain <= 0)
++    {
++        return 0;
++    }
++
++    if(count > remain)
++    {
++        count = remain;
++    }
++
++    fluid_rec_mutex_lock(sf->mtx);
++
++    if(sf->fcbs->fseek(sf->sffd, d->start + d->offset, SEEK_SET) == FLUID_FAILED
++            || sf->fcbs->fread(ptr, (int)count, sf->sffd) == FLUID_FAILED)
++    {
++        FLUID_LOG(FLUID_ERR, "Failed to read compressed sample data");
++        count = 0;
++    }
++
++    fluid_rec_mutex_unlock(sf->mtx);
++    d->offset += count;
++    return (size_t)(count / (long long)size);
++}
++
++static int fluid_ov_seek(void *user_data, ogg_int64_t offset, int whence)
++{
++    fluid_ov_data_t *d = user_data;
++    long long position;
++
++    switch(whence)
++    {
++    case SEEK_SET: position = offset; break;
++    case SEEK_CUR: position = d->offset + offset; break;
++    case SEEK_END: position = fluid_ov_length(d) + offset; break;
++    default: return -1;
++    }
++
++    if(position < 0 || position > fluid_ov_length(d))
++    {
++        return -1;
++    }
++
++    d->offset = position;
++    return 0;
++}
++
++static long fluid_ov_tell(void *user_data)
++{
++    return (long)((fluid_ov_data_t *)user_data)->offset;
++}
++
++/* As the fallback converter above: NaN is silence, clamp, then round to nearest even. */
++static FLUID_INLINE int16_t fluid_ov_float_to_s16(float sample)
++{
++    if(isnan(sample))
++    {
++        return 0;
++    }
++
++    fluid_clip(sample, -1.0f, 32767.0f / 32768.0f);
++    return (int16_t)lrintf(sample * 32768.0f);
++}
++
++static int fluid_sffile_read_vorbis(SFData *sf, unsigned int start_byte, unsigned int end_byte, short **data)
++{
++    fluid_ov_data_t d;
++    ov_callbacks callbacks = { fluid_ov_read, fluid_ov_seek, NULL, fluid_ov_tell };
++    OggVorbis_File vf;
++    vorbis_info *info;
++    ogg_int64_t frames, done = 0;
++    short *wav_data = NULL;
++    int bitstream = 0;
++
++    if((start_byte > sf->samplesize) || (end_byte > sf->samplesize) || end_byte < start_byte)
++    {
++        FLUID_LOG(FLUID_ERR, "Ogg Vorbis data offsets exceed sample data chunk");
++        return -1;
++    }
++
++    d.sffile = sf;
++    d.start = (long long)sf->samplepos + start_byte;
++    d.end = (long long)sf->samplepos + end_byte;
++    d.offset = 0;
++
++    if(ov_open_callbacks(&d, &vf, NULL, 0, callbacks) != 0)
++    {
++        FLUID_LOG(FLUID_ERR, "Failed to open an Ogg Vorbis sample");
++        return -1;
++    }
++
++    info = ov_info(&vf, -1);
++    frames = ov_pcm_total(&vf, -1);
++
++    if(info == NULL || frames <= 0)
++    {
++        FLUID_LOG(FLUID_DBG, "Empty decompressed sample");
++        *data = NULL;
++        ov_clear(&vf);
++        return 0;
++    }
++
++    if(info->channels != 1)
++    {
++        FLUID_LOG(FLUID_DBG, "Unsupported channel count %d in ogg sample", info->channels);
++        goto error_exit;
++    }
++
++    if(frames > INT_MAX || (uint64_t)frames > SIZE_MAX / sizeof(short))
++    {
++        FLUID_LOG(FLUID_ERR, "Decompressed sample exceeds the supported frame count");
++        goto error_exit;
++    }
++
++    wav_data = FLUID_ARRAY(short, frames);
++
++    if(!wav_data)
++    {
++        FLUID_LOG(FLUID_PANIC, "Out of memory");
++        goto error_exit;
++    }
++
++    while(done < frames)
++    {
++        float **pcm;
++        long i, n = ov_read_float(&vf, &pcm, 1024, &bitstream);
++
++        if(n == OV_HOLE)
++        {
++            continue;   /* a gap in the stream: keep decoding */
++        }
++
++        if(n <= 0)
++        {
++            break;
++        }
++
++        if(n > frames - done)
++        {
++            n = (long)(frames - done);
++        }
++
++        for(i = 0; i < n; i++)
++        {
++            wav_data[done + i] = fluid_ov_float_to_s16(pcm[0][i]);
++        }
++
++        done += n;
++    }
++
++    if(done < frames)
++    {
++        FLUID_LOG(FLUID_ERR, "Ogg Vorbis decompression failed");
++        goto error_exit;
++    }
++
++    ov_clear(&vf);
++    *data = wav_data;
++    return (int)frames;
++
++error_exit:
++    FLUID_FREE(wav_data);
++    ov_clear(&vf);
++    return -1;
++}
+ #else
+ static int fluid_sffile_read_vorbis(SFData *sf, unsigned int start_byte, unsigned int end_byte, short **data)
+ {
 diff --git a/src/synth/fluid_synth.c b/src/synth/fluid_synth.c
 index 5e2090d..b9343ac 100644
 --- a/src/synth/fluid_synth.c

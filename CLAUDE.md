@@ -1,7 +1,8 @@
 # CLAUDE.md — Okami SF2 Player
 
 A JUCE AU/VST3 instrument that plays SoundFonts through FluidSynth, for Ableton Live on the
-user's M4 Mac. README.md has the build, the tests and every feature; CHANGELOG.md the versions.
+user's M4 Mac. README.md has the build, structure, architecture and settings; DOCS.md the user guide
+(Spanish); CHANGELOG.md the versions.
 Local git repo (`main`), no remote yet: the PLAYBOOK says app repos stay private.
 
 ## The rule that matters most
@@ -40,8 +41,8 @@ Local git repo (`main`), no remote yet: the PLAYBOOK says app repos stay private
   changing FluidSynth: rebuild, `cmake --install build`, regenerate the patch with
   `git diff > ../../fluidsynth-fx-bypass.patch`, rebuild the plugin.
 - Building downloaded code needs the user's explicit OK (the permission classifier blocks
-  it otherwise): FluidSynth got it. libogg/libvorbis for SF3 are downloaded in ThirdParty but
-  not built yet.
+  it otherwise). FluidSynth, libogg and libvorbis got it (Nov 10); the build commands are in
+  README.md. SF3 goes through libvorbisfile (`SF2PLAYER_VORBISFILE`), checked against ffmpeg.
 - One engine per instance, swapped under `engineLock`; the audio thread only try-locks and
   stays silent instead of waiting. FluidSynth calls happen under that lock only.
 - Channels 0-15 play the instrument, 16-31 the layer (`layerChannelOffset`).

@@ -346,7 +346,7 @@ SF2PlayerEditor::~SF2PlayerEditor()
 
 bool SF2PlayerEditor::isInterestedInFileDrag (const juce::StringArray& files)
 {
-    return files.size() == 1 && files[0].endsWithIgnoreCase (".sf2");
+    return files.size() == 1 && (files[0].endsWithIgnoreCase (".sf2") || files[0].endsWithIgnoreCase (".sf3"));
 }
 
 void SF2PlayerEditor::filesDropped (const juce::StringArray& files, int, int)
@@ -359,7 +359,7 @@ void SF2PlayerEditor::filesDropped (const juce::StringArray& files, int, int)
 
 void SF2PlayerEditor::chooseFile()
 {
-    chooser = std::make_unique<juce::FileChooser> ("Choose a SoundFont", player.soundFontFile(), "*.sf2");
+    chooser = std::make_unique<juce::FileChooser> ("Choose a SoundFont", player.soundFontFile(), "*.sf2;*.sf3");
     chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
                           [this] (const juce::FileChooser& fc)
                           {
@@ -437,7 +437,7 @@ void SF2PlayerEditor::refresh()
     }
     else if (! file.existsAsFile())
     {
-        infoLabel.setText ("Drop an .sf2 file here, or choose one above.", juce::dontSendNotification);
+        infoLabel.setText ("Drop an .sf2 or .sf3 file here, or choose one above.", juce::dontSendNotification);
     }
     else
     {

@@ -417,6 +417,33 @@ int main()
                 "G2 alone " + db (play (0, 43)) + ", split " + db (play (2, 43)));
     }
 
+    // ---- SF3: the same font compressed plays the same instruments, close to the uncompressed one.
+    {
+        const auto fonts = juce::File (__FILE__).getParentDirectory().getSiblingFile ("ThirdParty/fluidsynth/sf2");
+        const auto sf2 = fonts.getChildFile ("VintageDreamsWaves-v2.sf2"), sf3 = fonts.getChildFile ("VintageDreamsWaves-v2.sf3");
+        if (sf2.existsAsFile() && sf3.existsAsFile())
+        {
+            Player a (sf2), b (sf3);
+            const auto& pa = a.p.presets();
+            const auto& pb = b.p.presets();
+            bool same = pa.size() == pb.size() && ! pa.empty();
+            for (size_t i = 0; same && i < pa.size(); ++i)
+                same = pa[i].name == pb[i].name && pa[i].bank == pb[i].bank && pa[i].number == pb[i].number;
+            const auto x = a.note (60), y = b.note (60);
+            double diff = 0, level = 0;
+            for (size_t i = 0; i < juce::jmin (x.size(), y.size()); ++i)
+                diff += std::pow ((double) x[i] - y[i], 2.0), level += std::pow ((double) x[i], 2.0);
+            const double ratio = level > 0 ? std::sqrt (diff / level) : 1.0;
+            // Vorbis is lossy (these single-cycle waves lose about 1 dB of highs): the same pitch and
+            // nearly the same level. The decoder itself was checked against ffmpeg's: within one 16-bit
+            // step, and every sample exactly as long as in the .sf2.
+            const double levelChange = 20 * std::log10 (rms (y, 0.1, 0.9) / rms (x, 0.1, 0.9));
+            expect (same && level > 0 && std::abs (cents (pitch (y, 0.2, 0.4), pitch (x, 0.2, 0.4))) < 5 && std::abs (levelChange) < 2,
+                    "SF3: the compressed font loads its " + juce::String ((int) pb.size()) + " instruments, in tune and at its level",
+                    juce::String (levelChange, 1) + " dB, waveform difference " + db (ratio));
+        }
+    }
+
     // ---- Hostile files: whatever an .sf2 holds, loading it ends quickly and never crashes.
     {
         const auto dir = juce::File::createTempFile ("sf2-hostile");
