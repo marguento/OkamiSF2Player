@@ -3,6 +3,15 @@
 The version shows next to the title (`project(... VERSION x.y.z)` in CMakeLists.txt). Each
 release bumps it and adds an entry here: one line per change a player would notice.
 
+## 1.2.6 — Nov 11, 2026
+
+- The window always shows the finished state after a project opens or the audio device changes
+  (it could keep showing "No instruments" until the next change).
+- Saving while another project is opening can't mix the two.
+- A favorite star never lights up with no instrument chosen.
+- Switching instruments in the window right after a clip's Program Change keeps that clip's
+  instrument in memory too.
+
 ## 1.2.5 — Nov 11, 2026
 
 - The plugin window never freezes while a SoundFont loads, and stays quick with very large

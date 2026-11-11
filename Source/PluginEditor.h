@@ -79,7 +79,7 @@ private:
     void chooseFile();
     void load (const juce::File&);
     void refresh();
-    void refreshFileBox();
+    void refreshFileBox (const SF2PlayerProcessor::State&);
     void stepPreset (int delta);
 
     SF2PlayerProcessor& player;
@@ -96,17 +96,19 @@ private:
                                         juce::Colours::transparentBlack };   // a star: marks the chosen instrument a favourite
     juce::ComboBox presetBox;
     juce::TextEditor searchBox;
-    void fillPresetBox();
+    void fillPresetBox();   // from a fresh snapshot
+    void fillPresetBox (const SF2PlayerProcessor::State&);
 
     // Favourites, kept for every project: "<file name>|<bank>:<program>" in the settings file.
     static constexpr int favouriteIdBase = 100000;   // list ids of the copies under "Favorites"
     // A list id back to the instrument's index (favorites are copies with their own ids).
     static int presetIndexOf (int id) { return id > favouriteIdBase ? id - favouriteIdBase - 1 : id - 1; }
-    int addInstruments (juce::ComboBox&, const juce::String& query) const;
+    int addInstruments (juce::ComboBox&, const juce::String& query, const SF2PlayerProcessor::State&,
+                        const juce::StringArray& favourite) const;
     static juce::String favouriteKey (const SF2PlayerProcessor::State&, int presetIndex);
     juce::StringArray favourites() const;
     void toggleFavourite();
-    void refreshFavouriteButton();
+    void refreshFavouriteButton (const SF2PlayerProcessor::State&, const juce::StringArray& favourite);
 
     juce::Slider gainSlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
     juce::Label gainLabel { {}, "Gain" };

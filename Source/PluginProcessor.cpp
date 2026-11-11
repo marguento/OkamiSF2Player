@@ -151,6 +151,9 @@ void SF2PlayerProcessor::runMessageThreadTasks()
         return;
 
     // A missing file that's back (a drive plugged in), or an unreadable one that changed.
+    // Checked on the snapshot first: the writer (the mutex, a publish) only when one is due.
+    if (const auto st = state(); st->file != juce::File() || st->missing == juce::File() || ! st->missing.existsAsFile())
+        return;
     const StateWriter writer (*this);
     if (currentFile == juce::File() && missingFile != juce::File() && missingFile.existsAsFile() && shouldRetry (missingFile))
     {
@@ -161,7 +164,7 @@ void SF2PlayerProcessor::runMessageThreadTasks()
         {
             currentFile = juce::File();
             recordFailure (file);
-            sendChangeMessage();
+            stateChanged = true;
         }
     }
 }
@@ -214,16 +217,21 @@ void SF2PlayerProcessor::publish()
         fresh->layerBank = presetList[(size_t) layerPreset].bank, fresh->layerNumber = presetList[(size_t) layerPreset].number;
     else
         fresh->layerBank = savedLayerBank, fresh->layerNumber = savedLayerNumber;
-    std::shared_ptr<const State> old;
+    exchangePublished (std::move (fresh));
+}
+
+void SF2PlayerProcessor::exchangePublished (std::shared_ptr<const State> fresh)
+{
     {
         const juce::SpinLock::ScopedLockType lock (publishedLock);
-        old = std::exchange (published, std::move (fresh));
+        std::swap (published, fresh);
     }
-    // `old` is freed here, outside the SpinLock.
+    // `fresh` now holds the old snapshot: freed here, outside the SpinLock.
 }
 
 void SF2PlayerProcessor::enterMissingState (const juce::File& file, bool keepInstruments, bool unreadable)
 {
+    const StateWriter writer (*this);
     if (keepInstruments)
     {
         if (juce::isPositiveAndBelow (currentPreset, (int) presetList.size()))
@@ -240,7 +248,7 @@ void SF2PlayerProcessor::enterMissingState (const juce::File& file, bool keepIns
     currentFile = juce::File();
     currentInfo = {};
     presetList.clear();
-    sendChangeMessage();
+    stateChanged = true;
 }
 
 SF2PlayerProcessor::EffectSettings SF2PlayerProcessor::currentEffectSettings() const
@@ -552,6 +560,7 @@ void SF2PlayerProcessor::applyLayerPreset (Engine& e, int presetIndex)
     const auto& p = presetList[(size_t) presetIndex];
     for (int channel = layerChannelOffset; channel < numSynthChannels; ++channel)
         fluid_synth_program_select (e.synth, channel, e.fontId, p.bank, p.number);
+    ++pinGeneration;   // the channels' presets changed: a clip's next program change pins afresh
 }
 
 void SF2PlayerProcessor::selectLayerPreset (int presetIndex)
@@ -568,7 +577,7 @@ void SF2PlayerProcessor::selectLayerPreset (int presetIndex)
         applyLayerPreset (*engine, presetIndex);
     }
     layerPreset = presetIndex;
-    sendChangeMessage();
+    stateChanged = true;
     markProjectChanged();
 }
 
@@ -579,6 +588,7 @@ void SF2PlayerProcessor::applyPreset (Engine& e, int presetIndex)
     const auto& p = presetList[(size_t) presetIndex];
     for (int channel = 0; channel < numMidiChannels; ++channel)
         fluid_synth_program_select (e.synth, channel, e.fontId, p.bank, p.number);
+    ++pinGeneration;
 }
 
 void SF2PlayerProcessor::swapEngine (std::unique_ptr<Engine> fresh)
@@ -586,7 +596,7 @@ void SF2PlayerProcessor::swapEngine (std::unique_ptr<Engine> fresh)
     {
         const juce::SpinLock::ScopedLockType lock (engineLock);
         std::swap (engine, fresh);
-        ++engineGeneration;
+        ++pinGeneration;
         if (engine != nullptr)
         {
             applyEffectSettings (true);
@@ -651,7 +661,7 @@ bool SF2PlayerProcessor::loadSoundFont (const juce::File& file)
     retryWaitMs = 60000;
     currentInfo = std::move (info);
     currentPreset = preset;
-    sendChangeMessage();
+    stateChanged = true;
     markProjectChanged();
     return true;
 }
@@ -669,7 +679,7 @@ void SF2PlayerProcessor::selectPreset (int presetIndex)
         applyPreset (*engine, presetIndex);
     }
     currentPreset = presetIndex;
-    sendChangeMessage();
+    stateChanged = true;
     markProjectChanged();
 }
 
@@ -820,25 +830,26 @@ void SF2PlayerProcessor::Biquad::process (float* samples, int count) noexcept
     }
 }
 
-void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
+void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& hostMidi)
 {
     juce::ScopedNoDenormals noDenormals;
     buffer.clear();
     const int numSamples = buffer.getNumSamples();
     // Sysex isn't played, and building a message from it allocates: a block carrying one is
-    // swapped for a copy without it (into a buffer reserved in prepareToPlay) before anything
-    // reads it, the on-screen keyboard included (JUCE's helper builds a message per event).
+    // read from a copy without it (into a buffer reserved in prepareToPlay, never swapped away)
+    // by everything below, the on-screen keyboard included (JUCE's helper builds a message per
+    // event).
     bool hasSysex = false;
-    for (const auto metadata : midi)
+    for (const auto metadata : hostMidi)
         hasSysex = hasSysex || metadata.numBytes > 3;
     if (hasSysex)
     {
         shortMidi.clear();
-        for (const auto metadata : midi)
+        for (const auto metadata : hostMidi)
             if (metadata.numBytes <= 3)
                 shortMidi.addEvent (metadata.data, metadata.numBytes, metadata.samplePosition);
-        midi.swapWith (shortMidi);
     }
+    auto& midi = hasSysex ? shortMidi : hostMidi;
     keyboardState.processNextMidiBuffer (midi, 0, numSamples, true);
 
     if (work.getNumSamples() < numSamples)   // a host sending more than it announced
@@ -860,9 +871,9 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
             clearDeferredMidi();
             return;
         }
-        if (const int generation = engineGeneration.load(); generation != seenGeneration)
+        if (const int generation = pinGeneration.load(); generation != seenGeneration)
         {
-            seenGeneration = generation;   // a new engine: nothing pinned in it yet
+            seenGeneration = generation;   // a new engine or preset: forget the last requests
             lastPinRequest.fill (-1);
         }
         applyEffectSettings (false);
@@ -990,8 +1001,8 @@ void SF2PlayerProcessor::setStateInformation (const void* data, int sizeInBytes)
         return;
 
     auto state = juce::ValueTree::fromXml (*xml);
-    parameters.replaceState (state);
-
+    // The writer first, the parameters only once this project's file is published: a save
+    // while another writer holds the mutex then gets the old project whole, never a mix.
     const StateWriter writer (*this);
     const auto path = state.getProperty ("sf2Path").toString();
     const juce::File file = juce::File::isAbsolutePath (path) ? juce::File (path) : juce::File();
@@ -1004,17 +1015,18 @@ void SF2PlayerProcessor::setStateInformation (const void* data, int sizeInBytes)
     // Published at once, before the (possibly long) load: a save meanwhile gets this project's
     // file and instruments along with its parameters, never the previous project's.
     {
-        auto restoringSnapshot = std::make_shared<State>();
-        restoringSnapshot->file = file;
-        restoringSnapshot->preset = currentPreset;
-        restoringSnapshot->bank = savedBank, restoringSnapshot->number = savedNumber;
-        restoringSnapshot->layerBank = savedLayerBank, restoringSnapshot->layerNumber = savedLayerNumber;
-        std::shared_ptr<const State> old;
-        {
-            const juce::SpinLock::ScopedLockType lock (publishedLock);
-            old = std::exchange (published, std::move (restoringSnapshot));
-        }
+        auto restoring = std::make_shared<State>();
+        if (file.existsAsFile())
+            restoring->file = file;
+        else
+            restoring->missing = file;   // shown as missing at once, as it'll end
+        restoring->preset = currentPreset;
+        restoring->layer = -1;   // its index is known only once loaded; saved by bank:program
+        restoring->bank = savedBank, restoring->number = savedNumber;
+        restoring->layerBank = savedLayerBank, restoring->layerNumber = savedLayerNumber;
+        exchangePublished (std::move (restoring));
     }
+    parameters.replaceState (state);
 
     const juce::ScopedValueSetter<bool> restoring (restoringState, true);
     if (file.existsAsFile())

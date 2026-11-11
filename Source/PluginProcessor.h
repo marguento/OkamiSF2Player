@@ -73,7 +73,8 @@ public:
         const juce::SpinLock::ScopedLockType lock (publishedLock);
         return published;
     }
-    // Shorthands for one value (each takes its own snapshot).
+    // Shorthands for the tests, which run on one thread. Each takes its own snapshot, so code
+    // that reads more than one value takes state() once instead.
     int selectedLayerPreset() const { return state()->layer; }
     std::vector<Preset> presets() const { return state()->presets; }
     juce::File soundFontFile() const { return state()->file; }
@@ -144,7 +145,7 @@ private:
     juce::AbstractFifo pinFifo { 256 };
     std::array<int, 256> pinQueue {};
     std::array<int, 16> lastPinRequest;   // audio thread only
-    std::atomic<int> engineGeneration { 0 };   // bumped by swapEngine: a new engine pins afresh
+    std::atomic<int> pinGeneration { 0 };   // bumped when the engine or a channel's preset changes: pin afresh
     int seenGeneration = 0;                    // audio thread only
     juce::MidiBuffer shortMidi;   // a block's MIDI without sysex (reserved in prepareToPlay)
     int housekeepingTicks = 0;
@@ -163,11 +164,22 @@ private:
     std::shared_ptr<const State> published = std::make_shared<State>();
     mutable juce::SpinLock publishedLock;
     int writerDepth = 0;
+    bool stateChanged = false;   // a writer changed what the editor shows: sent once published
     void publish();
+    void exchangePublished (std::shared_ptr<const State>);
+    // The outermost writer publishes, then tells the editor: a change message sent before the
+    // publish could reach the message thread first and show the old snapshot.
     struct StateWriter
     {
         explicit StateWriter (SF2PlayerProcessor& p) : owner (p), lock (p.stateMutex) { ++owner.writerDepth; }
-        ~StateWriter() { if (--owner.writerDepth == 0) owner.publish(); }
+        ~StateWriter()
+        {
+            if (--owner.writerDepth != 0)
+                return;
+            owner.publish();
+            if (std::exchange (owner.stateChanged, false))
+                owner.sendChangeMessage();
+        }
         SF2PlayerProcessor& owner;
         std::lock_guard<std::recursive_mutex> lock;
     };

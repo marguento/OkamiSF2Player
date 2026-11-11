@@ -190,10 +190,10 @@ int main (int argc, char** argv)
             SF2PlayerProcessor q;
             q.setStateInformation (state.getData(), (int) state.getSize());
             q.prepareToPlay (rate, block);
-            const auto presets = q.presets();
+            const auto st = q.state();   // one snapshot for every value printed
             std::printf ("restored: file %s, preset %d (%s), sends %.0f, tone %.0f Hz, gain %.2f\n",
-                         q.soundFontFile().getFileName().toRawUTF8(), q.selectedPreset(),
-                         q.selectedPreset() < (int) presets.size() ? presets[(size_t) q.selectedPreset()].name.toRawUTF8() : "-",
+                         st->file.getFileName().toRawUTF8(), st->preset,
+                         juce::isPositiveAndBelow (st->preset, (int) st->presets.size()) ? st->presets[(size_t) st->preset].name.toRawUTF8() : "-",
                          q.parameters.getRawParameterValue ("sendOutputs")->load(), q.parameters.getRawParameterValue ("tone")->load(),
                          q.parameters.getParameter ("gain")->getValue());
         }
