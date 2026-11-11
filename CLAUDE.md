@@ -90,7 +90,9 @@ go public).
 
 Developer ID (Nov 11, 2026): both certificates are in the login keychain, "Developer ID
 Application: Israel Villalobos (VDGLR9P76K)" and "Developer ID Installer: ..." (expire Dec 11,
-2027), allowed for codesign, productbuild, pkgbuild and productsign. Encrypted .p12 backups are kept outside this repo. How they were made: the App Store Connect API refuses
+2027), allowed for codesign, productbuild, pkgbuild and productsign. Encrypted .p12 backups are
+kept outside this repo (where: the Claude memory note "developer-id-backups" on the user's
+Mac). How they were made: the App Store Connect API refuses
 (`POST /v1/certificates` says only the Account Holder can, and has no Installer type) and so
 did Xcode, although the user's Apple ID is the Account Holder; developer.apple.com's web form
 works (a CSR from `openssl req`, uploaded in the user's Chrome). The API can then read the
