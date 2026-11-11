@@ -31,8 +31,11 @@ cmake --build build
 ./build/PluginTests_artefacts/Release/PluginTests
 arch -x86_64 ./build/PluginTests_artefacts/Release/PluginTests   # Intel, under Rosetta
 
-# auval checks the registered AU, which may be an older installed copy: the reported
-# version must be this one. The output goes to a file so a failure shows why.
+# auval checks the registered AU, which may be an older installed copy (or macOS's cache of
+# one): refresh the registry, then the reported version must be this one. The output goes to a
+# file so a failure shows why.
+killall -9 AudioComponentRegistrar 2>/dev/null || true
+sleep 2
 for arch in arm64 x86_64; do
     log="build/auval-$arch.txt"
     if ! arch -$arch auval -v aumu Sf2p Mrgt > "$log" 2>&1 || ! grep -q "AU VALIDATION SUCCEEDED" "$log"; then
