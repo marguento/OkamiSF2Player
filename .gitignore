@@ -13,3 +13,5 @@ ThirdParty/xiph-install/
 *.cer
 *.p12
 *.key
+dist/
+scripts/release.env

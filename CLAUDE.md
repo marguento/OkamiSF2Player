@@ -49,6 +49,14 @@ Private repo https://github.com/marguento/OkamiSF2Player (`main`, created Nov 10
   stays silent instead of waiting. FluidSynth calls happen under that lock only.
 - Channels 0-15 play the instrument, 16-31 the layer (`layerChannelOffset`).
 
+## Releasing
+
+`scripts/release.sh` (README → Releasing). The account identifiers for notarization live in
+`scripts/release.env`, ignored by git: never put them in a tracked file (the repo is meant to
+go public). Nov 10, 2026: the Developer ID Application and Installer certificates weren't in
+this Mac's keychain yet (only Apple Development); the user creates them in Xcode → Settings →
+Accounts → Manage Certificates.
+
 ## Plugin identity
 
 Manufacturer `Mrgt`, plugin `Sf2p`, state tag `SF2Player`, settings folder

@@ -5,6 +5,19 @@ FluidSynth, the reference SoundFont player, made for Ableton Live on Apple silic
 defaults it plays exactly what FluidSynth plays (the test suite checks it bit for bit); every
 control on top starts neutral. How to use it: DOCS.md. Versions: CHANGELOG.md. Credits and licenses: CREDITS.md.
 
+![Okami SF2 Player playing the HQ Orchestral collection's violin](docs/screenshot.png)
+
+## Download and install
+
+1. Download `Okami-SF2-Player-<version>.pkg` from this repository's Releases and open it. It
+   installs the AU and VST3 into `/Library/Audio/Plug-Ins` (signed and notarized by Apple;
+   Apple silicon and Intel, macOS 13 or later).
+2. Get a SoundFont. The plugin was made for the
+   [HQ Orchestral SoundFont Collection](https://musical-artifacts.com/artifacts/817) (522 MB,
+   195 instruments), not included here (see CREDITS.md).
+3. Restart Ableton Live (or rescan plug-ins), add **Okami SF2 Player** to a MIDI track and open
+   the SoundFont from its menu.
+
 ## Tech stack
 
 | Part | What | Notes |
@@ -12,7 +25,7 @@ control on top starts neutral. How to use it: DOCS.md. Versions: CHANGELOG.md. C
 | Plugin framework | JUCE 8.0.15 | AU, VST3, Standalone; CMake + Ninja, no Xcode project |
 | Synth engine | FluidSynth 2.6.2, static, float | patched: `fluidsynth-fx-bypass.patch` |
 | SF3 decoding | libvorbisfile / libvorbis 1.3.7, libogg 1.3.5 | static, from xiph.org |
-| Target | macOS 13+, arm64 | built and used on an M4 with macOS 27 |
+| Target | macOS 13+, universal (arm64 + x86_64) | built and used on an M4 with macOS 27; the Intel half is tested under Rosetta |
 | Identity | manufacturer `Mrgt`, plugin `Sf2p`, AU `aumu` | never change: projects find the plugin by them |
 
 ## Getting started
@@ -137,6 +150,15 @@ Saved alongside the parameters: `sf2Path`, `preset`, `presetBank`, `presetNumber
 
 Settings file `~/Library/Application Support/SF2 Player/SF2 Player.settings`: `recentFiles`
 (last 12) and `favorites` (`<file name>|<bank>:<program>`, one per line).
+
+## Releasing
+
+`scripts/release.sh` builds universal, runs the tests and auval, signs both bundles (Developer
+ID, hardened runtime, timestamp, no get-task-allow), builds a signed installer, notarizes and
+staples it: `dist/Okami-SF2-Player-<version>.pkg` and its SHA-256. It needs "Developer ID
+Application" and "Developer ID Installer" certificates and an App Store Connect API key in
+`scripts/release.env` (not in git). Then attach the .pkg to a GitHub release:
+`gh release create v<version> dist/*.pkg dist/*.sha256 --notes-file <notes>`.
 
 ## Tests
 

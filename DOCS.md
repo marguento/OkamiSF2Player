@@ -4,6 +4,15 @@ An instrument for Ableton Live that plays SoundFonts (`.sf2` and `.sf3`). With e
 its default it sounds exactly like the original SoundFont: every control starts at a position
 that changes nothing.
 
+## Installing
+
+1. Open the `Okami-SF2-Player-<version>.pkg` installer. It puts the plugin in
+   `/Library/Audio/Plug-Ins` as AU and VST3 (Apple silicon and Intel, macOS 13 or later).
+2. Get a SoundFont: the plugin was made for the
+   [HQ Orchestral SoundFont Collection](https://musical-artifacts.com/artifacts/817), a free
+   download of 522 MB with 195 instruments.
+3. Restart Ableton Live, or rescan plug-ins in its preferences.
+
 ## Putting it in Ableton
 
 1. In Ableton's browser: **Plug-Ins → Marguento → Okami SF2 Player** (AU or VST3). Drag it to

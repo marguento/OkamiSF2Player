@@ -23,6 +23,7 @@ release bumps it and adds an entry here: one line per change a player would noti
 - Works at 44.1 to 192 kHz (it played an octave low above 96 kHz).
 - The window can be resized.
 - .sf3 (compressed) SoundFonts open too.
+- Universal: Apple silicon and Intel Macs, from a signed and notarized installer.
 
 ## 1.0.0 — Nov 2026
 
