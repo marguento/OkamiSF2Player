@@ -47,6 +47,33 @@ static juce::AudioProcessorValueTreeState::ParameterLayout makeLayout()
     layout.add (std::make_unique<Float> (juce::ParameterID { "fsChorusDepth", 2 }, "Chorus Depth", range (0.0f, 20.0f, 0.05f), 4.25f,
                                          Attributes().withLabel ("ms")));
     layout.add (std::make_unique<juce::AudioParameterInt> (juce::ParameterID { "fsChorusVoices", 2 }, "Chorus Voices", 1, 10, 3));
+    // Playing. Every default is neutral: the SoundFont plays as its author made it.
+    auto times = Attributes().withStringFromValueFunction ([] (float v, int)
+    {
+        return juce::String (juce::CharPointer_UTF8 ("\xc3\x97")) + juce::String (v, v < 1.0f ? 2 : 1);
+    });
+    layout.add (std::make_unique<Float> (juce::ParameterID { "attack", 4 }, "Attack",
+                                         juce::NormalisableRange<float> (0.25f, 4.0f, 0.01f, 0.5f), 1.0f, times));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "release", 4 }, "Release",
+                                         juce::NormalisableRange<float> (0.25f, 4.0f, 0.01f, 0.5f), 1.0f, times));
+    layout.add (std::make_unique<juce::AudioParameterInt> (juce::ParameterID { "velocityCurve", 4 }, "Velocity Curve", -100, 100, 0,
+                                         juce::AudioParameterIntAttributes().withStringFromValueFunction ([] (int v, int)
+                                         { return v == 0 ? juce::String ("Linear") : (v > 0 ? "+" : "") + juce::String (v); })));
+    layout.add (std::make_unique<juce::AudioParameterInt> (juce::ParameterID { "transpose", 4 }, "Transpose", -24, 24, 0,
+                                         juce::AudioParameterIntAttributes().withStringFromValueFunction ([] (int v, int)
+                                         { return (v > 0 ? "+" : "") + juce::String (v) + " st"; })));
+    layout.add (std::make_unique<juce::AudioParameterInt> (juce::ParameterID { "fineTune", 4 }, "Fine Tune", -100, 100, 0,
+                                         juce::AudioParameterIntAttributes().withStringFromValueFunction ([] (int v, int)
+                                         { return (v > 0 ? "+" : "") + juce::String (v) + " ct"; })));
+    layout.add (std::make_unique<juce::AudioParameterInt> (juce::ParameterID { "bendRange", 4 }, "Bend Range", 1, 24, 2,
+                                         juce::AudioParameterIntAttributes().withStringFromValueFunction ([] (int v, int)
+                                         { return juce::String (juce::CharPointer_UTF8 ("\xc2\xb1")) + juce::String (v) + " st"; })));
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "playMode", 4 }, "Play Mode",
+                                                              juce::StringArray { "Poly", "Mono", "Legato" }, 0));
+    layout.add (std::make_unique<juce::AudioParameterInt> (juce::ParameterID { "glide", 4 }, "Glide", 0, 2000, 0,
+                                         juce::AudioParameterIntAttributes().withStringFromValueFunction ([] (int v, int)
+                                         { return v == 0 ? juce::String ("Off") : juce::String (v) + " ms"; })));
+
     // Off: the built-in reverb and chorus play in the main output. On: their sends go out
     // unprocessed on the Reverb and Chorus outputs, for Ableton's own effects.
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "sendOutputs", 3 }, "Send Outputs", false));
@@ -73,6 +100,8 @@ SF2PlayerProcessor::SF2PlayerProcessor()
                                        .withOutput ("Chorus Send", juce::AudioChannelSet::stereo(), true)),
       parameters (*this, nullptr, "SF2Player", makeLayout())
 {
+    for (auto& channel : playedNote)
+        channel.fill (-1);
 }
 
 SF2PlayerProcessor::~SF2PlayerProcessor() = default;
@@ -117,6 +146,77 @@ void SF2PlayerProcessor::applyEffectSettings (bool force)
     appliedEffects = s;
 }
 
+SF2PlayerProcessor::PlaySettings SF2PlayerProcessor::currentPlaySettings() const
+{
+    auto value = [this] (const char* id) { return parameters.getRawParameterValue (id)->load(); };
+    PlaySettings s;
+    s.attack = value ("attack");
+    s.release = value ("release");
+    s.fineTune = juce::roundToInt (value ("fineTune"));
+    s.bendRange = juce::roundToInt (value ("bendRange"));
+    s.mode = juce::roundToInt (value ("playMode"));
+    s.glide = juce::roundToInt (value ("glide"));
+    return s;
+}
+
+// Called with the engine lock held. The SoundFont's own values stay; these are offsets on
+// top (SF2's real-time generator offsets, the same as NRPN), so at their defaults nothing changes.
+void SF2PlayerProcessor::applyPlaySettings (bool force)
+{
+    const auto s = currentPlaySettings();
+    if (! force && playApplied && s == appliedPlay)
+        return;
+
+    auto* synth = engine->synth;
+    // A multiplier on the envelope's times is an offset in timecents: 1200 per doubling.
+    // Whole timecents: the knob's x1 is stored as 0.99999994, and even that -0.0001 moved the release.
+    const float attackCents = (float) juce::roundToInt (1200.0f * std::log2 (s.attack));
+    const float releaseCents = (float) juce::roundToInt (1200.0f * std::log2 (s.release));
+    for (int channel = 0; channel < numMidiChannels; ++channel)
+    {
+        fluid_synth_set_gen (synth, channel, GEN_VOLENVATTACK, attackCents);
+        fluid_synth_set_gen (synth, channel, GEN_VOLENVRELEASE, releaseCents);
+        fluid_synth_set_gen (synth, channel, GEN_FINETUNE, (float) s.fineTune);
+        fluid_synth_pitch_wheel_sens (synth, channel, s.bendRange);
+
+        // Glide: portamento between connected notes, its time in ms (linear mode: MSB * 128 + LSB).
+        fluid_synth_cc (synth, channel, 65, s.glide > 0 ? 127 : 0);
+        fluid_synth_cc (synth, channel, 5, s.glide / 128);
+        fluid_synth_cc (synth, channel, 37, s.glide % 128);
+        // FluidSynth's defaults (glide on each note, multi-retrigger legato), except: Legato glides
+        // only between connected notes, Mono starts every note afresh.
+        fluid_synth_set_portamento_mode (synth, channel, s.mode == 2 ? FLUID_CHANNEL_PORTAMENTO_MODE_LEGATO_ONLY
+                                                                     : FLUID_CHANNEL_PORTAMENTO_MODE_EACH_NOTE);
+        fluid_synth_set_legato_mode (synth, channel, s.mode == 1 ? FLUID_CHANNEL_LEGATO_MODE_RETRIGGER
+                                                                 : FLUID_CHANNEL_LEGATO_MODE_MULTI_RETRIGGER);
+    }
+    if (force || ! playApplied || s.mode != appliedPlay.mode)
+    {
+        fluid_synth_all_notes_off (synth, -1);
+        fluid_synth_reset_basic_channel (synth, -1);
+        // Poly: as a fresh FluidSynth. Mono and Legato: each of the 16 channels plays one note at a time.
+        fluid_synth_set_basic_channel (synth, 0, s.mode == 0 ? FLUID_CHANNEL_MODE_OMNION_POLY : FLUID_CHANNEL_MODE_OMNIOFF_MONO,
+                                       numMidiChannels);
+    }
+    appliedPlay = s;
+    playApplied = true;
+}
+
+int SF2PlayerProcessor::transposeFor (int note) const
+{
+    return note + juce::roundToInt (parameters.getRawParameterValue ("transpose")->load());
+}
+
+// Velocity curve: 0 leaves velocities as they come; + lifts soft notes, - lowers them.
+int SF2PlayerProcessor::curvedVelocity (int velocity) const
+{
+    const float amount = parameters.getRawParameterValue ("velocityCurve")->load();
+    if (juce::approximatelyEqual (amount, 0.0f))
+        return velocity;
+    const float exponent = std::pow (2.0f, -amount / 50.0f);   // +100 -> 0.25, -100 -> 4
+    return juce::jlimit (1, 127, juce::roundToInt (127.0f * std::pow ((float) velocity / 127.0f, exponent)));
+}
+
 // ---------------------------------------------------------------------------- engine
 
 bool SF2PlayerProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -149,6 +249,7 @@ static std::unique_ptr<SF2PlayerProcessor::Engine> createEngine (const juce::Fil
     // Only the samples of the instruments in use are read into memory: a 500 MB
     // collection costs each track only its own instrument's samples.
     fluid_settings_setint (engine->settings, "synth.dynamic-sample-loading", 1);
+    fluid_settings_setstr (engine->settings, "synth.portamento-time", "linear");   // CC5/CC37 = milliseconds
 
     engine->synth = new_fluid_synth (engine->settings);
     if (engine->synth == nullptr)
@@ -181,7 +282,10 @@ void SF2PlayerProcessor::swapEngine (std::unique_ptr<Engine> fresh)
         const juce::SpinLock::ScopedLockType lock (engineLock);
         std::swap (engine, fresh);
         if (engine != nullptr)
+        {
             applyEffectSettings (true);
+            applyPlaySettings (true);
+        }
     }
     // `fresh` now holds the old engine: freed here, outside the lock.
 }
@@ -291,10 +395,20 @@ void SF2PlayerProcessor::handleMidi (const juce::MidiMessage& m)
     {
         ++notesReceived;
         lastVelocity = m.getVelocity();
-        fluid_synth_noteon (synth, channel, m.getNoteNumber(), m.getVelocity());
+        const int note = transposeFor (m.getNoteNumber());
+        if (! juce::isPositiveAndBelow (note, 128))
+            return;   // transposed off the keyboard
+        playedNote[(size_t) channel][(size_t) m.getNoteNumber()] = (juce::int16) note;
+        fluid_synth_noteon (synth, channel, note, curvedVelocity (m.getVelocity()));
     }
     else if (m.isNoteOff())
-        fluid_synth_noteoff (synth, channel, m.getNoteNumber());
+    {
+        auto& played = playedNote[(size_t) channel][(size_t) m.getNoteNumber()];
+        const int note = played >= 0 ? played : transposeFor (m.getNoteNumber());
+        played = -1;
+        if (juce::isPositiveAndBelow (note, 128))
+            fluid_synth_noteoff (synth, channel, note);
+    }
     else if (m.isController())   // volume, pan, expression, sustain, mod wheel, CC91/93, bank select...
         fluid_synth_cc (synth, channel, m.getControllerNumber(), m.getControllerValue());
     else if (m.isPitchWheel())
@@ -304,7 +418,11 @@ void SF2PlayerProcessor::handleMidi (const juce::MidiMessage& m)
     else if (m.isChannelPressure())
         fluid_synth_channel_pressure (synth, channel, m.getChannelPressureValue());
     else if (m.isAftertouch())
-        fluid_synth_key_pressure (synth, channel, m.getNoteNumber(), m.getAfterTouchValue());
+    {
+        const int played = playedNote[(size_t) channel][(size_t) m.getNoteNumber()];
+        if (played >= 0)
+            fluid_synth_key_pressure (synth, channel, played, m.getAfterTouchValue());
+    }
 }
 
 // Renders [start, end) of `work`: FluidSynth adds to the buffers, which processBlock cleared.
@@ -360,6 +478,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         if (! lock.isLocked() || engine == nullptr)
             return;
         applyEffectSettings (false);
+        applyPlaySettings (false);
         sendOutputs = appliedEffects.sendOutputs;
 
         // Render up to each MIDI event, so notes start on the exact sample.

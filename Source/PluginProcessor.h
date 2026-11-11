@@ -83,6 +83,7 @@ private:
     void writeOutputs (juce::AudioBuffer<float>&, int numSamples, bool sendOutputs);
     void markProjectChanged();
     void applyEffectSettings (bool force);
+    void applyPlaySettings (bool force);
     void applyPreset (Engine&, int presetIndex);
     void swapEngine (std::unique_ptr<Engine>);
 
@@ -128,6 +129,26 @@ private:
     };
     EffectSettings appliedEffects;
     EffectSettings currentEffectSettings() const;
+
+    // How the instrument is played. Every default leaves the SoundFont as it is.
+    struct PlaySettings
+    {
+        float attack = 1, release = 1;   // envelope time multipliers
+        int fineTune = 0, bendRange = 2, mode = 0, glide = 0;   // cents, semitones, Poly/Mono/Legato, ms
+        bool operator== (const PlaySettings& o) const
+        {
+            return juce::exactlyEqual (attack, o.attack) && juce::exactlyEqual (release, o.release)
+                && fineTune == o.fineTune && bendRange == o.bendRange && mode == o.mode && glide == o.glide;
+        }
+    };
+    PlaySettings appliedPlay;
+    bool playApplied = false;
+    PlaySettings currentPlaySettings() const;
+
+    // Notes as played after transposing, so a note-off finds its note even if the transpose moved meanwhile.
+    std::array<std::array<juce::int16, 128>, 16> playedNote;   // -1: none
+    int transposeFor (int note) const;
+    int curvedVelocity (int velocity) const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SF2PlayerProcessor)
 };

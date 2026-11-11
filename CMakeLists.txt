@@ -60,3 +60,12 @@ target_sources(TailTest PRIVATE Tests/TailTest.cpp Source/PluginProcessor.cpp So
 target_include_directories(TailTest PRIVATE ${FLUIDSYNTH_DIR}/include)
 target_compile_definitions(TailTest PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JucePlugin_Name="Okami SF2 Player")
 target_link_libraries(TailTest PRIVATE juce::juce_audio_utils juce::juce_dsp juce::juce_recommended_config_flags ${FLUIDSYNTH_DIR}/lib/libfluidsynth.a)
+
+# The test suite: `cmake --build build && ctest --test-dir build --output-on-failure`.
+juce_add_console_app(PluginTests PRODUCT_NAME "PluginTests")
+target_sources(PluginTests PRIVATE Tests/PluginTests.cpp Source/PluginProcessor.cpp Source/PluginEditor.cpp)
+target_include_directories(PluginTests PRIVATE ${FLUIDSYNTH_DIR}/include)
+target_compile_definitions(PluginTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JucePlugin_Name="Okami SF2 Player")
+target_link_libraries(PluginTests PRIVATE juce::juce_audio_utils juce::juce_dsp juce::juce_recommended_config_flags ${FLUIDSYNTH_DIR}/lib/libfluidsynth.a)
+enable_testing()
+add_test(NAME PluginTests COMMAND PluginTests)
