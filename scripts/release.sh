@@ -11,6 +11,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 VERSION=$(sed -nE 's/^project\(SF2Player VERSION ([0-9.]+).*/\1/p' CMakeLists.txt)
+: ${VERSION:?could not read the version from the project() line in CMakeLists.txt}
 NAME="Okami SF2 Player"
 DIST=dist
 [[ -f scripts/release.env ]] && source scripts/release.env
@@ -24,11 +25,25 @@ PKG_ID=$(identity "Developer ID Installer")
 [[ -f $NOTARY_KEY ]] || { echo "No App Store Connect key at $NOTARY_KEY."; exit 1; }
 echo "Version $VERSION, signing as: $APP_ID / $PKG_ID"
 
-# 1. Build (universal) and test. A failing test stops the release.
+# 1. Build (universal) and test both halves. A failing test stops the release.
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" >/dev/null
 cmake --build build
 ./build/PluginTests_artefacts/Release/PluginTests
-auval -v aumu Sf2p Mrgt | grep -q "AU VALIDATION SUCCEEDED"
+arch -x86_64 ./build/PluginTests_artefacts/Release/PluginTests   # Intel, under Rosetta
+
+# auval checks the registered AU, which may be an older installed copy: the reported
+# version must be this one. The output goes to a file so a failure shows why.
+for arch in arm64 x86_64; do
+    log="build/auval-$arch.txt"
+    if ! arch -$arch auval -v aumu Sf2p Mrgt > "$log" 2>&1 || ! grep -q "AU VALIDATION SUCCEEDED" "$log"; then
+        cat "$log"; echo "auval failed ($arch)"; exit 1
+    fi
+    if ! grep -q "Component Version: $VERSION " "$log"; then
+        grep "Component Version" "$log"
+        echo "auval validated another copy than $VERSION: remove older ones from /Library/Audio/Plug-Ins and ~/Library/Audio/Plug-Ins"
+        exit 1
+    fi
+done
 
 # 2. Copy the bundles out of the build and sign them: hardened runtime, secure timestamp,
 #    no get-task-allow (PLAYBOOK security checklist, macOS 17).
@@ -44,15 +59,27 @@ for bundle in "$DIST/root/Library/Audio/Plug-Ins/Components/$NAME.component" "$D
     fi
 done
 
-# 3. The installer: both plugins into /Library/Audio/Plug-Ins, signed.
-pkgbuild --root "$DIST/root" --identifier com.marguento.okamisf2player --version "$VERSION" \
-         --install-location / "$DIST/plugins.pkg"
+# 3. The installer: both plugins into /Library/Audio/Plug-Ins, signed. Not relocatable, or
+#    Installer would update a copy found elsewhere (a developer build, a moved bundle) instead.
+pkgbuild --analyze --root "$DIST/root" "$DIST/components.plist" >/dev/null
+for i in 0 1; do plutil -replace "$i.BundleIsRelocatable" -bool NO "$DIST/components.plist"; done   # the key is absent until set
+pkgbuild --root "$DIST/root" --component-plist "$DIST/components.plist" --identifier com.marguento.okamisf2player \
+         --version "$VERSION" --install-location / "$DIST/plugins.pkg"
 PKG="$DIST/Okami-SF2-Player-$VERSION.pkg"
 productbuild --package "$DIST/plugins.pkg" --sign "$PKG_ID" --timestamp "$PKG"
-rm "$DIST/plugins.pkg"
+rm "$DIST/plugins.pkg" "$DIST/components.plist"
 
-# 4. Notarize and staple, so it installs without warnings, even offline.
-xcrun notarytool submit "$PKG" --key "$NOTARY_KEY" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER" --wait
+# 4. Notarize and staple, so it installs without warnings, even offline. notarytool can exit 0
+#    for a rejected submission: read its status, and print Apple's log when it isn't Accepted.
+result=$(xcrun notarytool submit "$PKG" --key "$NOTARY_KEY" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER" \
+         --wait --output-format json)
+submission=$(plutil -extract id raw -o - - <<< "$result")
+notarized=$(plutil -extract status raw -o - - <<< "$result")
+if [[ $notarized != Accepted ]]; then
+    echo "Notarization: $notarized"
+    xcrun notarytool log "$submission" --key "$NOTARY_KEY" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER"
+    exit 1
+fi
 xcrun stapler staple "$PKG"
 spctl --assess --type install --verbose "$PKG"
 

@@ -98,6 +98,8 @@ double pitch (const std::vector<float>& x, double from, double to, double sr = r
         r[(size_t) lag] = sum / (double) (n - (size_t) lag);
     }
     const double best = *std::max_element (r.begin() + minLag, r.end());
+    if (best <= 1e-12)
+        return 0.0;   // silence: no pitch
     for (int lag = minLag + 1; lag <= maxLag; ++lag)
         if (r[(size_t) lag] >= 0.9 * best && r[(size_t) lag] >= r[(size_t) lag - 1] && r[(size_t) lag] >= r[(size_t) lag + 1])
         {
@@ -308,7 +310,9 @@ int main()
                 juce::String (f, 1) + " Hz, tail " + db (tail));
     }
 
-    // ---- Layer and split (the test font has one instrument: it layers with itself).
+    // ---- Layer and split. Level checks layer the square with itself (+6 dB when equal); the split
+    // check puts FM Bells (two voices a note) under the square (one voice), so the voice count
+    // says which side played.
     {
         Player single (testFont), layered (testFont), quieter (testFont);
         layered.p.selectLayerPreset (testPreset);
@@ -323,25 +327,26 @@ int main()
         expect (std::abs (20 * std::log10 (lower / one) - 3.52) < 0.3, "Layer level -6 dB lowers the second instrument by 6 dB",
                 juce::String (20 * std::log10 (lower / one), 2) + " dB over one");
 
-        Player split (testFont);
-        split.p.selectLayerPreset (testPreset);
-        split.set ("layerMode", 2.0f);
-        split.set ("splitKey", 60.0f);
-        split.render (0.3, [] (int b, juce::MidiBuffer& m) { if (b == 0) m.addEvent (juce::MidiMessage::noteOn (1, 48, (juce::uint8) 100), 0); });
-        const int below = split.p.activeVoices.load();
-        Player above (testFont);
-        above.p.selectLayerPreset (testPreset);
-        above.set ("layerMode", 2.0f);
-        above.set ("splitKey", 60.0f);
-        above.render (0.3, [] (int b, juce::MidiBuffer& m) { if (b == 0) m.addEvent (juce::MidiMessage::noteOn (1, 72, (juce::uint8) 100), 0); });
-        const int high = above.p.activeVoices.load();
-        Player single2 (testFont);
-        single2.render (0.3, [] (int b, juce::MidiBuffer& m) { if (b == 0) m.addEvent (juce::MidiMessage::noteOn (1, 72, (juce::uint8) 100), 0); });
-        expect (below == single2.p.activeVoices.load() && high == below, "Split: each note plays on one side only",
-                juce::String (below) + " and " + juce::String (high) + " voices");
+        constexpr int bells = 0;   // Vintage Dreams Waves: "FM Bells 1"
+        auto voices = [&] (int preset, int layerMode, int key)
+        {
+            Player pl (testFont, preset);
+            pl.p.selectLayerPreset (bells);
+            pl.set ("layerMode", (float) layerMode);
+            pl.set ("splitKey", 60.0f);
+            pl.render (0.3, [key] (int b, juce::MidiBuffer& m) { if (b == 0) m.addEvent (juce::MidiMessage::noteOn (1, key, (juce::uint8) 100), 0); });
+            return pl.p.activeVoices.load();
+        };
+        const int squareVoices = voices (testPreset, 0, 72), bellVoices = voices (bells, 0, 48);
+        const int below = voices (testPreset, 2, 48), above = voices (testPreset, 2, 72);
+        expect (squareVoices != bellVoices && below == bellVoices && above == squareVoices,
+                "Split: keys below the split play the second instrument, the rest the first",
+                "below " + juce::String (below) + " voices (bells " + juce::String (bellVoices) + "), above " + juce::String (above)
+                    + " (square " + juce::String (squareVoices) + ")");
 
         // Switching the layer off while a note is held still stops it.
         Player held (testFont);
+        held.p.selectLayerPreset (bells);
         held.set ("layerMode", 1.0f);
         const auto out = held.render (3.0, [&] (int b, juce::MidiBuffer& m)
         {

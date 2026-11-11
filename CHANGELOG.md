@@ -3,6 +3,10 @@
 The version shows next to the title (`project(... VERSION x.y.z)` in CMakeLists.txt). Each
 release bumps it and adds an entry here: one line per change a player would notice.
 
+## 1.2.0 — Nov 10, 2026
+
+- Universal: Apple silicon and Intel Macs, from a signed and notarized installer.
+
 ## 1.1.0 — Nov 10, 2026
 
 - Renamed Okami SF2 Player. Projects that used "SF2 Player" still open (same plugin codes).
@@ -23,7 +27,6 @@ release bumps it and adds an entry here: one line per change a player would noti
 - Works at 44.1 to 192 kHz (it played an octave low above 96 kHz).
 - The window can be resized.
 - .sf3 (compressed) SoundFonts open too.
-- Universal: Apple silicon and Intel Macs, from a signed and notarized installer.
 
 ## 1.0.0 — Nov 2026
 

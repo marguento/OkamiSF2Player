@@ -37,13 +37,13 @@ brew install cmake ninja
 # libogg and libvorbis, once (static, into ThirdParty/xiph-install):
 cd ThirdParty && I=$PWD/xiph-install
 for lib in ogg vorbis; do (cd $lib && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+  -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
   -DBUILD_SHARED_LIBS=OFF -DCMAKE_PREFIX_PATH=$I -DCMAKE_INSTALL_PREFIX=$I -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
   && cmake --build build && cmake --install build); done
 
 # FluidSynth, once: no audio drivers, float, the patch applied, SF3 through libvorbisfile:
 cd fluidsynth && git apply ../../fluidsynth-fx-bypass.patch && cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
-  -Denable-floats=ON -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 \
+  -Denable-floats=ON -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 \
   -DCMAKE_INSTALL_PREFIX=../fluidsynth-install -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DBUILD_SHARED_LIBS=OFF \
   -DCMAKE_C_FLAGS="-DSF2PLAYER_VORBISFILE=1 -I$I/include" -DCMAKE_CXX_FLAGS="-DSF2PLAYER_VORBISFILE=1 -I$I/include" \
   -DCMAKE_EXE_LINKER_FLAGS="$I/lib/libvorbisfile.a $I/lib/libvorbis.a $I/lib/libogg.a" \
@@ -53,7 +53,8 @@ cd fluidsynth && git apply ../../fluidsynth-fx-bypass.patch && cmake -B build -G
   -Denable-readline=OFF -Denable-openmp=OFF -Denable-native-dls=OFF -Denable-signalsmith=OFF -Denable-alsa=OFF \
   -Denable-systemd=OFF -Denable-portaudio=OFF && cmake --build build && cmake --install build && cd ../..
 
-# The plugin (also installs the AU and VST3 into ~/Library/Audio/Plug-Ins):
+# The plugin (also installs the AU and VST3 into ~/Library/Audio/Plug-Ins). Native by default;
+# the libraries above are universal, so -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" works too.
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ctest --test-dir build --output-on-failure

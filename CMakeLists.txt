@@ -1,9 +1,10 @@
 cmake_minimum_required(VERSION 3.22)
 
-set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Universal: Apple silicon and Intel")
+# Native for everyday builds; scripts/release.sh builds universal (arm64;x86_64).
+set(CMAKE_OSX_ARCHITECTURES "${CMAKE_HOST_SYSTEM_PROCESSOR}" CACHE STRING "arm64, x86_64, or both for a release")
 set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0" CACHE STRING "Minimum macOS")
 
-project(SF2Player VERSION 1.1.0 LANGUAGES C CXX)
+project(SF2Player VERSION 1.2.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 
 add_subdirectory(ThirdParty/JUCE)
