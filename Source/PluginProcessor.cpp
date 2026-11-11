@@ -467,8 +467,6 @@ void SF2PlayerProcessor::prepareToPlay (double newSampleRate, int maximumExpecte
     const bool rateChanged = ! juce::exactlyEqual (newSampleRate, sampleRate);
     sampleRate = newSampleRate;
 
-    deferredMidi.clear();
-
     // A file that went missing and is back (a drive plugged in again): load it, with the
     // project's instruments.
     if (currentFile == juce::File() && missingFile.existsAsFile())

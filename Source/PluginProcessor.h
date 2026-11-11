@@ -19,7 +19,7 @@ public:
     ~SF2PlayerProcessor() override;
 
     void prepareToPlay (double sampleRate, int maximumExpectedSamplesPerBlock) override;
-    void releaseResources() override { deferredMidi.clear(); }
+    void releaseResources() override {}   // deferred note-offs still belong to sounding voices
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
