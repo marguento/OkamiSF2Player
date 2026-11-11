@@ -6,3 +6,10 @@ ThirdParty/fluidsynth-install/
 ThirdParty/ogg/
 ThirdParty/vorbis/
 ThirdParty/xiph-install/
+
+# Secrets (PLAYBOOK security checklist)
+*.p8
+*.pem
+*.cer
+*.p12
+*.key

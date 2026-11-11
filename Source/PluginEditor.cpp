@@ -786,6 +786,9 @@ void SF2PlayerEditor::paint (juce::Graphics& g)
     g.setColour (SF2Look::text);
     g.setFont (juce::FontOptions (17.0f, juce::Font::bold));
     g.drawText ("Okami SF2 Player", 16, 12, 260, 22, juce::Justification::centredLeft);
+    g.setColour (SF2Look::dim);
+    g.setFont (juce::FontOptions (11.0f));
+    g.drawText (juce::String ("v") + JucePlugin_VersionString, 166, 15, 60, 18, juce::Justification::centredLeft);
 
     // MIDI light and output meter, top right.
     const auto dot = juce::Rectangle<float> ((float) meterArea.getX() - 16.0f, (float) meterArea.getCentreY() - 3.5f, 7.0f, 7.0f);
