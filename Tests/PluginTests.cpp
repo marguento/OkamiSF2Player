@@ -2,6 +2,7 @@
 // (exit code 1) when a result is off. `ctest` runs it with Tests/test.sf2; with the HQ
 // Orchestral collection in ~/Downloads it also checks that collection and the CPU use.
 #include "../Source/PluginProcessor.h"
+#include "../Source/SoundFontInfo.h"
 #include <fluidsynth.h>
 #include <juce_events/juce_events.h>
 #include <cmath>
@@ -414,6 +415,64 @@ int main()
         };
         expect (play (0, 43) < 1e-6 && play (2, 43) > 1e-3, "Split: notes below the split play the second instrument",
                 "G2 alone " + db (play (0, 43)) + ", split " + db (play (2, 43)));
+    }
+
+    // ---- Hostile files: whatever an .sf2 holds, loading it ends quickly and never crashes.
+    {
+        const auto dir = juce::File::createTempFile ("sf2-hostile");
+        dir.createDirectory();
+        auto write = [&] (const juce::String& name, const juce::MemoryBlock& data)
+        {
+            auto f = dir.getChildFile (name);
+            f.replaceWithData (data.getData(), data.getSize());
+            return f;
+        };
+        juce::MemoryBlock original;
+        testFont.loadFileAsData (original);
+
+        juce::MemoryBlock garbage;
+        juce::Random random (42);
+        for (int i = 0; i < 100000; ++i) garbage.append (&i, 1), static_cast<char*> (garbage.getData())[i] = (char) random.nextInt (256);
+        juce::MemoryBlock truncated (original.getData(), original.getSize() / 2);
+        juce::MemoryBlock riffOnly ("RIFF\xff\xff\xff\x7fsfbk", 12);
+
+        // A pdta whose presets point at every bag, and whose bags point at 65,535 generators.
+        juce::MemoryOutputStream pdta;
+        auto chunk = [&] (const char* id, const juce::MemoryBlock& body)
+        {
+            pdta.write (id, 4); pdta.writeInt ((int) body.getSize()); pdta.write (body.getData(), body.getSize());
+        };
+        auto records = [] (int count, int size, std::function<void (juce::MemoryOutputStream&, int)> fill)
+        {
+            juce::MemoryOutputStream out;
+            for (int i = 0; i < count; ++i) { const auto start = out.getPosition(); fill (out, i); while (out.getPosition() < start + size) out.writeByte (0); }
+            return out.getMemoryBlock();
+        };
+        chunk ("phdr", records (2001, 38, [] (juce::MemoryOutputStream& o, int i) { o.write ("Evil", 4); o.setPosition (o.getPosition() + 16); o.writeShort ((short) i); o.writeShort (0); o.writeShort (i == 2000 ? (short) 0xffff : 0); }));
+        chunk ("pbag", records (3000, 4, [] (juce::MemoryOutputStream& o, int i) { o.writeShort ((short) (i % 2 ? 0xffff : 0)); }));
+        chunk ("pgen", records (10, 4, [] (juce::MemoryOutputStream& o, int) { o.writeShort (41); o.writeShort (0); }));
+        chunk ("inst", records (3, 22, [] (juce::MemoryOutputStream& o, int i) { o.setPosition (o.getPosition() + 20); o.writeShort (i == 2 ? (short) 0xffff : 0); }));
+        chunk ("ibag", records (3000, 4, [] (juce::MemoryOutputStream& o, int i) { o.writeShort ((short) (i % 2 ? 0xffff : 0)); }));
+        chunk ("igen", records (10, 4, [] (juce::MemoryOutputStream& o, int) { o.writeShort (53); o.writeShort (0); }));
+        juce::MemoryOutputStream evil;
+        evil.write ("RIFF", 4); evil.writeInt ((int) pdta.getDataSize() + 16); evil.write ("sfbk", 4);
+        evil.write ("LIST", 4); evil.writeInt ((int) pdta.getDataSize() + 4); evil.write ("pdta", 4);
+        evil.write (pdta.getData(), pdta.getDataSize());
+
+        bool allRefused = true;
+        const auto start = juce::Time::getMillisecondCounterHiRes();
+        for (const auto& [name, data] : { std::pair { juce::String ("garbage.sf2"), garbage }, std::pair { juce::String ("truncated.sf2"), truncated },
+                                          std::pair { juce::String ("riff-only.sf2"), riffOnly }, std::pair { juce::String ("evil.sf2"), evil.getMemoryBlock() } })
+        {
+            const auto file = write (name, data);
+            SoundFontInfo::read (file);   // our own reader, which runs on files FluidSynth accepts
+            SF2PlayerProcessor p;
+            allRefused = allRefused && ! p.loadSoundFont (file);
+        }
+        const double ms = juce::Time::getMillisecondCounterHiRes() - start;
+        expect (allRefused && ms < 3000, "Hostile files (garbage, truncated, a header alone, indices pointing everywhere) are refused quickly",
+                juce::String (ms, 0) + " ms");
+        dir.deleteRecursively();
     }
 
     // ---- CPU: 64 string notes (256 voices) at 48 kHz in 128-sample blocks.

@@ -423,7 +423,7 @@ void SF2PlayerEditor::refresh()
     }
     refreshFileBox();
 
-    const auto presets = player.presets();
+    const auto& presets = player.presets();
     fillPresetBox();
 
     // "by <author>" when the font names one (the file box already names the file and its count)
@@ -526,7 +526,7 @@ static juce::String presetLabel (const SF2PlayerProcessor::Preset& p)
 // ("brass", "flutes"). Returns how many instruments it lists, favorites not counted twice.
 int SF2PlayerEditor::addInstruments (juce::ComboBox& box, const juce::String& query) const
 {
-    const auto presets = player.presets();
+    const auto& presets = player.presets();
     box.clear (juce::dontSendNotification);
 
     const auto bankZero = std::count_if (presets.begin(), presets.end(), [] (const auto& p) { return p.bank == 0; });
@@ -574,7 +574,7 @@ int SF2PlayerEditor::addInstruments (juce::ComboBox& box, const juce::String& qu
 
 void SF2PlayerEditor::fillPresetBox()
 {
-    const auto presets = player.presets();
+    const auto& presets = player.presets();
     const int shown = addInstruments (presetBox, searchBox.getText().trim());
 
     presetBox.setSelectedId (player.selectedPreset() + 1, juce::dontSendNotification);
@@ -593,7 +593,7 @@ void SF2PlayerEditor::fillPresetBox()
 
 juce::String SF2PlayerEditor::favouriteKey (int presetIndex) const
 {
-    const auto presets = player.presets();
+    const auto& presets = player.presets();
     if (! juce::isPositiveAndBelow (presetIndex, (int) presets.size()))
         return {};
     const auto& p = presets[(size_t) presetIndex];
@@ -712,7 +712,7 @@ void SF2PlayerEditor::showEffectPreset (bool reverb)
 // on-screen keyboard's state so it plays like a click on a key.
 void SF2PlayerEditor::preview()
 {
-    const auto presets = player.presets();
+    const auto& presets = player.presets();
     const int index = player.selectedPreset();
     if (! juce::isPositiveAndBelow (index, (int) presets.size()))
         return;
@@ -817,7 +817,7 @@ void SF2PlayerEditor::paint (juce::Graphics& g)
         g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
         g.drawText (title, area.getX() + 12, area.getY() + 8, 100, 14, juce::Justification::centredLeft);
         // What the chosen instrument sends to this effect, and where it goes.
-        const auto presets = player.presets();
+        const auto& presets = player.presets();
         const int index = player.selectedPreset();
         if (juce::isPositiveAndBelow (index, (int) presets.size()))
         {

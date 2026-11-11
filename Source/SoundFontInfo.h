@@ -109,14 +109,23 @@ private:
             int low = 0, high = 127, link = -1;
             std::optional<int> reverb, chorus;   // generators 16 and 15, in 0.1 %
         };
+        // A hostile file can point every preset at every bag: indices are clamped to the chunks'
+        // real sizes, and the whole walk stops after a budget of generators (a valid file needs
+        // a few per zone; the 522 MB HQ collection reads under 100,000).
+        long budget = 20'000'000;
+
         // The zones in bags [first, last): each zone's key range and its link (instrument or sample).
         auto zones = [&] (const juce::MemoryBlock& bags, const juce::MemoryBlock& gens, int first, int last, int linkGenerator)
         {
             std::vector<Zone> list;
-            for (int bag = first; bag < last; ++bag)
+            const int bagCount = (int) bags.getSize() / 4, genCount = (int) gens.getSize() / 4;
+            last = juce::jmin (last, bagCount - 1);   // each bag reads the next one's start
+            for (int bag = first; bag < last && budget > 0; ++bag)
             {
                 Zone zone;
-                const int genFirst = u16 (bags, (size_t) bag * 4), genLast = u16 (bags, (size_t) (bag + 1) * 4);
+                const int genFirst = u16 (bags, (size_t) bag * 4);
+                const int genLast = juce::jmin (u16 (bags, (size_t) (bag + 1) * 4), genCount);
+                budget -= juce::jmax (0, genLast - genFirst) + 1;
                 for (int g = genFirst; g < genLast; ++g)
                 {
                     const int oper = u16 (gens, (size_t) g * 4);

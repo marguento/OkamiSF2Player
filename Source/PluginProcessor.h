@@ -54,7 +54,7 @@ public:
     // The second instrument, for Layer and Split (playMode-like parameter "layerMode").
     void selectLayerPreset (int presetIndex);
     int selectedLayerPreset() const { return layerPreset; }
-    std::vector<Preset> presets() const { return presetList; }
+    const std::vector<Preset>& presets() const { return presetList; }   // message thread
     juce::File soundFontFile() const { return currentFile; }
     const SoundFontInfo& soundFontInfo() const { return currentInfo; }
     int selectedPreset() const { return currentPreset; }
