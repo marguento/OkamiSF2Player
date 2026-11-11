@@ -233,7 +233,9 @@ and a certificate request (`openssl req -new -newkey rsa:2048 -nodes ...`), uplo
 developer.apple.com → Certificates → + → Developer ID, download the certificate and import it
 with its key. Xcode's Manage Certificates and the App Store Connect API refused it here even
 signed in as the Account Holder (the API also has no Installer type). Keep an encrypted .p12
-backup of each, outside any repository: a lost private key means revoking and starting over. Notarization uses an App Store Connect API key (`NOTARY_KEY`, `NOTARY_KEY_ID`, `NOTARY_ISSUER`) set in
+backup of each, outside any repository: a lost private key means revoking and starting over.
+
+Notarization uses an App Store Connect API key (`NOTARY_KEY`, `NOTARY_KEY_ID`, `NOTARY_ISSUER`) set in
 `scripts/release.env` (ignored by git). Then attach the .pkg to a GitHub release:
 `gh release create v<version> dist/*.pkg dist/*.sha256 --notes-file <notes>`.
 
