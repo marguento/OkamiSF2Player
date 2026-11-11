@@ -1,5 +1,6 @@
 #include "PluginEditor.h"
 #include <algorithm>
+#include <iterator>
 #include <numeric>
 #include <tuple>
 
@@ -77,7 +78,7 @@ void SF2Look::drawPopupMenuItem (juce::Graphics& g, const juce::Rectangle<int>& 
     if (font.getHeight() > maxFontHeight)
         font.setHeight (maxFontHeight);
     r.removeFromLeft (juce::roundToInt (maxFontHeight));
-    const int nameWidth = juce::roundToInt (juce::GlyphArrangement::getStringWidth (font, name));
+    const int nameWidth = juce::roundToInt (juce::GlyphArrangement::getStringWidth (font, name)) + 4;   // slack: drawText elides at the exact width
     g.setFont (font.withHeight (font.getHeight() * 0.85f));
     g.setColour (dim.withMultipliedAlpha (isActive ? 0.8f : 0.4f));
     g.drawText (itemText.substring (split), r.withTrimmedLeft (nameWidth), juce::Justification::centredLeft, true);
@@ -98,7 +99,7 @@ void SF2Look::drawLabel (juce::Graphics& g, juce::Label& label)
     const auto font = getLabelFont (label);
     auto area = getLabelBorderSize (label).subtractedFrom (label.getLocalBounds());
     const auto name = labelText.substring (0, split);
-    const int nameWidth = juce::jmin (area.getWidth(), juce::roundToInt (juce::GlyphArrangement::getStringWidth (font, name)));
+    const int nameWidth = juce::jmin (area.getWidth(), juce::roundToInt (juce::GlyphArrangement::getStringWidth (font, name)) + 4);
     g.setFont (font);
     g.setColour (label.findColour (juce::Label::textColourId));
     g.drawText (name, area.removeFromLeft (nameWidth), juce::Justification::centredLeft, true);
@@ -161,7 +162,8 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
       toneAttachment (p.parameters, "tone", toneSlider),
       sendsAttachment (p.parameters, "sendOutputs", sendsToggle),
       reverbOnAttachment (p.parameters, "fsReverbOn", reverbToggle),
-      chorusOnAttachment (p.parameters, "fsChorusOn", chorusToggle)
+      chorusOnAttachment (p.parameters, "fsChorusOn", chorusToggle),
+      playModeAttachment (p.parameters, "playMode", playMode)
 {
     setLookAndFeel (&look);
 
@@ -251,6 +253,40 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     addAndMakeVisible (reverbToggle);
     addAndMakeVisible (chorusToggle);
 
+    playMode.addItemList ({ "Poly", "Mono", "Legato" }, 1);
+    playMode.setSelectedItemIndex (juce::roundToInt (p.parameters.getRawParameterValue ("playMode")->load()), juce::dontSendNotification);
+    playMode.setTooltip ("Poly: as the SoundFont plays. Mono: one note at a time. Legato: one note, connected notes don't restart.");
+    playModeLabel.setJustificationType (juce::Justification::centred);
+    playModeLabel.setFont (juce::FontOptions (12.0f));
+    playModeLabel.setColour (juce::Label::textColourId, SF2Look::dim);
+    addAndMakeVisible (playMode);
+    addAndMakeVisible (playModeLabel);
+    attack.slider.setTooltip ("How long notes take to start: x1 is the SoundFont's own");
+    release.slider.setTooltip ("How long notes take to fade after the key is let go: x1 is the SoundFont's own");
+    velocityCurve.slider.setTooltip ("+ makes soft playing louder, - makes it softer. Linear: velocities as played");
+    glide.slider.setTooltip ("Slide from one note to the next (Legato: only between connected notes)");
+    glide.slider.setSkewFactorFromMidPoint (250.0);   // half a turn is 250 ms: short glides need the room
+
+    fillEffectPresets();
+    for (auto* box : { &reverbPresets, &chorusPresets })
+    {
+        box->setColour (juce::ComboBox::backgroundColourId, SF2Look::background);
+        box->setTooltip ("Starting points: they set the four knobs");
+        addAndMakeVisible (*box);
+    }
+    reverbPresets.onChange = [this] { if (reverbPresets.getSelectedId() > 0) applyEffectPreset (true, reverbPresets.getSelectedId() - 1); };
+    chorusPresets.onChange = [this] { if (chorusPresets.getSelectedId() > 0) applyEffectPreset (false, chorusPresets.getSelectedId() - 1); };
+
+    {
+        juce::Path triangle;
+        triangle.addTriangle (0.0f, 0.0f, 0.0f, 10.0f, 8.7f, 5.0f);
+        previewButton.setShape (triangle, false, true, false);
+        previewButton.setBorderSize (juce::BorderSize<int> (8, 9, 8, 7));
+        previewButton.setTooltip ("Play a note of this instrument");
+        previewButton.onClick = [this] { preview(); };
+        addAndMakeVisible (previewButton);
+    }
+
     warningLabel.setFont (juce::FontOptions (12.0f));
     warningLabel.setColour (juce::Label::textColourId, SF2Look::warning);
     addAndMakeVisible (warningLabel);
@@ -265,12 +301,16 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     player.addChangeListener (this);
     refresh();
     startTimerHz (20);
+    setResizable (true, true);
+    setResizeLimits (620, 570, 1600, 1200);
     if (getHeight() == 0)
-        setSize (620, 462);
+        setSize (620, 592);
 }
 
 SF2PlayerEditor::~SF2PlayerEditor()
 {
+    if (previewNote >= 0)
+        player.keyboardState.noteOff (1, previewNote, 0.0f);
     player.removeChangeListener (this);
     setLookAndFeel (nullptr);
 }
@@ -382,8 +422,13 @@ void SF2PlayerEditor::refresh()
     const bool showInfo = infoLabel.getText().isNotEmpty();
     if (showInfo != infoLabel.isVisible() || getHeight() == 0)
     {
+        // The row comes or goes: the window grows or shrinks by its height, keeping the user's size otherwise.
+        const bool first = getHeight() == 0;
         infoLabel.setVisible (showInfo);
-        setSize (620, showInfo ? 462 : 440);
+        if (first)
+            setSize (620, showInfo ? 592 : 570);
+        else
+            setSize (getWidth(), juce::jmax (570, getHeight() + (showInfo ? 22 : -22)));
     }
 
     const int index = player.selectedPreset();
@@ -551,6 +596,94 @@ void SF2PlayerEditor::refreshFavouriteButton()
     favouriteButton.setEnabled (favouriteKey (player.selectedPreset()).isNotEmpty());
 }
 
+// ---------------------------------------------------------------------------- effect presets
+
+namespace
+{
+struct EffectPreset { const char* name; float values[4]; };
+// Level, room, damping, width. "Default" is FluidSynth's own.
+const EffectPreset reverbPresetList[] = {
+    { "Default",   { 0.70f, 0.50f, 0.20f, 0.80f } },
+    { "Room",      { 0.50f, 0.30f, 0.50f, 0.60f } },
+    { "Studio",    { 0.45f, 0.40f, 0.40f, 0.80f } },
+    { "Hall",      { 0.65f, 0.80f, 0.30f, 1.00f } },
+    { "Church",    { 0.70f, 0.92f, 0.20f, 1.00f } },
+    { "Cathedral", { 0.75f, 1.00f, 0.10f, 1.00f } },
+};
+// Level, rate (Hz), depth (ms), voices.
+const EffectPreset chorusPresetList[] = {
+    { "Default",  { 0.60f, 0.20f, 4.25f, 3.0f } },
+    { "Subtle",   { 0.40f, 0.30f, 2.00f, 2.0f } },
+    { "Wide",     { 0.80f, 0.40f, 6.00f, 4.0f } },
+    { "Ensemble", { 1.00f, 0.60f, 8.00f, 6.0f } },
+};
+const char* const reverbIds[] = { "fsReverbLevel", "fsReverbRoom", "fsReverbDamping", "fsReverbWidth" };
+const char* const chorusIds[] = { "fsChorusLevel", "fsChorusRate", "fsChorusDepth", "fsChorusVoices" };
+} // namespace
+
+void SF2PlayerEditor::fillEffectPresets()
+{
+    int id = 1;
+    for (const auto& preset : reverbPresetList) reverbPresets.addItem (preset.name, id++);
+    id = 1;
+    for (const auto& preset : chorusPresetList) chorusPresets.addItem (preset.name, id++);
+    showEffectPreset (true);
+    showEffectPreset (false);
+}
+
+void SF2PlayerEditor::applyEffectPreset (bool reverb, int index)
+{
+    const auto& preset = reverb ? reverbPresetList[index] : chorusPresetList[index];
+    const auto* const* ids = reverb ? reverbIds : chorusIds;
+    for (int i = 0; i < 4; ++i)
+    {
+        auto* parameter = player.parameters.getParameter (ids[i]);
+        parameter->beginChangeGesture();
+        parameter->setValueNotifyingHost (parameter->convertTo0to1 (preset.values[i]));
+        parameter->endChangeGesture();
+    }
+}
+
+// The menu names the preset the knobs match, or says "Custom".
+void SF2PlayerEditor::showEffectPreset (bool reverb)
+{
+    auto& box = reverb ? reverbPresets : chorusPresets;
+    const auto* const* ids = reverb ? reverbIds : chorusIds;
+    const int count = reverb ? (int) std::size (reverbPresetList) : (int) std::size (chorusPresetList);
+    int match = 0;
+    for (int p = 0; p < count && match == 0; ++p)
+    {
+        const auto& preset = reverb ? reverbPresetList[p] : chorusPresetList[p];
+        bool same = true;
+        for (int i = 0; i < 4; ++i)
+            same = same && std::abs (player.parameters.getRawParameterValue (ids[i])->load() - preset.values[i]) < 0.006f;
+        if (same)
+            match = p + 1;
+    }
+    if (match != box.getSelectedId() || (match == 0 && box.getText() != "Custom"))
+    {
+        box.setSelectedId (match, juce::dontSendNotification);
+        if (match == 0)
+            box.setText ("Custom", juce::dontSendNotification);
+    }
+}
+
+// A note in the instrument's range (middle C when it plays it), 0.7 s long, through the
+// on-screen keyboard's state so it plays like a click on a key.
+void SF2PlayerEditor::preview()
+{
+    const auto presets = player.presets();
+    const int index = player.selectedPreset();
+    if (! juce::isPositiveAndBelow (index, (int) presets.size()))
+        return;
+    if (previewNote >= 0)
+        player.keyboardState.noteOff (1, previewNote, 0.0f);
+    const auto& p = presets[(size_t) index];
+    previewNote = (60 >= p.lowKey && 60 <= p.highKey) ? 60 : (p.lowKey + p.highKey) / 2;
+    player.keyboardState.noteOn (1, previewNote, 0.8f);
+    previewTicks = 14;   // 20 Hz timer: 0.7 s
+}
+
 void SF2PlayerEditor::changeListenerCallback (juce::ChangeBroadcaster*)
 {
     refresh();
@@ -582,6 +715,14 @@ void SF2PlayerEditor::timerCallback()
         for (auto* knob : knobs)
             knob->slider.setAlpha (on ? 1.0f : 0.35f);
 
+    showEffectPreset (true);
+    showEffectPreset (false);
+    if (previewNote >= 0 && --previewTicks <= 0)
+    {
+        player.keyboardState.noteOff (1, previewNote, 0.0f);
+        previewNote = -1;
+    }
+
     repaint (meterArea.expanded (20, 4));
 }
 
@@ -605,6 +746,15 @@ void SF2PlayerEditor::paint (juce::Graphics& g)
     g.setColour (db > -1.0f ? SF2Look::warning : SF2Look::accent);
     g.fillRoundedRectangle (meterArea.toFloat().withWidth ((float) meterArea.getWidth() * fraction), 2.0f);
 
+    g.setColour (SF2Look::panel);
+    g.fillRoundedRectangle (playPanel.toFloat(), 6.0f);
+    g.setColour (SF2Look::dim);
+    g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
+    g.drawText ("PLAY", playPanel.getX() + 12, playPanel.getY() + 8, 100, 14, juce::Justification::centredLeft);
+    g.setFont (juce::FontOptions (11.0f));
+    g.drawText ("x1, Linear, 0, Poly and Off leave the SoundFont as it is", playPanel.getX() + 52, playPanel.getY() + 8,
+                playPanel.getWidth() - 64, 14, juce::Justification::centredLeft);
+
     const bool sends = sendsToggle.getToggleState();
     for (auto [area, title] : { std::pair { reverbPanel, "REVERB" }, std::pair { chorusPanel, "CHORUS" } })
     {
@@ -623,15 +773,15 @@ void SF2PlayerEditor::paint (juce::Graphics& g)
             const float low = reverb ? amounts.reverbMin : amounts.chorusMin;
             const float high = reverb ? amounts.reverbMax : amounts.chorusMax;
             auto percent = [] (float v) { return juce::String (v, v < 10.0f && ! juce::exactlyEqual (v, std::floor (v)) ? 1 : 0) + " %"; };
-            // "instrument sends 10 %"; with the separate outputs on, "sends 10 % → output" (it must fit).
+            // "sends 10 %"; with the separate outputs on, "sends 10 % → out" (beside the preset menu, it must fit).
             const auto amount = high <= 0.0f ? juce::String ("nothing")
                               : low < high ? juce::String (juce::roundToInt (low)) + juce::String::fromUTF8 ("\xe2\x80\x93") + percent (high)
                                            : percent (high);
-            const auto text = sends ? "sends " + amount + juce::String::fromUTF8 ("  \xe2\x86\x92 output")
-                                    : "instrument sends " + amount;
+            const auto text = sends ? "sends " + amount + juce::String::fromUTF8 (" \xe2\x86\x92 out")
+                                    : "sends " + amount;
             g.setColour (high > 0.0f ? (sends ? SF2Look::accent : SF2Look::text) : SF2Look::dim);
             g.setFont (juce::FontOptions (11.0f));
-            g.drawText (text, area.getX() + 72, area.getY() + 8, area.getWidth() - 72 - 40, 14, juce::Justification::centredLeft);
+            g.drawText (text, area.getX() + 72, area.getY() + 8, area.getWidth() - 72 - 32 - 96, 14, juce::Justification::centredLeft);
         }
     }
 
@@ -662,6 +812,7 @@ void SF2PlayerEditor::resized()
     nextButton.setBounds (row.removeFromRight (28));
     row.removeFromRight (6);
     favouriteButton.setBounds (row.removeFromRight (28));
+    previewButton.setBounds (row.removeFromRight (28));
     row.reduce (6, 0);
     searchBox.setBounds (row.removeFromLeft (130));
     row.removeFromLeft (6);
@@ -685,10 +836,23 @@ void SF2PlayerEditor::resized()
                                          std::tuple { chorusPanel, &chorusToggle, std::array<Knob*, 4> { &chorusLevel, &chorusRate, &chorusDepth, &chorusVoices } } })
     {
         toggle->setBounds (panel.getRight() - 32, panel.getY() + 4, 26, 22);
+        (toggle == &reverbToggle ? reverbPresets : chorusPresets).setBounds (panel.getRight() - 32 - 92, panel.getY() + 6, 88, 18);
         auto inner = panel.reduced (6).withTrimmedTop (18);
         const int width = inner.getWidth() / 4;
         for (auto* knob : knobs)
             knob->setBounds (inner.removeFromLeft (width));
+    }
+
+    area.removeFromTop (12);
+    playPanel = area.removeFromTop (118);
+    {
+        auto inner = playPanel.reduced (6).withTrimmedTop (18);
+        const int width = inner.getWidth() / 8;
+        for (auto* knob : { &attack, &release, &velocityCurve, &transpose, &fineTune, &bendRange, &glide })
+            knob->setBounds (inner.removeFromLeft (width));
+        auto modeArea = inner;
+        playModeLabel.setBounds (modeArea.removeFromTop (16));
+        playMode.setBounds (modeArea.withSizeKeepingCentre (juce::jmin (modeArea.getWidth() - 4, 84), 24).translated (0, -6));
     }
 
     area.removeFromTop (4);

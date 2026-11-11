@@ -25,6 +25,11 @@ struct SF2Look : juce::LookAndFeel_V4
                             const juce::String& shortcutKeyText, const juce::Drawable* icon,
                             const juce::Colour* textColour) override;
     void drawLabel (juce::Graphics&, juce::Label&) override;
+    juce::Font getComboBoxFont (juce::ComboBox& box) override
+    {
+        // The small preset menus in the panel headers get text to match their height.
+        return juce::FontOptions (box.getHeight() < 24 ? (float) box.getHeight() * 0.68f : juce::jmin (16.0f, (float) box.getHeight() * 0.85f));
+    }
     static int numberStart (const juce::String& s) { return s.lastIndexOf ("  ["); }
 };
 
@@ -120,11 +125,34 @@ private:
     Knob chorusDepth { *this, "fsChorusDepth", "Depth" };
     Knob chorusVoices { *this, "fsChorusVoices", "Voices" };
 
+    // Playing: every knob starts where the SoundFont is left as it is.
+    Knob attack { *this, "attack", "Attack" };
+    Knob release { *this, "release", "Release" };
+    Knob velocityCurve { *this, "velocityCurve", "Velocity" };
+    Knob transpose { *this, "transpose", "Transpose" };
+    Knob fineTune { *this, "fineTune", "Fine" };
+    Knob bendRange { *this, "bendRange", "Bend" };
+    Knob glide { *this, "glide", "Glide" };
+    juce::ComboBox playMode;
+    juce::Label playModeLabel { {}, "Mode" };
+    juce::AudioProcessorValueTreeState::ComboBoxAttachment playModeAttachment;
+
+    // Starting points for the shared reverb and chorus: they move the four knobs.
+    juce::ComboBox reverbPresets, chorusPresets;
+    void fillEffectPresets();
+    void applyEffectPreset (bool reverb, int index);
+    void showEffectPreset (bool reverb);
+
+    // Plays a short note of the chosen instrument.
+    juce::ShapeButton previewButton { "Preview", SF2Look::dim, SF2Look::text, SF2Look::accent };
+    int previewNote = -1, previewTicks = 0;
+    void preview();
+
     juce::Label warningLabel;
     RangeKeyboard keyboard { player.keyboardState, juce::MidiKeyboardComponent::horizontalKeyboard };
 
     std::unique_ptr<juce::FileChooser> chooser;
-    juce::Rectangle<int> meterArea, reverbPanel, chorusPanel;
+    juce::Rectangle<int> meterArea, reverbPanel, chorusPanel, playPanel;
     float shownPeak = 0.0f;
     int lastNoteCount = 0, midiFlash = 0;
     bool dragging = false;
