@@ -55,14 +55,31 @@ public:
     void selectPreset (int presetIndex);
     // The second instrument, for Layer and Split (playMode-like parameter "layerMode").
     void selectLayerPreset (int presetIndex);
-    // Copies, read under stateMutex: a host may restore a project on another thread meanwhile.
-    int selectedLayerPreset() const { const std::lock_guard<std::recursive_mutex> l (stateMutex); return layerPreset; }
-    std::vector<Preset> presets() const { const std::lock_guard<std::recursive_mutex> l (stateMutex); return presetList; }
-    juce::File soundFontFile() const { const std::lock_guard<std::recursive_mutex> l (stateMutex); return currentFile; }
-    SoundFontInfo soundFontInfo() const { const std::lock_guard<std::recursive_mutex> l (stateMutex); return currentInfo; }
-    int selectedPreset() const { const std::lock_guard<std::recursive_mutex> l (stateMutex); return currentPreset; }
-    // The SoundFont the project names when it isn't on this Mac any more (moved, renamed or deleted).
-    juce::File missingSoundFont() const { const std::lock_guard<std::recursive_mutex> l (stateMutex); return missingFile; }
+    // Everything about the SoundFont that readers need, as one immutable snapshot: whoever
+    // changes the state publishes a new one, and readers (the editor, getStateInformation, any
+    // thread) take the current one at once, never waiting for a load and never seeing half a
+    // change. Take it once per operation: `const auto st = player.state();`.
+    struct State
+    {
+        juce::File file;          // the open SoundFont (none when missing)
+        juce::File missing;       // the SoundFont the project names when it isn't loaded: moved, renamed or unreadable
+        std::vector<Preset> presets;
+        SoundFontInfo info;
+        int preset = 0, layer = 0;   // indices into presets
+        int bank = -1, number = -1, layerBank = -1, layerNumber = -1;   // the instruments by bank:program, as saved
+    };
+    std::shared_ptr<const State> state() const
+    {
+        const juce::SpinLock::ScopedLockType lock (publishedLock);
+        return published;
+    }
+    // Shorthands for one value (each takes its own snapshot).
+    int selectedLayerPreset() const { return state()->layer; }
+    std::vector<Preset> presets() const { return state()->presets; }
+    juce::File soundFontFile() const { return state()->file; }
+    SoundFontInfo soundFontInfo() const { return state()->info; }
+    int selectedPreset() const { return state()->preset; }
+    juce::File missingSoundFont() const { return state()->missing; }
 
     // Message-thread housekeeping, ten times a second (a timer; tests call it directly):
     // keeps in memory the instruments a clip switched to (so switching back reads nothing from
@@ -127,6 +144,9 @@ private:
     juce::AbstractFifo pinFifo { 256 };
     std::array<int, 256> pinQueue {};
     std::array<int, 16> lastPinRequest;   // audio thread only
+    std::atomic<int> engineGeneration { 0 };   // bumped by swapEngine: a new engine pins afresh
+    int seenGeneration = 0;                    // audio thread only
+    juce::MidiBuffer shortMidi;   // a block's MIDI without sysex (reserved in prepareToPlay)
     int housekeepingTicks = 0;
 
     // A file that failed to load is retried when it changes (time or size), or after a wait
@@ -138,21 +158,29 @@ private:
     void recordFailure (const juce::File&);
     bool shouldRetry (const juce::File&) const;
 
-    // What getStateInformation saves about the file and instruments, kept current by whoever
-    // changes them: reading it never waits for a SoundFont to load.
-    struct SavedSoundFont { juce::String path; int preset = 0, bank = -1, number = -1, layerBank = -1, layerNumber = -1; };
-    SavedSoundFont savedSoundFont;
-    juce::SpinLock savedSoundFontLock;
-    void updateSavedSoundFont();   // under stateMutex
+    // The published snapshot (see State). Writers change the members below under stateMutex,
+    // always through a StateWriter, which publishes when the outermost one ends.
+    std::shared_ptr<const State> published = std::make_shared<State>();
+    mutable juce::SpinLock publishedLock;
+    int writerDepth = 0;
+    void publish();
+    struct StateWriter
+    {
+        explicit StateWriter (SF2PlayerProcessor& p) : owner (p), lock (p.stateMutex) { ++owner.writerDepth; }
+        ~StateWriter() { if (--owner.writerDepth == 0) owner.publish(); }
+        SF2PlayerProcessor& owner;
+        std::lock_guard<std::recursive_mutex> lock;
+    };
 
     // No SoundFont, the file kept for the project (shown as missing, or unreadable). The one
     // way into that state; `keepInstruments` saves the current ones by bank:program first.
     void enterMissingState (const juce::File& file, bool keepInstruments, bool unreadable);
 
-    // Guards what the message thread and prepareToPlay (which a host may call from another
-    // thread) share: the file, the preset list and choices, the sample rate. Never taken on the
-    // audio thread; always before engineLock.
-    mutable std::recursive_mutex stateMutex;
+    // Serializes the writers of the members below (the message thread, and prepareToPlay or
+    // setStateInformation, which a host may call from another thread): the file, the preset
+    // list and choices, the sample rate. Taken through StateWriter; never on the audio thread,
+    // never by readers (they use state()), always before engineLock.
+    std::recursive_mutex stateMutex;
     // Notifies the host (VST3 "dirty") outside stateMutex, so its handler can't deadlock with
     // a prepareToPlay waiting for the mutex.
     std::atomic<bool> projectChangePending { false };

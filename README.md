@@ -99,13 +99,15 @@ FluidSynth's build downloads its `gcem` submodule from GitHub the first time if 
   there allocates: sysex is skipped by size before any message is built, and past a reserve
   continuous values (controllers, pressure, bends) keep only their last value per channel,
   while note-offs, pedals, program and bank changes, RPN/NRPN and resets keep their order.
-- **Shared state** (the file, the preset list and choices, the sample rate) is guarded by
-  `stateMutex`, taken by the message thread, by `prepareToPlay` and `setStateInformation`
-  (which a host may call from another thread) and by the editor's accessors (which return
-  copies); never by the audio thread, and always before `engineLock`.
-- **Saving never waits:** `getStateInformation` reads a small snapshot of the file and the
-  instruments (`savedSoundFont`, under its own SpinLock), kept current by whoever changes them,
-  so a host saving while a SoundFont loads isn't held up.
+- **Shared state, published as one immutable snapshot** (`State`: the file, the missing file,
+  the preset list, the info, both instruments). Writers (the message thread, `prepareToPlay`
+  and `setStateInformation`, which a host may call from another thread) change it under
+  `stateMutex`, always through a `StateWriter`, which publishes a new snapshot when the
+  outermost one ends. Readers (`state()`: the editor, `getStateInformation`, any thread) take
+  the current snapshot under a tiny SpinLock: they never wait for a load and never see half a
+  change. A restored project's file and instruments are published before its load starts, so
+  a save meanwhile is consistent. `stateMutex` is never taken on the audio thread, and always
+  before `engineLock`.
 - **Message-thread housekeeping** (a 10 Hz timer, `runMessageThreadTasks`): tells the host the
   project changed (outside `stateMutex`, so the host's handler can't deadlock with a waiting
   `prepareToPlay`), pins the presets a clip switched to, and reloads a missing file once it's
@@ -156,7 +158,8 @@ FluidSynth's build downloads its `gcem` submodule from GitHub the first time if 
   `updateHostDisplay (withNonParameterStateChanged)`, so Ableton asks to save. The instruments
   are saved by bank:program. A missing file's path is kept in the project and shown ("Can't
   find"); one that exists but can't be read says "Can't open". Either is loaded again within a
-  second of coming back or changing (or a minute later, for a file still downloading).
+  second of coming back or changing, and otherwise retried after a wait that doubles from one
+  minute to thirty (for a file still downloading).
 
 ## Settings reference
 

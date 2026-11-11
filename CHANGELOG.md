@@ -3,6 +3,14 @@
 The version shows next to the title (`project(... VERSION x.y.z)` in CMakeLists.txt). Each
 release bumps it and adds an entry here: one line per change a player would notice.
 
+## 1.2.5 — Nov 11, 2026
+
+- The plugin window never freezes while a SoundFont loads, and stays quick with very large
+  SoundFonts (the instrument list is no longer copied per instrument).
+- Saving while a project is being restored saves that project, never a mix of two.
+- After a sample-rate change or a new SoundFont, Program Change instruments are kept in memory
+  again.
+
 ## 1.2.4 — Nov 11, 2026
 
 - Saving the project never waits for a SoundFont that's loading.

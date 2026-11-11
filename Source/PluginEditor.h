@@ -103,8 +103,8 @@ private:
     // A list id back to the instrument's index (favorites are copies with their own ids).
     static int presetIndexOf (int id) { return id > favouriteIdBase ? id - favouriteIdBase - 1 : id - 1; }
     int addInstruments (juce::ComboBox&, const juce::String& query) const;
-    juce::String favouriteKey (int presetIndex) const;
-    bool isFavourite (int presetIndex) const;
+    static juce::String favouriteKey (const SF2PlayerProcessor::State&, int presetIndex);
+    juce::StringArray favourites() const;
     void toggleFavourite();
     void refreshFavouriteButton();
 

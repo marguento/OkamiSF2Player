@@ -151,7 +151,7 @@ void SF2PlayerProcessor::runMessageThreadTasks()
         return;
 
     // A missing file that's back (a drive plugged in), or an unreadable one that changed.
-    const std::lock_guard<std::recursive_mutex> state (stateMutex);
+    const StateWriter writer (*this);
     if (currentFile == juce::File() && missingFile != juce::File() && missingFile.existsAsFile() && shouldRetry (missingFile))
     {
         const auto file = missingFile;
@@ -196,21 +196,30 @@ void SF2PlayerProcessor::flushProjectChanged()
         updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
 }
 
-void SF2PlayerProcessor::updateSavedSoundFont()
+// Called by the outermost StateWriter as it ends, with stateMutex held.
+void SF2PlayerProcessor::publish()
 {
-    SavedSoundFont saved;
-    saved.path = (currentFile != juce::File() ? currentFile : missingFile).getFullPathName();
-    saved.preset = currentPreset;
+    auto fresh = std::make_shared<State>();
+    fresh->file = currentFile;
+    fresh->missing = missingFile;
+    fresh->presets = presetList;
+    fresh->info = currentInfo;
+    fresh->preset = currentPreset;
+    fresh->layer = layerPreset;
     if (juce::isPositiveAndBelow (currentPreset, (int) presetList.size()))
-        saved.bank = presetList[(size_t) currentPreset].bank, saved.number = presetList[(size_t) currentPreset].number;
+        fresh->bank = presetList[(size_t) currentPreset].bank, fresh->number = presetList[(size_t) currentPreset].number;
     else
-        saved.bank = savedBank, saved.number = savedNumber;   // the file is missing: what the project had
+        fresh->bank = savedBank, fresh->number = savedNumber;   // the file is missing: what the project had
     if (juce::isPositiveAndBelow (layerPreset, (int) presetList.size()))
-        saved.layerBank = presetList[(size_t) layerPreset].bank, saved.layerNumber = presetList[(size_t) layerPreset].number;
+        fresh->layerBank = presetList[(size_t) layerPreset].bank, fresh->layerNumber = presetList[(size_t) layerPreset].number;
     else
-        saved.layerBank = savedLayerBank, saved.layerNumber = savedLayerNumber;
-    const juce::SpinLock::ScopedLockType lock (savedSoundFontLock);
-    savedSoundFont = saved;
+        fresh->layerBank = savedLayerBank, fresh->layerNumber = savedLayerNumber;
+    std::shared_ptr<const State> old;
+    {
+        const juce::SpinLock::ScopedLockType lock (publishedLock);
+        old = std::exchange (published, std::move (fresh));
+    }
+    // `old` is freed here, outside the SpinLock.
 }
 
 void SF2PlayerProcessor::enterMissingState (const juce::File& file, bool keepInstruments, bool unreadable)
@@ -231,7 +240,6 @@ void SF2PlayerProcessor::enterMissingState (const juce::File& file, bool keepIns
     currentFile = juce::File();
     currentInfo = {};
     presetList.clear();
-    updateSavedSoundFont();
     sendChangeMessage();
 }
 
@@ -382,6 +390,21 @@ void SF2PlayerProcessor::applyChannelSettings (int channel, const PlaySettings& 
     }
 }
 
+// Controllers kept in order past the deferred reserve, never collapsed: bank select, the hold,
+// sostenuto and soft pedals, and channel mode messages (120 and up).
+static bool keptInOrder (int cc)
+{
+    return cc == 0 || cc == 32 || cc == 64 || cc == 66 || cc == 67 || cc >= 120;
+}
+
+// Controllers FluidSynth's Reset All Controllers leaves alone (fluid_channel_init_ctrl in
+// fluid_chan.c): bank select, volume, balance, pan, sound controllers 1-10, effect depths 1-5.
+static bool survivesReset (int cc)
+{
+    return cc == 0 || cc == 32 || cc == 7 || cc == 39 || cc == 8 || cc == 40 || cc == 10 || cc == 42
+        || (cc >= 70 && cc <= 79) || (cc >= 91 && cc <= 95);
+}
+
 void SF2PlayerProcessor::deferMidi (const juce::MidiBuffer& midi)
 {
     for (const auto metadata : midi)
@@ -399,8 +422,7 @@ void SF2PlayerProcessor::deferMidi (const juce::MidiBuffer& midi)
         {
             if (m.isPitchWheel())       { deferredBend[(size_t) channel] = m.getPitchWheelValue(); anyCollapsed = true; continue; }
             if (m.isChannelPressure())  { deferredPressure[(size_t) channel] = m.getChannelPressureValue(); anyCollapsed = true; continue; }
-            const bool pedalOrBank = cc == 0 || cc == 32 || cc == 64 || cc == 66 || cc == 67 || cc >= 120;
-            if (cc >= 0 && ! rpn && ! pedalOrBank)
+            if (cc >= 0 && ! rpn && ! keptInOrder (cc))
             {
                 deferredController[(size_t) channel][(size_t) cc] = (juce::int8) m.getControllerValue();
                 anyCollapsed = true;
@@ -409,8 +431,7 @@ void SF2PlayerProcessor::deferMidi (const juce::MidiBuffer& midi)
         }
         // What changes lasting state goes in up to the full capacity: note-offs, pedals, bank
         // and program changes, parameter numbers and data, resets.
-        const bool lasting = m.isNoteOff() || m.isProgramChange() || rpn
-                          || cc == 0 || cc == 32 || cc == 64 || cc == 66 || cc == 67 || cc >= 120;
+        const bool lasting = m.isNoteOff() || m.isProgramChange() || rpn || (cc >= 0 && keptInOrder (cc));
         if (numDeferred < (lasting ? deferredCapacity : deferredNormal))
         {
             deferredEvents[(size_t) numDeferred++] = m;
@@ -421,8 +442,7 @@ void SF2PlayerProcessor::deferMidi (const juce::MidiBuffer& midi)
                 deferredBend[(size_t) channel] = deferredPressure[(size_t) channel] = -1;
                 auto& values = deferredController[(size_t) channel];
                 for (int c = 0; c < 120; ++c)
-                    if (! (c == 0 || c == 32 || c == 7 || c == 39 || c == 8 || c == 40 || c == 10 || c == 42
-                           || (c >= 91 && c <= 95) || (c >= 70 && c <= 79)))
+                    if (! survivesReset (c))
                         values[(size_t) c] = -1;
             }
         }
@@ -536,7 +556,7 @@ void SF2PlayerProcessor::applyLayerPreset (Engine& e, int presetIndex)
 
 void SF2PlayerProcessor::selectLayerPreset (int presetIndex)
 {
-    const std::lock_guard<std::recursive_mutex> state (stateMutex);
+    const StateWriter writer (*this);
     if (presetIndex < 0 || presetIndex >= (int) presetList.size())
         return;
     {
@@ -548,7 +568,6 @@ void SF2PlayerProcessor::selectLayerPreset (int presetIndex)
         applyLayerPreset (*engine, presetIndex);
     }
     layerPreset = presetIndex;
-    updateSavedSoundFont();
     sendChangeMessage();
     markProjectChanged();
 }
@@ -567,6 +586,7 @@ void SF2PlayerProcessor::swapEngine (std::unique_ptr<Engine> fresh)
     {
         const juce::SpinLock::ScopedLockType lock (engineLock);
         std::swap (engine, fresh);
+        ++engineGeneration;
         if (engine != nullptr)
         {
             applyEffectSettings (true);
@@ -578,7 +598,7 @@ void SF2PlayerProcessor::swapEngine (std::unique_ptr<Engine> fresh)
 
 bool SF2PlayerProcessor::loadSoundFont (const juce::File& file)
 {
-    const std::lock_guard<std::recursive_mutex> state (stateMutex);
+    const StateWriter writer (*this);
     auto fresh = createEngine (file, sampleRate);
     if (fresh == nullptr)
         return false;
@@ -627,9 +647,10 @@ bool SF2PlayerProcessor::loadSoundFont (const juce::File& file)
 
     currentFile = file;
     missingFile = juce::File();
+    failedFile = juce::File();   // a later failure starts again from a one-minute wait
+    retryWaitMs = 60000;
     currentInfo = std::move (info);
     currentPreset = preset;
-    updateSavedSoundFont();
     sendChangeMessage();
     markProjectChanged();
     return true;
@@ -637,7 +658,7 @@ bool SF2PlayerProcessor::loadSoundFont (const juce::File& file)
 
 void SF2PlayerProcessor::selectPreset (int presetIndex)
 {
-    const std::lock_guard<std::recursive_mutex> state (stateMutex);
+    const StateWriter writer (*this);
     if (presetIndex < 0 || presetIndex >= (int) presetList.size())
         return;
     {
@@ -648,7 +669,6 @@ void SF2PlayerProcessor::selectPreset (int presetIndex)
         applyPreset (*engine, presetIndex);
     }
     currentPreset = presetIndex;
-    updateSavedSoundFont();
     sendChangeMessage();
     markProjectChanged();
 }
@@ -657,11 +677,12 @@ void SF2PlayerProcessor::selectPreset (int presetIndex)
 void SF2PlayerProcessor::prepareToPlay (double newSampleRate, int maximumExpectedSamplesPerBlock)
 {
     work.setSize (6, juce::jmax (1, maximumExpectedSamplesPerBlock));
+    shortMidi.ensureSize (32768);
     toneFrequency = 0.0f;   // recompute the filters for this rate
     for (auto& channel : toneFilters)
         for (auto& stage : channel)
             stage.z1 = stage.z2 = 0.0f;
-    const std::lock_guard<std::recursive_mutex> state (stateMutex);
+    const StateWriter writer (*this);
     const bool rateChanged = ! juce::exactlyEqual (newSampleRate, sampleRate);
     sampleRate = newSampleRate;
 
@@ -731,10 +752,11 @@ void SF2PlayerProcessor::handleMidi (const juce::MidiMessage& m)
         {
             const int key = fluid_preset_get_banknum (preset) * 128 + fluid_preset_get_num (preset);
             if (key != lastPinRequest[(size_t) channel])   // a repeated program change queues nothing
-            {
-                lastPinRequest[(size_t) channel] = key;
-                pinFifo.write (1).forEach ([this, key] (int index) { pinQueue[(size_t) index] = key; });   // full: skipped
-            }
+                pinFifo.write (1).forEach ([this, key, channel] (int index)
+                {
+                    pinQueue[(size_t) index] = key;
+                    lastPinRequest[(size_t) channel] = key;   // only once it's queued (a full FIFO skips it)
+                });
         }
     }
     else
@@ -803,18 +825,21 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     juce::ScopedNoDenormals noDenormals;
     buffer.clear();
     const int numSamples = buffer.getNumSamples();
-    // The on-screen keyboard: JUCE's helper also adds the notes clicked on it, but it builds a
-    // message for every event, which would allocate for a sysex; with one present, the block's
-    // short events update it one by one and the clicks wait for the next block.
+    // Sysex isn't played, and building a message from it allocates: a block carrying one is
+    // swapped for a copy without it (into a buffer reserved in prepareToPlay) before anything
+    // reads it, the on-screen keyboard included (JUCE's helper builds a message per event).
     bool hasSysex = false;
     for (const auto metadata : midi)
         hasSysex = hasSysex || metadata.numBytes > 3;
-    if (! hasSysex)
-        keyboardState.processNextMidiBuffer (midi, 0, numSamples, true);
-    else
+    if (hasSysex)
+    {
+        shortMidi.clear();
         for (const auto metadata : midi)
             if (metadata.numBytes <= 3)
-                keyboardState.processNextMidiEvent (juce::MidiMessage (metadata.data, metadata.numBytes));
+                shortMidi.addEvent (metadata.data, metadata.numBytes, metadata.samplePosition);
+        midi.swapWith (shortMidi);
+    }
+    keyboardState.processNextMidiBuffer (midi, 0, numSamples, true);
 
     if (work.getNumSamples() < numSamples)   // a host sending more than it announced
         work.setSize (6, numSamples, false, false, true);
@@ -834,6 +859,11 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         {
             clearDeferredMidi();
             return;
+        }
+        if (const int generation = engineGeneration.load(); generation != seenGeneration)
+        {
+            seenGeneration = generation;   // a new engine: nothing pinned in it yet
+            lastPinRequest.fill (-1);
         }
         applyEffectSettings (false);
         applyPlaySettings (false);
@@ -933,28 +963,23 @@ juce::AudioProcessorEditor* SF2PlayerProcessor::createEditor()
 
 void SF2PlayerProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    // Never waits for a SoundFont to load: the file and instruments come from a snapshot kept
-    // current by whoever changes them. A missing file stays in the project, so finding it
-    // again (or putting it back) restores it.
-    SavedSoundFont saved;
+    // Never waits for a SoundFont to load: the file and instruments come from the published
+    // snapshot. A missing file stays in the project, so finding it again restores it.
+    const auto st = state();
+    auto saved = parameters.copyState();
+    saved.setProperty ("sf2Path", (st->file != juce::File() ? st->file : st->missing).getFullPathName(), nullptr);
+    saved.setProperty ("preset", st->preset, nullptr);
+    if (st->bank >= 0)
     {
-        const juce::SpinLock::ScopedLockType lock (savedSoundFontLock);
-        saved = savedSoundFont;
+        saved.setProperty ("presetBank", st->bank, nullptr);
+        saved.setProperty ("presetNumber", st->number, nullptr);
     }
-    auto state = parameters.copyState();
-    state.setProperty ("sf2Path", saved.path, nullptr);
-    state.setProperty ("preset", saved.preset, nullptr);
-    if (saved.bank >= 0)
+    if (st->layerBank >= 0)
     {
-        state.setProperty ("presetBank", saved.bank, nullptr);
-        state.setProperty ("presetNumber", saved.number, nullptr);
+        saved.setProperty ("layerBank", st->layerBank, nullptr);
+        saved.setProperty ("layerNumber", st->layerNumber, nullptr);
     }
-    if (saved.layerBank >= 0)
-    {
-        state.setProperty ("layerBank", saved.layerBank, nullptr);
-        state.setProperty ("layerNumber", saved.layerNumber, nullptr);
-    }
-    if (auto xml = state.createXml())
+    if (auto xml = saved.createXml())
         copyXmlToBinary (*xml, destData);
 }
 
@@ -967,7 +992,7 @@ void SF2PlayerProcessor::setStateInformation (const void* data, int sizeInBytes)
     auto state = juce::ValueTree::fromXml (*xml);
     parameters.replaceState (state);
 
-    const std::lock_guard<std::recursive_mutex> lockState (stateMutex);
+    const StateWriter writer (*this);
     const auto path = state.getProperty ("sf2Path").toString();
     const juce::File file = juce::File::isAbsolutePath (path) ? juce::File (path) : juce::File();
     currentPreset = (int) state.getProperty ("preset", 0);
@@ -975,6 +1000,21 @@ void SF2PlayerProcessor::setStateInformation (const void* data, int sizeInBytes)
     savedNumber = (int) state.getProperty ("presetNumber", -1);
     savedLayerBank = (int) state.getProperty ("layerBank", -1);
     savedLayerNumber = (int) state.getProperty ("layerNumber", -1);
+
+    // Published at once, before the (possibly long) load: a save meanwhile gets this project's
+    // file and instruments along with its parameters, never the previous project's.
+    {
+        auto restoringSnapshot = std::make_shared<State>();
+        restoringSnapshot->file = file;
+        restoringSnapshot->preset = currentPreset;
+        restoringSnapshot->bank = savedBank, restoringSnapshot->number = savedNumber;
+        restoringSnapshot->layerBank = savedLayerBank, restoringSnapshot->layerNumber = savedLayerNumber;
+        std::shared_ptr<const State> old;
+        {
+            const juce::SpinLock::ScopedLockType lock (publishedLock);
+            old = std::exchange (published, std::move (restoringSnapshot));
+        }
+    }
 
     const juce::ScopedValueSetter<bool> restoring (restoringState, true);
     if (file.existsAsFile())

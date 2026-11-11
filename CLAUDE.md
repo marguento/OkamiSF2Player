@@ -63,9 +63,10 @@ GitHub noreply email (`git config user.email` is set to it in this repo).
   changed (outside `stateMutex`, so its handler can't deadlock with `prepareToPlay`), pins
   presets, and reloads a returning or changed file. `enterMissingState` is the only way into
   the missing state (`prepareToPlay` uses it when a rebuild fails).
-- `getStateInformation` never takes `stateMutex`: it reads `savedSoundFont`, a snapshot under
-  a tiny SpinLock that `updateSavedSoundFont` refreshes whenever the file or an instrument
-  changes. Editor accessors return copies under `stateMutex`.
+- Readers never take `stateMutex`: `state()` returns the published immutable `State`
+  snapshot (the editor takes one per operation; `getStateInformation` saves from it). Writers
+  change the members only inside a `StateWriter`, which publishes when the outermost ends; a
+  new writer path that bypasses it would leave readers stale.
 
 ## FluidSynth
 

@@ -359,7 +359,8 @@ void SF2PlayerEditor::filesDropped (const juce::StringArray& files, int, int)
 
 void SF2PlayerEditor::chooseFile()
 {
-    chooser = std::make_unique<juce::FileChooser> ("Choose a SoundFont", player.soundFontFile(), "*.sf2;*.sf3");
+    const auto st = player.state();   // one consistent snapshot
+    chooser = std::make_unique<juce::FileChooser> ("Choose a SoundFont", st->file, "*.sf2;*.sf3");
     chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
                           [this] (const juce::FileChooser& fc)
                           {
@@ -390,14 +391,15 @@ void SF2PlayerEditor::stepPreset (int delta)
 
 void SF2PlayerEditor::refreshFileBox()
 {
+    const auto st = player.state();   // one consistent snapshot
     // The open file's entry also says how many instruments it holds: "HQ_Orchestral (195 instruments)".
-    const auto count = player.presets().size();
+    const auto count = st->presets.size();
     const auto instruments = count == 1 ? juce::String ("1 instrument") : juce::String ((int) count) + " instruments";
     fileBox.clear (juce::dontSendNotification);
     for (int i = 0; i < recentFiles.getNumFiles(); ++i)
     {
         const auto file = recentFiles.getFile (i);
-        const bool open = file == player.soundFontFile() && count > 0;
+        const bool open = file == st->file && count > 0;
         fileBox.addItem (file.getFileNameWithoutExtension() + (open ? "  (" + instruments + ")" : juce::String()), i + 1);
     }
     if (recentFiles.getNumFiles() > 0)
@@ -406,15 +408,16 @@ void SF2PlayerEditor::refreshFileBox()
 
     int current = -1;
     for (int i = 0; i < recentFiles.getNumFiles() && current < 0; ++i)
-        if (recentFiles.getFile (i) == player.soundFontFile())
+        if (recentFiles.getFile (i) == st->file)
             current = i;
     fileBox.setSelectedId (current >= 0 ? current + 1 : 0, juce::dontSendNotification);
-    fileBox.setTooltip (player.soundFontFile().getFullPathName());
+    fileBox.setTooltip (st->file.getFullPathName());
 }
 
 void SF2PlayerEditor::refresh()
 {
-    const auto file = player.soundFontFile();
+    const auto st = player.state();   // one consistent snapshot
+    const auto file = st->file;
     if (file.existsAsFile())
     {
         recentFiles.addFile (file);
@@ -423,11 +426,11 @@ void SF2PlayerEditor::refresh()
     }
     refreshFileBox();
 
-    const auto& presets = player.presets();
+    const auto& presets = st->presets;
     fillPresetBox();
 
     // "by <author>" when the font names one (the file box already names the file and its count)
-    const auto missing = player.missingSoundFont();
+    const auto missing = st->missing;
     infoLabel.setColour (juce::Label::textColourId, missing != juce::File() ? SF2Look::warning : SF2Look::dim);
     if (missing != juce::File())
     {
@@ -443,7 +446,7 @@ void SF2PlayerEditor::refresh()
     else
     {
         // The file box already names the file: this row only shows an author, when there is one.
-        const auto& info = player.soundFontInfo();
+        const auto& info = st->info;
         infoLabel.setText (info.author.isNotEmpty() ? "by " + info.author : juce::String(), juce::dontSendNotification);
         infoLabel.setTooltip (info.comment);
     }
@@ -461,7 +464,7 @@ void SF2PlayerEditor::refresh()
             setSize (getWidth(), juce::jmax (606, getHeight() + (showInfo ? 22 : -22)));
     }
 
-    const int index = player.selectedPreset();
+    const int index = st->preset;
     if (index >= 0 && index < (int) presets.size())
     {
         keyboard.lowKey = presets[(size_t) index].lowKey;
@@ -527,7 +530,9 @@ static juce::String presetLabel (const SF2PlayerProcessor::Preset& p)
 // ("brass", "flutes"). Returns how many instruments it lists, favorites not counted twice.
 int SF2PlayerEditor::addInstruments (juce::ComboBox& box, const juce::String& query) const
 {
-    const auto& presets = player.presets();
+    const auto st = player.state();   // one consistent snapshot
+    const auto favourite = favourites();   // read once, not per instrument
+    const auto& presets = st->presets;
     box.clear (juce::dontSendNotification);
 
     const auto bankZero = std::count_if (presets.begin(), presets.end(), [] (const auto& p) { return p.bank == 0; });
@@ -546,7 +551,7 @@ int SF2PlayerEditor::addInstruments (juce::ComboBox& box, const juce::String& qu
     for (const auto i : order)
     {
         const auto& p = presets[i];
-        if (! isFavourite ((int) i) || (query.isNotEmpty() && ! p.name.containsIgnoreCase (query)))
+        if (! favourite.contains (favouriteKey (*st, (int) i)) || (query.isNotEmpty() && ! p.name.containsIgnoreCase (query)))
             continue;
         if (! favouritesHeading)
             box.addSectionHeading (juce::String::fromUTF8 ("\xe2\x98\x85 Favorites")), favouritesHeading = true;
@@ -575,13 +580,14 @@ int SF2PlayerEditor::addInstruments (juce::ComboBox& box, const juce::String& qu
 
 void SF2PlayerEditor::fillPresetBox()
 {
-    const auto& presets = player.presets();
+    const auto st = player.state();   // one consistent snapshot
+    const auto& presets = st->presets;
     const int shown = addInstruments (presetBox, searchBox.getText().trim());
 
-    presetBox.setSelectedId (player.selectedPreset() + 1, juce::dontSendNotification);
+    presetBox.setSelectedId (st->preset + 1, juce::dontSendNotification);
     if (presetBox.getSelectedId() == 0 && ! presets.empty())   // the current one is filtered out
     {
-        const auto& p = presets[(size_t) juce::jlimit (0, (int) presets.size() - 1, player.selectedPreset())];
+        const auto& p = presets[(size_t) juce::jlimit (0, (int) presets.size() - 1, st->preset)];
         presetBox.setText (presetLabel (p) + "   (" + juce::String (shown) + " found)", juce::dontSendNotification);
     }
     previousButton.setEnabled (shown > 1);
@@ -589,27 +595,26 @@ void SF2PlayerEditor::fillPresetBox()
     refreshFavouriteButton();
 
     addInstruments (layerPresetBox, {});
-    layerPresetBox.setSelectedId (player.selectedLayerPreset() + 1, juce::dontSendNotification);
+    layerPresetBox.setSelectedId (st->layer + 1, juce::dontSendNotification);
 }
 
-juce::String SF2PlayerEditor::favouriteKey (int presetIndex) const
+juce::String SF2PlayerEditor::favouriteKey (const SF2PlayerProcessor::State& st, int presetIndex)
 {
-    const auto& presets = player.presets();
-    if (! juce::isPositiveAndBelow (presetIndex, (int) presets.size()))
+    if (! juce::isPositiveAndBelow (presetIndex, (int) st.presets.size()))
         return {};
-    const auto& p = presets[(size_t) presetIndex];
-    return player.soundFontFile().getFileName() + "|" + juce::String (p.bank) + ":" + juce::String (p.number);
+    const auto& p = st.presets[(size_t) presetIndex];
+    return st.file.getFileName() + "|" + juce::String (p.bank) + ":" + juce::String (p.number);
 }
 
-bool SF2PlayerEditor::isFavourite (int presetIndex) const
+juce::StringArray SF2PlayerEditor::favourites() const
 {
-    const auto key = favouriteKey (presetIndex);
-    return key.isNotEmpty() && juce::StringArray::fromLines (settings->getValue ("favorites")).contains (key);
+    return juce::StringArray::fromLines (settings->getValue ("favorites"));
 }
 
 void SF2PlayerEditor::toggleFavourite()
 {
-    const auto key = favouriteKey (player.selectedPreset());
+    const auto st = player.state();   // one consistent snapshot
+    const auto key = favouriteKey (*st, st->preset);
     if (key.isEmpty())
         return;
     auto favourites = juce::StringArray::fromLines (settings->getValue ("favorites"));
@@ -625,7 +630,8 @@ void SF2PlayerEditor::toggleFavourite()
 
 void SF2PlayerEditor::refreshFavouriteButton()
 {
-    const bool on = isFavourite (player.selectedPreset());
+    const auto st = player.state();   // one consistent snapshot
+    const bool on = favourites().contains (favouriteKey (*st, st->preset));
     juce::Path star;
     star.addStar ({ 0.0f, 0.0f }, 5, 4.2f, 10.0f);   // a point up
     const auto fill = on ? SF2Look::accent : juce::Colours::transparentBlack;
@@ -634,7 +640,7 @@ void SF2PlayerEditor::refreshFavouriteButton()
     favouriteButton.setShape (star, false, true, false);
     favouriteButton.setBorderSize (juce::BorderSize<int> (6));
     favouriteButton.setTooltip (on ? "Remove from favorites" : "Add this instrument to your favorites (kept for every project)");
-    favouriteButton.setEnabled (favouriteKey (player.selectedPreset()).isNotEmpty());
+    favouriteButton.setEnabled (favouriteKey (*st, st->preset).isNotEmpty());
 }
 
 // ---------------------------------------------------------------------------- effect presets
@@ -713,8 +719,9 @@ void SF2PlayerEditor::showEffectPreset (bool reverb)
 // on-screen keyboard's state so it plays like a click on a key.
 void SF2PlayerEditor::preview()
 {
-    const auto& presets = player.presets();
-    const int index = player.selectedPreset();
+    const auto st = player.state();   // one consistent snapshot
+    const auto& presets = st->presets;
+    const int index = st->preset;
     if (! juce::isPositiveAndBelow (index, (int) presets.size()))
         return;
     if (previewNote >= 0)
@@ -782,6 +789,7 @@ void SF2PlayerEditor::timerCallback()
 
 void SF2PlayerEditor::paint (juce::Graphics& g)
 {
+    const auto st = player.state();   // one consistent snapshot
     g.fillAll (SF2Look::background);
 
     g.setColour (SF2Look::text);
@@ -821,8 +829,8 @@ void SF2PlayerEditor::paint (juce::Graphics& g)
         g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
         g.drawText (title, area.getX() + 12, area.getY() + 8, 100, 14, juce::Justification::centredLeft);
         // What the chosen instrument sends to this effect, and where it goes.
-        const auto& presets = player.presets();
-        const int index = player.selectedPreset();
+        const auto& presets = st->presets;
+        const int index = st->preset;
         if (juce::isPositiveAndBelow (index, (int) presets.size()))
         {
             const auto& amounts = presets[(size_t) index].sends;
