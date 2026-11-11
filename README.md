@@ -10,8 +10,10 @@ or on Apple silicon. The
 (195 instruments) that carries its name, is the way back to that sound. Okami SF2 Player was made to play that collection in
 Ableton again, as faithfully as possible: at its defaults it plays exactly what FluidSynth plays
 (the test suite checks it bit for bit), and every control on top starts neutral. **The .sf2 is
-not included:** download it separately from that page and open it in the plugin. Any other
-SoundFont works too.
+not included:** download it separately from that page and open it in the plugin.
+
+**It plays any SoundFont**, not only that one: any General MIDI set, piano, drum kit or synth
+in .sf2 or .sf3 (thousands are free on musical-artifacts.com and elsewhere).
 
 How to use it: [DOCS.md](DOCS.md). Versions: [CHANGELOG.md](CHANGELOG.md). Credits and
 licenses: [CREDITS.md](CREDITS.md). What each HQ Orchestral instrument sends to the reverb and
@@ -68,7 +70,7 @@ cd fluidsynth && git apply ../../fluidsynth-fx-bypass.patch && cmake -B build -G
   -Denable-ipv6=OFF -Denable-jack=OFF -Denable-ladspa=OFF -Denable-libsndfile=OFF -Denable-midishare=OFF \
   -Denable-network=OFF -Denable-oss=OFF -Denable-sdl3=OFF -Denable-pulseaudio=OFF -Denable-pipewire=OFF \
   -Denable-readline=OFF -Denable-openmp=OFF -Denable-native-dls=OFF -Denable-signalsmith=OFF -Denable-alsa=OFF \
-  -Denable-systemd=OFF -Denable-portaudio=OFF && cmake --build build && cmake --install build && cd ../..
+  -Denable-systemd=OFF -Denable-portaudio=OFF -DDEFAULT_SOUNDFONT=/usr/local/share/soundfonts/default.sf2 && cmake --build build && cmake --install build && cd ../..
 
 # The plugin: native by default (pass -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" for universal).
 # The build also installs the AU and VST3 into ~/Library/Audio/Plug-Ins.
@@ -79,6 +81,13 @@ auval -v aumu Sf2p Mrgt
 ```
 
 FluidSynth's build downloads its `gcem` submodule from GitHub the first time if it's missing.
+`DEFAULT_SOUNDFONT` is set because FluidSynth otherwise bakes its install path (your home
+folder) into the binary; the plugin never uses it.
+
+Before publishing anything (a push to a public repo, a release), run
+`scripts/privacy-check.sh [bundles]`: it fails on a home folder path, an e-mail address, a key
+or credential file, or a personal pattern (listed in the ignored `scripts/release.env` as
+`PRIVATE_PATTERNS`) anywhere in the history, the commits or the binaries. `release.sh` runs it.
 
 ## Project structure
 
@@ -94,6 +103,7 @@ FluidSynth's build downloads its `gcem` submodule from GitHub the first time if 
 | `Tests/fonts/` | Vintage Dreams Waves .sf2 and .sf3 (Ian Wilson, freeware, unaltered, with its notice) |
 | `fluidsynth-fx-bypass.patch` | every change to FluidSynth (see Key systems) |
 | `scripts/release.sh` | builds, tests, signs, packages and notarizes a release |
+| `scripts/privacy-check.sh` | refuses to publish anything personal (history, commits, binaries) |
 | `DOCS.md`, `CHANGELOG.md`, `CREDITS.md`, `CLAUDE.md` | user guide, versions, credits, notes for Claude sessions |
 | `docs/HQ-Orchestral-sends.md` | each HQ Orchestral instrument's reverb and chorus sends |
 

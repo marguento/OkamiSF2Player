@@ -84,6 +84,14 @@ GitHub noreply email (`git config user.email` is set to it in this repo).
 
 ## Releasing
 
+**Nothing personal may leave this Mac** (the user, Nov 11, 2026: their Apple ID e-mail had
+slipped into a commit and FluidSynth had baked the home folder path into the binary, both caught
+minutes before publishing). Run `scripts/privacy-check.sh` before every push once the repo is
+public and before every release (release.sh runs it on the bundles); add any new personal
+pattern to `PRIVATE_PATTERNS` in `scripts/release.env`, never to a tracked file. Never write
+the user's e-mails, Apple ID, account identifiers or local backup locations in a tracked file,
+commit message or binary.
+
 `scripts/release.sh` (README → Releasing). The notarization key's identifiers live in
 `scripts/release.env`, ignored by git: never put them in a tracked file (the repo is meant to
 go public).

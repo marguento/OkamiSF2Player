@@ -62,6 +62,10 @@ for bundle in "$DIST/root/Library/Audio/Plug-Ins/Components/$NAME.component" "$D
     fi
 done
 
+# Nothing personal ships: no home folder path, e-mail or account identifier in the bundles,
+# the history or the commits (scripts/privacy-check.sh; its personal patterns in release.env).
+zsh scripts/privacy-check.sh "$DIST/root/Library/Audio/Plug-Ins/Components/$NAME.component" "$DIST/root/Library/Audio/Plug-Ins/VST3/$NAME.vst3"
+
 # 3. The installer: both plugins into /Library/Audio/Plug-Ins, signed. Not relocatable, or
 #    Installer would update a copy found elsewhere (a developer build, a moved bundle) instead.
 pkgbuild --analyze --root "$DIST/root" "$DIST/components.plist" >/dev/null
