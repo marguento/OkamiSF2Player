@@ -6,6 +6,7 @@
 #include <array>
 #include <atomic>
 #include <memory>
+#include <mutex>
 #include <vector>
 
 // A SoundFont (.sf2) instrument played by FluidSynth, the reference SF2
@@ -112,18 +113,36 @@ private:
     static constexpr int deferredCapacity = 4096, deferredNormal = 3584;
     std::array<juce::MidiMessage, deferredCapacity> deferredEvents;
     int numDeferred = 0;
-    std::array<int, 16> deferredBend;   // -1: none
+    // Past `deferredNormal`, continuous values keep only their latest per channel (-1: none).
+    std::array<int, 16> deferredBend, deferredPressure;
+    std::array<std::array<juce::int8, 128>, 16> deferredController;
     void deferMidi (const juce::MidiBuffer&);
     void playDeferredMidi();
     void clearDeferredMidi();
 
     void timerCallback() override { runMessageThreadTasks(); }
-    // Audio thread -> message thread: the preset each channel switched to (bank * 128 + program, -1 none).
-    std::array<std::atomic<int>, 16> pinRequest;
+    // Audio thread -> message thread: presets a clip switched to (bank * 128 + program).
+    juce::AbstractFifo pinFifo { 256 };
+    std::array<int, 256> pinQueue {};
     // Set when prepareToPlay couldn't rebuild the engine; the message thread updates the state.
-    std::atomic<bool> engineLost { false };
-    juce::Time failedFileTime;   // modification time of a file that failed to load: not retried
+    std::atomic<bool> engineLost { false }, lostWhileReadable { false };
     int housekeepingTicks = 0;
+
+    // A file that failed to load is retried when it changes (time or size) or a minute later.
+    juce::Time failedFileTime;
+    juce::int64 failedFileSize = -1;
+    juce::uint32 failedAtMs = 0;
+    void recordFailure (const juce::File&);
+    bool shouldRetry (const juce::File&) const;
+
+    // No SoundFont, the file kept for the project (shown as missing, or unreadable). The one
+    // way into that state; `keepInstruments` saves the current ones by bank:program first.
+    void enterMissingState (const juce::File& file, bool keepInstruments, bool unreadable);
+
+    // Guards what the message thread and prepareToPlay (which a host may call from another
+    // thread) share: the file, the preset list and choices, the sample rate. Never taken on the
+    // audio thread; always before engineLock.
+    std::recursive_mutex stateMutex;
 
     std::unique_ptr<Engine> engine;
 

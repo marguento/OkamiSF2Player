@@ -411,6 +411,42 @@ int main()
                 "8,000 events during a load: the last pitch bend (back to centre) still arrives",
                 juce::String (cents (pitch (centred, 0.2, 0.4), pitch (reference, 0.2, 0.4)), 1) + " cents off centre");
 
+        // During a load, a volume fade (CC7) keeps its final value, and a bend sent before a
+        // Reset All Controllers doesn't come back after it.
+        auto loading = [&] (Player& pl, const std::function<void (juce::MidiBuffer&, int)>& fill)
+        {
+            const juce::SpinLock::ScopedLockType busy (PluginTestsAccess::lock (pl.p));
+            juce::AudioBuffer<float> buffer (6, block);
+            for (int b = 0; b < 40; ++b)
+            {
+                juce::MidiBuffer m;
+                fill (m, b);
+                pl.p.processBlock (buffer, m);
+            }
+        };
+        Player faded (testFont), loud (testFont);
+        loading (faded, [] (juce::MidiBuffer& m, int b)
+        {
+            for (int i = 0; i < 100; ++i) m.addEvent (juce::MidiMessage::controllerEvent (1, 7, b == 39 && i == 99 ? 0 : 100 - i % 50), i);
+        });
+        const double fadedLevel = rms (faded.note (60, 100, 0.5, 0.5), 0.1, 0.4), loudLevel = rms (loud.note (60, 100, 0.5, 0.5), 0.1, 0.4);
+        expect (fadedLevel < loudLevel * 0.01, "4,000 volume changes during a load: the final one (0) still applies",
+                db (fadedLevel) + " vs " + db (loudLevel));
+
+        Player bent (testFont);
+        loading (bent, [] (juce::MidiBuffer& m, int b)
+        {
+            for (int i = 0; i < 100; ++i) m.addEvent (juce::MidiMessage::controllerEvent (1, 1, i), i);   // fill past the reserve
+            if (b == 38) m.addEvent (juce::MidiMessage::pitchWheel (1, 12000), 200);
+            if (b == 39) m.addEvent (juce::MidiMessage::controllerEvent (1, 121, 0), 200);
+        });
+        const auto afterReset = bent.note (57, 100, 0.6, 0.6);
+        Player plainA (testFont);
+        const auto plainNote = plainA.note (57, 100, 0.6, 0.6);
+        expect (std::abs (cents (pitch (afterReset, 0.2, 0.4), pitch (plainNote, 0.2, 0.4))) < 5,
+                "A bend before a Reset All Controllers, both during a load, doesn't come back",
+                juce::String (cents (pitch (afterReset, 0.2, 0.4), pitch (plainNote, 0.2, 0.4)), 1) + " cents");
+
         // A MIDI program change takes effect at once: a note sent with it plays the new instrument.
         Player switching (testFont);
         switching.render (0.2, [] (int b, juce::MidiBuffer& m)
@@ -475,6 +511,25 @@ int main()
                 "A file lost during a rate change is reported, then reloaded with its instrument once back",
                 juce::String (reported ? "reported" : "not reported") + ", then preset " + juce::String (p.selectedPreset()));
         copy.deleteFile();
+
+        // A rebuild that failed, then a file chosen before the message thread noticed: the
+        // chosen file stays loaded.
+        const auto other = juce::File::createTempFile (".sf2");
+        testFont.copyFileTo (other);
+        SF2PlayerProcessor q;
+        q.setRateAndBufferSizeDetails (rate, block);
+        q.prepareToPlay (rate, block);
+        q.loadSoundFont (copy.existsAsFile() ? copy : testFont);
+        const auto gone = juce::File::createTempFile (".sf2");
+        testFont.copyFileTo (gone);
+        q.loadSoundFont (gone);
+        gone.deleteFile();
+        q.prepareToPlay (44100.0, block);   // fails: the file is gone
+        q.loadSoundFont (other);            // the user picks another before the next check
+        for (int i = 0; i < 10; ++i) q.runMessageThreadTasks();
+        expect (q.soundFontFile() == other && ! q.presets().empty() && q.missingSoundFont() == juce::File(),
+                "A failed rebuild doesn't undo a file chosen right after it", q.soundFontFile().getFileName());
+        other.deleteFile();
     }
 
     // ---- Tone, outputs and saved state.

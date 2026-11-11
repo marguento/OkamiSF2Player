@@ -3,6 +3,15 @@
 The version shows next to the title (`project(... VERSION x.y.z)` in CMakeLists.txt). Each
 release bumps it and adds an entry here: one line per change a player would notice.
 
+## 1.2.3 — Nov 11, 2026
+
+- During an instrument load, a fade or pan move (any controller) keeps its final value, and a
+  Reset All Controllers isn't undone by a bend sent before it.
+- A file chosen right after the audio device changed can't be mistaken for a lost one.
+- A SoundFont that couldn't be read (still downloading, a drive mounting) is retried when it
+  changes or a minute later.
+- Instruments substituted by FluidSynth (a missing bank falls back to bank 0) stay in memory too.
+
 ## 1.2.2 — Nov 11, 2026
 
 - Instruments a clip switches to with Program Change stay in memory, so switching back never
