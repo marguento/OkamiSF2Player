@@ -63,7 +63,7 @@ public:
         // True when nothing would change: the processor then plays notes directly.
         bool isNeutral() const
         {
-            return strumMs <= 0.0f && fret == 0 && palm <= 0.0f && humanize <= 0.0f && doubleMix <= 0.0f
+            return strumMs <= 0.0f && fret == 0 && palm <= 0.0f && humanize <= 0.0f && doubleMix <= 0.0f && ! velocityStrings
                 && (mode == chords || mode == solo);   // Shape always plays the drawn chord
         }
     };
@@ -75,6 +75,9 @@ public:
         juce::int8 detuneCents = 0;
         bool palmMuted = false;
         bool isDouble = false;   // the Double's twin: its own channels, panned right
+        // A note-off: when the note it ends started (-1: any). An off whose pitch was struck
+        // again since is stale and dropped, so it never cuts the newer note.
+        juce::int64 onTime = -1;
     };
 
     // Double: the twin comes this much later and this much sharper (a second take, double-tracked).
@@ -106,13 +109,20 @@ public:
         for (auto& group : groups)
             if (group.used)
                 for (int i = 0; i < group.outputCount; ++i)
-                    flushOffs (group.channel, group.outputs[(size_t) i], group.doubled);
+                {
+                    flushOffs (group.channel, group.outputs[(size_t) i], false);
+                    if (group.doubled) flushOffs (group.channel, group.outputs[(size_t) i], true);
+                }
+        for (int i = 0; i < eventCount; ++i)   // offs still to come (a twin's, a palm's)
+            if (events[(size_t) i].velocity == 0)
+                flushOffs (events[(size_t) i].channel, events[(size_t) i].note, events[(size_t) i].isDouble);
         reset();
     }
 
     void reset()
     {
         eventCount = 0;
+        for (auto& channel : lastOnTime) channel.fill (-1);
         for (auto& held : chordsHeld) held = {};
         for (auto& ringing : ringingNotes) ringing = {};
         for (auto& pending : chordsPending) pending = {};
@@ -191,7 +201,9 @@ public:
         }
     }
 
-    void noteOff (int channel, int note, juce::int64 time)
+    // False when the engine never took this key (it was pressed before the engine was in use):
+    // the caller then passes the note-off on as it is, so the note doesn't stick.
+    bool noteOff (int channel, int note, juce::int64 time)
     {
         // The chord hand lets go: when nothing is held any more, the strings are stopped.
         auto& held = chordsHeld[(size_t) channel];
@@ -200,13 +212,14 @@ public:
             {
                 held.keys[(size_t) i] = held.keys[(size_t) --held.count];
                 if (held.count == 0) endRinging (channel, time);
-                return;
+                return true;
             }
         // Still gathering: remember it, so the chord's note ends right after it starts.
+        bool known = false;
         auto& pending = chordsPending[(size_t) channel];
         for (int i = 0; i < pending.count; ++i)
             if (pending.keys[(size_t) i] == note)
-                pending.released[(size_t) i] = true;
+                pending.released[(size_t) i] = known = true;
         for (auto& group : groups)
         {
             if (! group.used || group.channel != channel)
@@ -217,9 +230,22 @@ public:
                     group.held[(size_t) i] = false;
                     if (--group.heldCount == 0)
                         endGroup (group, time);
-                    return;
+                    return true;
                 }
         }
+        return known;
+    }
+
+    // All notes off on a channel (CC120 / CC123 from the clip): everything the engine holds
+    // or started there ends, the chord hand included.
+    void allOff (int channel, juce::int64 time)
+    {
+        chordsPending[(size_t) channel] = {};
+        chordsHeld[(size_t) channel] = {};
+        endRinging (channel, time);
+        for (auto& group : groups)
+            if (group.used && group.channel == channel)
+                endGroup (group, time);
     }
 
     // Closes the chord windows that end before `until`, so their notes get scheduled.
@@ -255,15 +281,28 @@ public:
     // Takes the next event due before `until`, earliest first.
     bool pop (juce::int64 until, Event& out)
     {
-        int best = -1;
-        for (int i = 0; i < eventCount; ++i)
-            if (events[(size_t) i].time < until && (best < 0 || events[(size_t) i].time < events[(size_t) best].time))
-                best = i;
-        if (best < 0)
-            return false;
-        out = events[(size_t) best];
-        events[(size_t) best] = events[(size_t) --eventCount];
-        return true;
+        for (;;)
+        {
+            int best = -1;
+            for (int i = 0; i < eventCount; ++i)
+                if (events[(size_t) i].time < until && (best < 0 || events[(size_t) i].time < events[(size_t) best].time
+                                                        || (events[(size_t) i].time == events[(size_t) best].time
+                                                            && events[(size_t) i].velocity == 0 && events[(size_t) best].velocity > 0)))
+                    best = i;   // at the same time, offs first
+            if (best < 0)
+                return false;
+            out = events[(size_t) best];
+            events[(size_t) best] = events[(size_t) --eventCount];
+            auto& started = lastOnTime[(size_t) (out.channel + (out.isDouble ? 16 : 0))][out.note];
+            if (out.velocity > 0)
+            {
+                started = out.time;
+                return true;
+            }
+            if (out.onTime < 0 || started == out.onTime)
+                return true;
+            // A stale off: that pitch was struck again since the note it was meant to end.
+        }
     }
 
     bool hasWork() const
@@ -357,7 +396,12 @@ public:
         const auto* group = startGroupWith (strokeSettings, channel, nullptr, 0, notes.data(), n, velocity, time, n > 1);
         ringing.count = n;
         ringing.doubled = s.doubleMix > 0.0f;
-        for (int i = 0; i < n; ++i) ringing.notes[(size_t) i] = group->outputs[(size_t) i];
+        for (int i = 0; i < group->outputCount; ++i)
+        {
+            ringing.notes[(size_t) i] = group->outputs[(size_t) i];
+            ringing.onsets[(size_t) i] = group->onsets[(size_t) i];
+        }
+        ringing.count = group->outputCount;
     }
 
     // The drawn shape's notes, low to high, moved so the lowest is `bassKey` (none if nothing drawn).
@@ -439,6 +483,7 @@ private:
     struct Ringing
     {
         std::array<juce::uint8, 16> notes {};
+        std::array<juce::int64, 16> onsets {};
         int count = 0;
         bool doubled = false;
     };
@@ -455,11 +500,7 @@ private:
     {
         auto& ringing = ringingNotes[(size_t) channel];
         for (int i = 0; i < ringing.count; ++i)
-        {
-            schedule ({ time, (juce::uint8) channel, ringing.notes[(size_t) i], 0, 0, false, false });
-            if (ringing.doubled)
-                schedule ({ time + samples (doubleDelayMs), (juce::uint8) channel, ringing.notes[(size_t) i], 0, 0, false, true });
-        }
+            scheduleOffs (channel, ringing.notes[(size_t) i], ringing.onsets[(size_t) i], time, ringing.doubled);
         ringing = {};
         // Strokes aren't tied to keys: their groups end with the ringing notes.
         for (auto& group : groups)
@@ -506,9 +547,23 @@ private:
         int channel = 0;
         std::array<juce::uint8, 16> inputs {}, outputs {};
         std::array<bool, 16> held {};
+        std::array<juce::int64, 16> onsets {};   // when each output starts (strummed: later and later)
         int inputCount = 0, outputCount = 0, heldCount = 0;
         bool doubled = false;
     };
+
+    // A note's off (and its twin's) at `time`, but never before the note itself has started: a
+    // release in the middle of a slow strum would otherwise end strings before they sound.
+    void scheduleOffs (int channel, int note, juce::int64 onset, juce::int64 time, bool doubled)
+    {
+        schedule ({ juce::jmax (time, onset + 1), (juce::uint8) channel, (juce::uint8) note, 0, 0, false, false, onset });
+        if (doubled)
+        {
+            const auto twin = onset + samples (doubleDelayMs);
+            schedule ({ juce::jmax (time + samples (doubleDelayMs), twin + 1), (juce::uint8) channel, (juce::uint8) note,
+                        0, 0, false, true, twin });
+        }
+    }
 
     juce::int64 samples (float ms) const { return (juce::int64) (ms * 0.001 * sampleRate); }
 
@@ -524,7 +579,11 @@ private:
     {
         Group* group = nullptr;
         for (auto& g : groups) if (! g.used) { group = &g; break; }
-        if (group == nullptr) group = &groups[0];   // all in use: reuse the oldest slot
+        if (group == nullptr)   // all in use (keys never let go): end one, never drop its notes
+        {
+            group = &groups[(size_t) (nextVictim++ % (int) groups.size())];
+            endGroup (*group, time);
+        }
         *group = {};
         group->used = true;
         group->channel = channel;
@@ -578,17 +637,19 @@ private:
             }
             const auto velocityByte = (juce::uint8) juce::jlimit (1, 127, vel);
             const auto palmOff = samples (juce::jmap (s.palm, 600.0f, 70.0f));
+            group->onsets[(size_t) i] = at;
             schedule ({ at, (juce::uint8) channel, (juce::uint8) note, velocityByte, detune, palm, false });
-            // Palm mute: the string is stopped by the hand soon after it's struck.
+            // Palm mute: the string is stopped by the hand soon after it's struck (dropped if the
+            // same pitch is struck again before then).
             if (palm)
-                schedule ({ at + palmOff, (juce::uint8) channel, (juce::uint8) note, 0, 0, false, false });
+                schedule ({ at + palmOff, (juce::uint8) channel, (juce::uint8) note, 0, 0, false, false, at });
             if (s.doubleMix > 0.0f)
             {
                 const auto twin = at + samples (doubleDelayMs);
                 schedule ({ twin, (juce::uint8) channel, (juce::uint8) note, velocityByte,
                             (juce::int8) (detune + doubleDetuneCents), palm, true });
                 if (palm)
-                    schedule ({ twin + palmOff, (juce::uint8) channel, (juce::uint8) note, 0, 0, false, true });
+                    schedule ({ twin + palmOff, (juce::uint8) channel, (juce::uint8) note, 0, 0, false, true, twin });
             }
         }
         return group;
@@ -598,17 +659,16 @@ private:
     void endGroup (Group& group, juce::int64 time)
     {
         for (int i = 0; i < group.outputCount; ++i)
-        {
-            schedule ({ time, (juce::uint8) group.channel, group.outputs[(size_t) i], 0, 0, false, false });
-            if (group.doubled)   // the twin ends as late as it started
-                schedule ({ time + samples (doubleDelayMs), (juce::uint8) group.channel, group.outputs[(size_t) i], 0, 0, false, true });
-        }
+            scheduleOffs (group.channel, group.outputs[(size_t) i], group.onsets[(size_t) i], time, group.doubled);
         group = {};
     }
 
     double sampleRate = 44100.0;
     std::array<Event, maxEvents> events {};
     int eventCount = 0;
+    // When each pitch last started, per channel (16-31: the Double's twins): stale offs are dropped.
+    std::array<std::array<juce::int64, 128>, 32> lastOnTime {};
+    int nextVictim = 0;
     std::array<Pending, 16> chordsPending {};
     std::array<Group, 64> groups {};
     bool nextUp = false;

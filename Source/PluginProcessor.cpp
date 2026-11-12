@@ -149,6 +149,8 @@ SF2PlayerProcessor::SF2PlayerProcessor()
     anyCollapsed = true;   // so the first clear fills the collapsed values
     clearDeferredMidi();
     lastPinRequest.fill (-1);
+    for (auto& channel : twinKey)
+        channel.fill (-1);
     startTimerHz (10);
 }
 
@@ -493,12 +495,22 @@ void SF2PlayerProcessor::deferMidi (const juce::MidiBuffer& midi)
     }
 }
 
-void SF2PlayerProcessor::playDeferredMidi()
+void SF2PlayerProcessor::playDeferredMidi (const GuitarEngine::Settings* guitarSettings, juce::int64 at)
 {
     if (numDeferred == 0 && ! anyCollapsed)
         return;   // the usual block: nothing kept
     for (int i = 0; i < numDeferred; ++i)
-        handleMidi (deferredEvents[(size_t) i]);
+    {
+        const auto& m = deferredEvents[(size_t) i];
+        const int channel = m.getChannel() - 1;
+        if (guitarSettings != nullptr && juce::isPositiveAndBelow (channel, numMidiChannels))
+        {
+            if (m.isNoteOn()) { guitar.noteOn (*guitarSettings, channel, m.getNoteNumber(), m.getVelocity(), at); continue; }
+            if (m.isNoteOff() && guitar.noteOff (channel, m.getNoteNumber(), at)) continue;
+            if (m.isAllNotesOff() || m.isAllSoundOff()) guitar.allOff (channel, at);
+        }
+        handleMidi (m);
+    }
     for (int channel = 0; channel < 16 && anyCollapsed; ++channel)
     {
         for (int cc = 0; cc < 128; ++cc)
@@ -731,6 +743,8 @@ void SF2PlayerProcessor::prepareToPlay (double newSampleRate, int maximumExpecte
     shortMidi.ensureSize (32768);
     {
         const juce::SpinLock::ScopedLockType lock (engineLock);
+        if (guitarEngaged && engine != nullptr)
+            flushGuitar();   // the same engine plays on: end what the guitar started before forgetting it
         guitar.prepare (newSampleRate);
         guitarEngaged = false;
         sampleClock = 0;
@@ -881,6 +895,22 @@ void SF2PlayerProcessor::Biquad::process (float* samples, int count) noexcept
 }
 
 // ---------------------------------------------------------------------------- guitar
+
+// Under engineLock, with an engine.
+void SF2PlayerProcessor::flushGuitar()
+{
+    guitar.reset ([this] (int channel, int note, bool doubled)
+    {
+        if (! doubled)
+            handleMidi (juce::MidiMessage::noteOff (channel + 1, note));
+        else if (auto& key = twinKey[(size_t) channel][(size_t) note]; key >= 0)
+        {
+            fluid_synth_noteoff (engine->synth, channel + doubleChannelOffset, key);
+            key = -1;
+        }
+    });
+    guitarEngaged = false;
+}
 
 void SF2PlayerProcessor::setGuitarShape (const std::array<int, 6>& frets)
 {
@@ -1105,23 +1135,18 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         applyPlaySettings (false);
         sendOutputs = appliedEffects.sendOutputs;
 
-        // Events a skipped block kept, first.
-        playDeferredMidi();
 
         // The Guitar panel's notes go through its engine (strummed, voiced, humanized), unless
         // every control is neutral: then the notes play exactly as they come.
         const auto guitarSettings = currentGuitarSettings();
         const bool useGuitar = guitarPanelActive() && ! guitarSettings.isNeutral();
         if (! useGuitar && guitarEngaged)
-        {
-            guitar.reset ([this] (int channel, int note, bool doubled)
-            {
-                handleMidi (juce::MidiMessage::noteOff (channel + 1, note));
-                if (doubled)
-                    fluid_synth_noteoff (engine->synth, channel + doubleChannelOffset, transposeFor (note));
-            });
-            guitarEngaged = false;
-        }
+            flushGuitar();
+        if (useGuitar)
+            guitarEngaged = true;
+
+        // Events a skipped block kept, first (through the guitar engine when it's in use).
+        playDeferredMidi (useGuitar ? &guitarSettings : nullptr, blockStart);
 
         if (! useGuitar)
         {
@@ -1137,24 +1162,10 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
             }
             render (position, numSamples);
 
-            if (const auto& last = guitar.lastPlayed(); last.sequence != guitarView.sequence.load (std::memory_order_relaxed))
-            {
-                const int shown = juce::jmin (last.count, 6);
-                int classes = 0;
-                for (int i = 0; i < last.count; ++i) classes |= 1 << (last.notes[(size_t) i] % 12);
-                for (int i = 0; i < 6; ++i) guitarView.notes[(size_t) i].store (i < shown ? last.notes[(size_t) i] : -1, std::memory_order_relaxed);
-                guitarView.count.store (shown, std::memory_order_relaxed);
-                guitarView.pitchClasses.store (classes, std::memory_order_relaxed);
-                guitarView.bass.store (last.count > 0 ? last.notes[0] % 12 : -1, std::memory_order_relaxed);
-                guitarView.up.store (last.up, std::memory_order_relaxed);
-                guitarView.strummed.store (last.strummed, std::memory_order_relaxed);
-                guitarView.palm.store (last.palm, std::memory_order_relaxed);
-                guitarView.sequence.store (last.sequence, std::memory_order_release);
-            }
+
         }
         else
         {
-            guitarEngaged = true;
             // This block's events: the clip's (notes into the engine, the rest as they are)
             // and the engine's notes that fall due, in time order.
             struct Item { int position, order; juce::uint8 bytes[3]; int size; GuitarEngine::Event note; bool fromGuitar; };
@@ -1168,12 +1179,17 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                 const auto message = juce::MidiMessage (metadata.data, metadata.numBytes);
                 const int channel = message.getChannel() - 1;
                 const auto at = blockStart + juce::jlimit (0, numSamples, metadata.samplePosition);
-                if (juce::isPositiveAndBelow (channel, numMidiChannels) && message.isNoteOn())
+                const bool onChannel = juce::isPositiveAndBelow (channel, numMidiChannels);
+                if (onChannel && message.isNoteOn())
                     guitar.noteOn (guitarSettings, channel, message.getNoteNumber(), message.getVelocity(), at);
-                else if (juce::isPositiveAndBelow (channel, numMidiChannels) && message.isNoteOff())
-                    guitar.noteOff (channel, message.getNoteNumber(), at);
+                else if (onChannel && message.isNoteOff() && guitar.noteOff (channel, message.getNoteNumber(), at))
+                    {}   // the engine ends what it started for this key
                 else
                 {
+                    // A key pressed before the engine was in use ends as it started; all-notes-off
+                    // also clears what the engine holds (its chord hand, Pattern's rhythm).
+                    if (onChannel && (message.isAllNotesOff() || message.isAllSoundOff()))
+                        guitar.allOff (channel, at);
                     Item item { juce::jlimit (0, numSamples, metadata.samplePosition), order++, {}, metadata.numBytes, {}, false };
                     std::copy (metadata.data, metadata.data + metadata.numBytes, item.bytes);
                     items[(size_t) count++] = item;
@@ -1206,7 +1222,11 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                 if (note.velocity == 0)
                 {
                     if (note.isDouble)
-                        fluid_synth_noteoff (engine->synth, twinChannel, transposeFor (note.note));
+                    {
+                        auto& key = twinKey[note.channel][note.note];
+                        if (key >= 0) fluid_synth_noteoff (engine->synth, twinChannel, key);
+                        key = -1;
+                    }
                     else
                         handleMidi (juce::MidiMessage::noteOff (note.channel + 1, note.note));
                     continue;
@@ -1221,7 +1241,10 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                 {
                     const int key = transposeFor (note.note);
                     if (juce::isPositiveAndBelow (key, 128))
+                    {
                         fluid_synth_noteon (engine->synth, twinChannel, key, curvedVelocity (note.velocity));
+                        twinKey[note.channel][note.note] = (juce::int16) key;   // its off uses this, whatever Transpose does meanwhile
+                    }
                 }
                 else
                     handleMidi (juce::MidiMessage::noteOn (note.channel + 1, note.note, (juce::uint8) note.velocity));
@@ -1229,6 +1252,20 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                     tweakNewVoices (note.isDouble ? twinChannel : note.channel, note.detuneCents, note.palmMuted, pan, attenuation, before);
             }
             render (position, numSamples);
+        }
+        if (const auto& last = guitar.lastPlayed(); last.sequence != guitarView.sequence.load (std::memory_order_relaxed))
+        {
+            const int shown = juce::jmin (last.count, 6);
+            int classes = 0;
+            for (int i = 0; i < last.count; ++i) classes |= 1 << (last.notes[(size_t) i] % 12);
+            for (int i = 0; i < 6; ++i) guitarView.notes[(size_t) i].store (i < shown ? last.notes[(size_t) i] : -1, std::memory_order_relaxed);
+            guitarView.count.store (shown, std::memory_order_relaxed);
+            guitarView.pitchClasses.store (classes, std::memory_order_relaxed);
+            guitarView.bass.store (last.count > 0 ? last.notes[0] % 12 : -1, std::memory_order_relaxed);
+            guitarView.up.store (last.up, std::memory_order_relaxed);
+            guitarView.strummed.store (last.strummed, std::memory_order_relaxed);
+            guitarView.palm.store (last.palm, std::memory_order_relaxed);
+            guitarView.sequence.store (last.sequence, std::memory_order_release);
         }
         activeVoices = fluid_synth_get_active_voice_count (engine->synth);
         if (interpolationOverride >= 0)

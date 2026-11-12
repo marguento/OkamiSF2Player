@@ -165,7 +165,11 @@ private:
     std::array<int, 16> deferredBend, deferredPressure;
     std::array<std::array<juce::int8, 128>, 16> deferredController;
     void deferMidi (const juce::MidiBuffer&);
-    void playDeferredMidi();
+    // `guitar`: the Guitar panel's settings when its engine is in use, so kept notes go through it.
+    void playDeferredMidi (const GuitarEngine::Settings* guitar = nullptr, juce::int64 at = 0);
+    // Ends every note the Guitar panel's engine started (its twins included) and forgets it all.
+    void flushGuitar();
+    std::array<std::array<juce::int16, 128>, 16> twinKey;   // the Double's twin, as transposed at its note-on (-1: none)
     void clearDeferredMidi();
 
     void timerCallback() override { runMessageThreadTasks(); }

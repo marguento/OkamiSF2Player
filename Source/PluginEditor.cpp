@@ -418,10 +418,11 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
         collapsed = { folded.contains ("effects"), folded.contains ("play"), folded.contains ("guitar"), folded.contains ("keyboard") };
     }
     setResizeLimits (620, minimumHeight(), 1600, 1400);
-    if (getHeight() == 0)
-        setSize (620, 628 - (collapsed[effectsSection] ? panelHeight - collapsedHeight : 0)
-                          - (collapsed[playSection] ? panelHeight - collapsedHeight : 0)
-                          - (collapsed[keyboardSection] ? keyboardHeight : 0));
+    // refresh() above has already given the window its full height: take the folded sections off.
+    setSize (620, juce::jmax (minimumHeight(), (infoLabel.isVisible() ? 628 : 606)
+                                               - (collapsed[effectsSection] ? panelHeight - collapsedHeight : 0)
+                                               - (collapsed[playSection] ? panelHeight - collapsedHeight : 0)
+                                               - (collapsed[keyboardSection] ? keyboardHeight : 0)));
     showSectionContents();
     refreshLayerControls();
     refreshGuitarPanel();
@@ -432,6 +433,8 @@ SF2PlayerEditor::~SF2PlayerEditor()
 {
     if (previewNote >= 0)
         player.keyboardState.noteOff (1, previewNote, 0.0f);
+    if (auditionKey >= 0)   // a drawn chord still sounding from a click on its name
+        player.keyboardState.noteOff (1, auditionKey, 0.0f);
     player.removeChangeListener (this);
     setLookAndFeel (nullptr);
 }
@@ -885,9 +888,11 @@ void SF2PlayerEditor::toggleSection (Section s)
 {
     if (s == keyboardSection && ! collapsed[keyboardSection])
         keyboardHeight = juce::jmax (120, keyboard.getHeight());
-    const int delta = s == keyboardSection ? (collapsed[(size_t) s] ? keyboardHeight : -keyboardHeight)
-                    : collapsed[(size_t) s] ? panelHeight - collapsedHeight : collapsedHeight - panelHeight;
+    // By the section's own heights: the Guitar panel folds its neck strip too.
+    const int before = s == keyboardSection ? 0 : heightOf (s);
     collapsed[(size_t) s] = ! collapsed[(size_t) s];
+    const int delta = s == keyboardSection ? (collapsed[(size_t) s] ? -keyboardHeight : keyboardHeight)
+                                           : heightOf (s) - before;
     juce::StringArray folded;
     for (auto [section, name] : { std::pair { effectsSection, "effects" }, std::pair { playSection, "play" },
                                   std::pair { guitarSection, "guitar" }, std::pair { keyboardSection, "keyboard" } })

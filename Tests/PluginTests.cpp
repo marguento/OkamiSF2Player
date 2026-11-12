@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <map>
 #include <thread>
 #include <sys/sysctl.h>
 
@@ -922,6 +923,42 @@ int main()
             std::sort (pair.begin(), pair.end());
             expect (bass == std::vector<int> { 40 } && silent && pair == std::vector<int> { 67, 72 },
                     "Guitar: Bass & Chord plays a single bass note; Harmony puts a chord tone under the melody");
+        }
+
+        // Review fixes: a release in the middle of a slow strum still ends the late strings, and a
+        // palm-mute off never cuts the same pitch struck again.
+        {
+            GuitarEngine e;
+            e.prepare (rate);
+            GuitarEngine::Settings slow;
+            slow.strumMs = 200;
+            for (int key : { 48, 52, 55 }) e.noteOn (slow, 0, key, 100, 0);
+            e.advance (slow, 1000);
+            for (int key : { 48, 52, 55 }) e.noteOff (0, key, 1000);   // let go right after the strum starts
+            std::map<int, int> sounding;
+            GuitarEngine::Event ev;
+            while (e.pop ((juce::int64) rate * 2, ev)) sounding[ev.note] += ev.velocity > 0 ? 1 : -1;
+            bool allEnded = true;
+            for (auto [note, count] : sounding) allEnded = allEnded && count == 0;
+            expect (allEnded && sounding.size() == 3, "Guitar: letting go mid-strum ends every string, the late ones too");
+
+            GuitarEngine p;
+            p.prepare (rate);
+            GuitarEngine::Settings palm;
+            palm.mode = GuitarEngine::solo;
+            palm.palm = 0.2f;   // a long palm cut (about 500 ms)
+            p.noteOn (palm, 0, 60, 30, 0);       // soft: palm-muted, its off scheduled ahead
+            p.noteOff (0, 60, 100);
+            p.noteOn (palm, 0, 60, 120, 2000);   // the same pitch, hard, before that off
+            std::vector<std::pair<juce::int64, int>> order;
+            while (p.pop ((juce::int64) rate * 2, ev)) order.push_back ({ ev.time, ev.velocity });
+            int ons = 0, offsAfterSecond = 0;
+            for (auto [time, velocity] : order)
+            {
+                if (velocity > 0) ++ons;
+                else if (ons == 2) ++offsAfterSecond;
+            }
+            expect (ons == 2 && offsAfterSecond == 0, "Guitar: a palm-mute's late off doesn't cut the same note struck again");
         }
 
         // A C major chord voiced at the 3rd fret: C on the A string, then G, C, E, G.
