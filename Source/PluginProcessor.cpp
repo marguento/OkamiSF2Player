@@ -91,7 +91,11 @@ static juce::AudioProcessorValueTreeState::ParameterLayout makeLayout()
                                                               juce::StringArray { "Auto", "On", "Off" }, 0));
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "guitarMode", 6 }, "Guitar Mode",
                                                               juce::StringArray { "Solo", "Chords", "Bass & Pick", "Shape", "Strum Keys", "Pattern",
-                                                                                 "Bass & Chord", "Harmony" }, 1));
+                                                                                 "Bass & Chord", "Harmony", "Key Chords" }, 1));
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "chordKey", 6 }, "Chord Key",
+                                                              juce::StringArray { "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B" }, 0));
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "chordScale", 6 }, "Chord Scale",
+                                                              juce::StringArray { "Major", "Minor", "Major 7ths", "Minor 7ths" }, 0));
     {
         juce::StringArray names;
         for (const char* name : GuitarEngine::tuningNames) names.add (name);
@@ -954,6 +958,8 @@ GuitarEngine::Settings SF2PlayerProcessor::currentGuitarSettings() const
     s.rhythm = juce::jlimit (0, GuitarEngine::rhythmCount - 1, juce::roundToInt (value ("strumPattern")));
     s.tuning = juce::roundToInt (value ("guitarTuning"));
     s.velocityStrings = value ("strumByVelocity") > 0.5f;
+    s.keyRoot = juce::roundToInt (value ("chordKey"));
+    s.keyScale = juce::roundToInt (value ("chordScale"));
     return s;
 }
 

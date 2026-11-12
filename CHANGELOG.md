@@ -19,6 +19,9 @@ release bumps it and adds an entry here: one line per change a player would noti
 - Reverb preset "Short Room" and chorus preset "Bright", for acoustic guitar.
 - The Guitar panel shows what it plays: the chord's name (C, Am7, G/B...), a six-string neck with
   where its notes lie, an arrow lit by each strum (down or up) and a light for palm-muted notes.
+- **Key Chords** mode: one key, one chord in the chosen key and scale (major, minor, with or
+  without sevenths): in C major, D plays Dm and G plays G; a key outside the scale plays its major
+  chord (Bb in C).
 - **Guitar presets:** Acoustic Strum, Campfire, Double-Tracked, Slow Ballad, Muted Rock, Folk
   Pattern, Fingerpicking, Strum Keys, and Off (the SoundFont as it is). The menu says Custom once
   a control moves.

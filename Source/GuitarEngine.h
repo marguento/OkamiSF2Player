@@ -17,7 +17,7 @@
 class GuitarEngine
 {
 public:
-    enum Mode { solo = 0, chords = 1, bassAndPick = 2, shape = 3, strumKeys = 4, pattern = 5, bassAndChord = 6, harmony = 7 };
+    enum Mode { solo = 0, chords = 1, bassAndPick = 2, shape = 3, strumKeys = 4, pattern = 5, bassAndChord = 6, harmony = 7, keyChords = 8 };
 
     // What one stroke of the pick does (Strum Keys' white keys, a pattern's steps).
     enum Stroke { strokeDown, strokeUp, mutedDown, mutedUp, bassOnly, highDown, highUp, damp, pickString };
@@ -60,6 +60,9 @@ public:
         int rhythm = 0;         // Pattern mode: which of `rhythms`
         int tuning = 0;         // which of `tunings`
         bool velocityStrings = false;   // soft strums hit only the high strings, hard ones all six
+        // Key Chords: the key's tonic (0 C ... 11 B) and scale (0 major, 1 minor, 2 major with
+        // sevenths, 3 minor with sevenths).
+        int keyRoot = 0, keyScale = 0;
         // True when nothing would change: the processor then plays notes directly.
         bool isNeutral() const
         {
@@ -134,6 +137,16 @@ public:
     void noteOn (const Settings& s, int channel, int note, int velocity, juce::int64 time)
     {
         auto& pending = chordsPending[(size_t) channel];
+        if (s.mode == keyChords)
+        {
+            std::array<int, 4> chord {};
+            const int size = keyChord (s, note, chord.data());
+            std::array<int, 16> voiced {};
+            const int n = voice (chord.data(), size, s.fret, voiced.data(), tuningOf (s.tuning));
+            const std::array<int, 1> key { note };
+            startGroupWith (s, channel, key.data(), 1, voiced.data(), n, velocity, time, true);
+            return;
+        }
         if (s.mode == bassAndChord && note < strumKeysFrom)   // the left hand: bass notes, one by one
         {
             const std::array<int, 1> one { note };
@@ -402,6 +415,33 @@ public:
             ringing.onsets[(size_t) i] = group->onsets[(size_t) i];
         }
         ringing.count = group->outputCount;
+    }
+
+    // Key Chords: the chord a key plays in the chosen key. A note of the scale: the chord the
+    // scale builds on it (a triad, or a seventh chord); any other note: its major triad (a chord
+    // borrowed from outside the key, as Bb in C). Low to high, the key itself first.
+    static int keyChord (const Settings& s, int note, int* out)
+    {
+        static constexpr int majorScale[7] = { 0, 2, 4, 5, 7, 9, 11 };
+        static constexpr int minorScale[7] = { 0, 2, 3, 5, 7, 8, 10 };
+        const bool minor = s.keyScale == 1 || s.keyScale == 3;
+        const bool sevenths = s.keyScale >= 2;
+        const int* scale = minor ? minorScale : majorScale;
+        const int degreeOffset = ((note % 12) - s.keyRoot + 12) % 12;
+        int degree = -1;
+        for (int d = 0; d < 7; ++d) if (scale[d] == degreeOffset) degree = d;
+        if (degree < 0)   // outside the key: its major triad
+        {
+            out[0] = note; out[1] = note + 4; out[2] = note + 7;
+            return 3;
+        }
+        const int count = sevenths ? 4 : 3;
+        for (int i = 0; i < count; ++i)
+        {
+            const int step = degree + 2 * i;   // every other note of the scale: root, third, fifth, seventh
+            out[i] = note + scale[step % 7] + 12 * (step / 7) - scale[degree];
+        }
+        return count;
     }
 
     // The drawn shape's notes, low to high, moved so the lowest is `bassKey` (none if nothing drawn).

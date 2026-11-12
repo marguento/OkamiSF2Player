@@ -176,6 +176,8 @@ void fidelityTests (const juce::File& sf2, int preset, int key, const juce::Stri
 
 int main()
 {
+    setenv ("SF2PLAYER_SETTINGS_FOLDER", "SF2 Player (tests)", 1);   // never the user's recent files or favorites
+
     juce::ScopedJuceInitialiser_GUI gui;
     // Vintage Dreams Waves (Ian Wilson, freeware, redistributed unaltered: Tests/fonts), the font
     // FluidSynth tests with; its "Simple Square Floot" is a plain tone, easy to measure.
@@ -967,6 +969,18 @@ int main()
                 else if (ons == 2) ++offsAfterSecond;
             }
             expect (ons == 2 && offsAfterSecond == 0, "Guitar: a palm-mute's late off doesn't cut the same note struck again");
+        }
+
+        // Key Chords: in C major D plays D minor, B plays B diminished, Bb (outside the key) Bb major;
+        // in A minor with sevenths, E plays E minor seventh.
+        {
+            GuitarEngine::Settings kc;
+            auto chord = [&kc] (int note) { int out[4] = {}; const int n = GuitarEngine::keyChord (kc, note, out); return std::vector<int> (out, out + n); };
+            const bool major = chord (62) == std::vector<int> { 62, 65, 69 } && chord (71) == std::vector<int> { 71, 74, 77 }
+                            && chord (70) == std::vector<int> { 70, 74, 77 } && chord (60) == std::vector<int> { 60, 64, 67 };
+            kc.keyRoot = 9; kc.keyScale = 3;
+            const bool minorSevenths = chord (64) == std::vector<int> { 64, 67, 71, 74 };
+            expect (major && minorSevenths, "Key Chords: each key plays its chord in the key (Dm, Bdim, borrowed Bb; Em7 in A minor)");
         }
 
         // A C major chord voiced at the 3rd fret: C on the A string, then G, C, E, G.

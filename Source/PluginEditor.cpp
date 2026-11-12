@@ -196,13 +196,18 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
       tremoloSyncAttachment (p.parameters, "tremoloSync", tremoloSyncBox),
       patternAttachment (p.parameters, "strumPattern", patternBox),
       tuningAttachment (p.parameters, "guitarTuning", tuningBox),
+      chordKeyAttachment (p.parameters, "chordKey", chordKeyBox),
+      chordScaleAttachment (p.parameters, "chordScale", chordScaleBox),
       velocityStringsAttachment (p.parameters, "strumByVelocity", velocityStringsToggle)
 {
     setLookAndFeel (&look);
 
     juce::PropertiesFile::Options options;
     options.applicationName = "SF2 Player";
-    options.folderName = "SF2 Player";
+    // The test tools open editors too: they use a folder of their own, so a snapshot never adds
+    // its test SoundFont to the user's recent files (it did, Nov 11).
+    const char* testFolder = std::getenv ("SF2PLAYER_SETTINGS_FOLDER");
+    options.folderName = testFolder != nullptr ? juce::String (testFolder) : juce::String ("SF2 Player");
     options.filenameSuffix = ".settings";
     options.osxLibrarySubFolder = "Application Support";
     settings = std::make_unique<juce::PropertiesFile> (options);
@@ -303,11 +308,15 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     };
     setUpCombo (guitarPanelBox, { "Guitar: Auto", "Guitar: On", "Guitar: Off" }, "guitarPanel",
                 "The Guitar panel: Auto shows it for guitars (General MIDI 24-31, or named so); On or Off for any instrument");
-    setUpCombo (guitarModeBox, { "Solo", "Chords", "Bass & Pick", "Shape", "Strum Keys", "Pattern", "Bass & Chord", "Harmony" }, "guitarMode",
+    setUpCombo (guitarModeBox, { "Solo", "Chords", "Bass & Pick", "Shape", "Strum Keys", "Pattern", "Bass & Chord", "Harmony", "Key Chords" }, "guitarMode",
                 "Solo: notes as played. Chords: notes played together are strummed. Bass & Pick: the lowest note first, then the rest picked. "
                 "Shape: every key strums the chord drawn on the neck. Strum Keys: hold a chord below C4, play the pick with the white keys from C4 "
                 "(C down, D up, E/F muted, G bass, A/B high strings, black keys damp). Pattern: hold a chord and it plays the rhythm chosen at the top. "
-                "Bass & Chord: below C4 single bass notes, from C4 strummed chords. Harmony: hold a chord below C4; each melody note from C4 gets a second voice under it");
+                "Bass & Chord: below C4 single bass notes, from C4 strummed chords. Harmony: hold a chord below C4; each melody note from C4 gets a second voice under it. "
+                "Key Chords: every key plays its chord in the key chosen at the top (in C major: D plays Dm, G plays G)");
+    setUpCombo (chordKeyBox, { "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B" }, "chordKey", "Key Chords: the key");
+    setUpCombo (chordScaleBox, { "Major", "Minor", "Major 7ths", "Minor 7ths" }, "chordScale",
+                "Key Chords: the scale, with triads or seventh chords");
     {
         juce::StringArray tunings;
         for (const char* name : GuitarEngine::tuningNames) tunings.add (name);
@@ -987,6 +996,8 @@ void SF2PlayerEditor::showSectionContents()
                                 (juce::Component*) &velocityStringsToggle, (juce::Component*) &guitarPresets })
         c->setVisible (guitar);
     patternBox.setVisible (guitar && guitarModeBox.getSelectedItemIndex() == GuitarEngine::pattern);
+    chordKeyBox.setVisible (guitar && guitarModeBox.getSelectedItemIndex() == GuitarEngine::keyChords);
+    chordScaleBox.setVisible (chordKeyBox.isVisible());
 }
 
 void SF2PlayerEditor::mouseUp (const juce::MouseEvent& e)
@@ -1029,8 +1040,11 @@ void SF2PlayerEditor::timerCallback()
     {
         // Pattern mode shows its rhythm menu; Strum Keys tints the chord hand's keys.
         const int mode = guitarModeBox.getSelectedItemIndex();
-        const bool showPattern = guitarShown && ! collapsed[guitarSection] && mode == GuitarEngine::pattern;
+        const bool open = guitarShown && ! collapsed[guitarSection];
+        const bool showPattern = open && mode == GuitarEngine::pattern;
         if (patternBox.isVisible() != showPattern) patternBox.setVisible (showPattern);
+        const bool showKey = open && mode == GuitarEngine::keyChords;
+        if (chordKeyBox.isVisible() != showKey) { chordKeyBox.setVisible (showKey); chordScaleBox.setVisible (showKey); }
         const int tint = guitarShown && mode == GuitarEngine::strumKeys ? GuitarEngine::strumKeysFrom
                        : layerModeBox.getSelectedItemIndex() == 2 ? juce::roundToInt (splitSlider.getValue()) : -1;
         if (keyboard.splitKey != tint) { keyboard.splitKey = tint; keyboard.repaint(); }
@@ -1202,6 +1216,8 @@ void SF2PlayerEditor::resized()
         guitarPanel = area.removeFromTop (heightOf (guitarSection));
         tremoloSyncBox.setBounds (guitarPanel.getRight() - 6 - 70, guitarPanel.getY() + 5, 70, 18);
         patternBox.setBounds (tremoloSyncBox.getX() - 8 - 130, guitarPanel.getY() + 5, 130, 18);
+        chordScaleBox.setBounds (tremoloSyncBox.getX() - 8 - 84, guitarPanel.getY() + 5, 84, 18);
+        chordKeyBox.setBounds (chordScaleBox.getX() - 4 - 50, guitarPanel.getY() + 5, 50, 18);
         auto inner = guitarPanel.reduced (6).withTrimmedTop (18);
         neck.setBounds (inner.removeFromBottom (neckHeight - 6).reduced (8, 0));
         const int width = inner.getWidth() / 9;

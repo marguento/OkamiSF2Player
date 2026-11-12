@@ -151,6 +151,10 @@ With every control at Off or 0 it changes nothing.
   makes no sound) and each melody note from C4 gets a second voice under it, the chord's nearest
   tone a third to a sixth below (a major third without a chord). **Strum Keys** and **Pattern**
   are below.
+- **Key Chords:** one key, one chord. Choose the key and the scale at the top (Major, Minor,
+  Major 7ths, Minor 7ths); each note of the scale plays the chord the scale builds on it (in C
+  major: C → C, D → Dm, E → Em, F → F, G → G, A → Am, B → Bdim), and a note outside it plays its
+  major chord (Bb → Bb, borrowed). Voiced and strummed like the other modes.
 - **Tune:** Standard, Drop D, Drop C, Open G or DADGAD. Chords are voiced, drawn and shown on the
   neck for that tuning.
 - **Velocity strings** (at the top): a soft strum catches only the three high strings, a medium

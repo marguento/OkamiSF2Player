@@ -177,7 +177,7 @@ private:
     Knob doubleMix { *this, "doubleMix", "Double" };
     Knob tremoloDepth { *this, "tremoloDepth", "Tremolo" };
     Knob tremoloRate { *this, "tremoloRate", "Rate" };
-    juce::ComboBox guitarPanelBox, guitarModeBox, strumDirectionBox, tremoloSyncBox, patternBox, tuningBox;
+    juce::ComboBox guitarPanelBox, guitarModeBox, strumDirectionBox, tremoloSyncBox, patternBox, tuningBox, chordKeyBox, chordScaleBox;
     juce::ToggleButton velocityStringsToggle { "Velocity strings" };
     // Starting points for the Guitar panel: they set its controls (Off: all neutral).
     juce::ComboBox guitarPresets;
@@ -185,7 +185,7 @@ private:
     void showGuitarPreset();
     juce::Label guitarModeLabel { {}, "Mode" }, strumDirectionLabel { {}, "Way" };
     juce::AudioProcessorValueTreeState::ComboBoxAttachment guitarPanelAttachment, guitarModeAttachment,
-        strumDirectionAttachment, tremoloSyncAttachment, patternAttachment, tuningAttachment;
+        strumDirectionAttachment, tremoloSyncAttachment, patternAttachment, tuningAttachment, chordKeyAttachment, chordScaleAttachment;
     juce::AudioProcessorValueTreeState::ButtonAttachment velocityStringsAttachment;
     juce::Label tuningLabel { {}, "Tune" };
     bool guitarShown = false;

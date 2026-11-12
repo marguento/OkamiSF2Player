@@ -120,13 +120,14 @@ public:
         g.setFont (juce::FontOptions (30.0f, juce::Font::bold));
         g.drawText (noteCount > 0 ? (name.isNotEmpty() ? name : juce::String ("?")) : juce::String::fromUTF8 ("\xe2\x80\x93"),
                     left.removeFromTop (left.getHeight() * 0.6f), juce::Justification::centredLeft);
-        if (drawn && noteCount == 0)
+        if (drawn && noteCount == 0)   // in the name's column, clear of the fret numbers
         {
             g.setColour (colours.dim);
             g.setFont (juce::FontOptions (11.0f));
-            g.drawText ("Click the strings to draw a chord", area.withTrimmedLeft (8.0f).removeFromBottom (12.0f),
-                        juce::Justification::centredRight);
+            g.drawFittedText ("Click the strings\nto draw a chord", left.toNearestInt(), juce::Justification::centredLeft, 2);
         }
+        else
+        {
         g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
         auto lights = left;
         g.setColour (colours.dim.interpolatedWith (colours.accent, arrowGlow));
@@ -134,6 +135,7 @@ public:
                     juce::Justification::centredLeft);
         g.setColour (colours.dim.withAlpha (0.5f).interpolatedWith (colours.accent, palmGlow));
         g.drawText ("PALM", lights, juce::Justification::centredLeft);
+        }
 
         // Right: the neck, high E on top as in tablature, frets 1 to 12.
         const auto geometry = layout();
