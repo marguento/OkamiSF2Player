@@ -238,6 +238,10 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     infoLabel.setFont (juce::FontOptions (12.0f));
     infoLabel.setColour (juce::Label::textColourId, SF2Look::dim);
     addAndMakeVisible (infoLabel);
+    authorLabel.setFont (juce::FontOptions (12.0f, juce::Font::italic));
+    authorLabel.setColour (juce::Label::textColourId, SF2Look::dim);
+    authorLabel.setInterceptsMouseClicks (false, false);   // clicks reach the file box under it
+    addAndMakeVisible (authorLabel);
 
     favouriteButton.setTooltip ("Add this instrument to your favorites (kept for every project)");
     favouriteButton.onClick = [this] { toggleFavourite(); };
@@ -776,10 +780,13 @@ void SF2PlayerEditor::refresh()
     }
     else
     {
-        // The file box already names the file: this row only shows an author, when there is one.
+        infoLabel.setText ({}, juce::dontSendNotification);   // the author sits in the file box now
+    }
+    {
         const auto& info = st->info;
-        infoLabel.setText (info.author.isNotEmpty() ? "by " + info.author : juce::String(), juce::dontSendNotification);
-        infoLabel.setTooltip (info.comment);
+        authorLabel.setText (file.existsAsFile() && info.author.isNotEmpty() ? "by " + info.author : juce::String(), juce::dontSendNotification);
+        fileBox.setTooltip (st->file.getFullPathName() + (info.comment.isNotEmpty() ? "\n\n" + info.comment : juce::String()));
+        placeAuthor();
     }
 
     // Without anything to say the row goes, and the window gets that much shorter.
@@ -1177,7 +1184,7 @@ void SF2PlayerEditor::applyHeight()
 // The window's height: exactly what it shows (the same pieces as resized()).
 int SF2PlayerEditor::minimumHeight() const
 {
-    int height = 46 + 28 + (infoLabel.isVisible() ? 22 : 0) + 8 + 28;   // title, file, info, instrument
+    int height = 46 + soundHeight();   // the title, then SOUNDFONT
     height += 12 + generalHeight();
     height += 12 + (guitarShown ? heightOf (guitarSection) : pianoHeight);
     height += 12 + 22;                                                     // the keyboard's row
@@ -1344,6 +1351,17 @@ void SF2PlayerEditor::paint (juce::Graphics& g)
     g.setColour (db > -1.0f ? SF2Look::warning : SF2Look::accent);
     g.fillRoundedRectangle (meterArea.toFloat().withWidth ((float) meterArea.getWidth() * fraction), 2.0f);
 
+    // SOUNDFONT: graphite under the file and the instrument.
+    {
+        const auto area = soundPanel.toFloat();
+        g.setGradientFill (juce::ColourGradient::vertical (juce::Colour (0xff26252c), area.getY(), juce::Colour (0xff1d1c22), area.getBottom()));
+        g.fillRoundedRectangle (area, 6.0f);
+        g.setColour (juce::Colours::white.withAlpha (0.06f));
+        g.drawRoundedRectangle (area.reduced (0.5f), 6.0f, 1.0f);
+        g.setColour (SF2Look::dim);
+        g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
+        g.drawText ("SOUNDFONT", soundPanel.getX() + 12, soundPanel.getY() + 7, 120, 14, juce::Justification::centredLeft);
+    }
     // GENERAL: a cool slate under everything every instrument has.
     {
         const auto area = generalPanel.toFloat();
@@ -1439,15 +1457,18 @@ void SF2PlayerEditor::resized()
     hintLabel.setBounds (header.withTrimmedLeft (220).withTrimmedRight (10).withSizeKeepingCentre (header.getWidth() - 230, 30));
     if (guide != nullptr) guide->setBounds (getLocalBounds());
 
-    fileBox.setBounds (area.removeFromTop (28));
+    // SOUNDFONT: the file and the instrument chosen from it.
+    soundPanel = area.removeFromTop (soundHeight());
+    auto sound = soundPanel.reduced (10, 0).withTrimmedTop (26);
+    fileBox.setBounds (sound.removeFromTop (28));
+    placeAuthor();
     if (infoLabel.isVisible())
     {
-        area.removeFromTop (2);
-        infoLabel.setBounds (area.removeFromTop (20).withTrimmedLeft (-4));
+        sound.removeFromTop (2);
+        infoLabel.setBounds (sound.removeFromTop (20).withTrimmedLeft (-4));
     }
-
-    area.removeFromTop (8);
-    auto row = area.removeFromTop (28);
+    sound.removeFromTop (8);
+    auto row = sound.removeFromTop (28);
     previousButton.setBounds (row.removeFromLeft (28));
     nextButton.setBounds (row.removeFromRight (28));
     row.removeFromRight (6);
@@ -1894,4 +1915,17 @@ void SF2PlayerEditor::clickString (int index)
         if (auto* parameter = player.parameters.getParameter (id))
             parameter->setValueNotifyingHost (parameter->convertTo0to1 ((float) value));
     showMode();
+}
+
+// The author's name right after the file's name and count, inside the file box (clear of its arrow).
+void SF2PlayerEditor::placeAuthor()
+{
+    if (authorLabel.getText().isEmpty() || fileBox.getWidth() == 0) { authorLabel.setBounds ({}); return; }
+    const auto font = look.getComboBoxFont (fileBox);
+    juce::GlyphArrangement glyphs;
+    glyphs.addLineOfText (font, fileBox.getText(), 0.0f, 0.0f);
+    const int textEnd = fileBox.getX() + 6 + juce::roundToInt (glyphs.getBoundingBox (0, -1, true).getWidth()) + 10;
+    const int right = fileBox.getRight() - 30;   // the arrow
+    authorLabel.setBounds (textEnd, fileBox.getY(), juce::jmax (0, right - textEnd), fileBox.getHeight());
+    authorLabel.toFront (false);
 }

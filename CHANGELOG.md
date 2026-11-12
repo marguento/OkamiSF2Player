@@ -38,7 +38,8 @@ release bumps it and adds an entry here: one line per change a player would noti
     click the name to hear them; saved with the project.
 - Reverb and chorus show only their switches, playing as the SoundFont sets them; a click on their
   title (or a right-click on the bar) shows their knobs and presets.
-- The window is in sections with their own colors: **GENERAL** (Gain, Tone, the effects, PLAY:
+- The window is in sections with their own colors: **SOUNDFONT** (the file, its author in italics
+  beside it, and the instrument), **GENERAL** (Gain, Tone, the effects, PLAY:
   what every instrument has), then the instrument's own: **GUITAR**, or **PIANO** / **INSTRUMENT**
   (Layer and Split, which a guitar's zones leave no room for: a guitar turns the layer off).
 - **Help built in:** the ? button opens a guide (Start, Guitar, Controls) and About; the header
