@@ -1217,7 +1217,10 @@ void SF2PlayerEditor::mouseUp (const juce::MouseEvent& e)
 {
     const auto at = e.getPosition();
     auto title = [] (juce::Rectangle<int> panel) { return panel.withHeight (collapsedHeight); };
-    if (title (reverbPanel).contains (at) || title (chorusPanel).contains (at)) { if (showEffectControls) toggleSection (effectsSection); }
+    // The effects' title (or a right-click anywhere on their bars): their controls, shown or hidden.
+    if (title (reverbPanel).contains (at) || title (chorusPanel).contains (at)
+        || (e.mods.isPopupMenu() && (reverbPanel.contains (at) || chorusPanel.contains (at))))
+        toggleEffectControls();
     else if (title (playPanel).contains (at)) toggleSection (playSection);
     else if (guitarShown && title (guitarPanel).contains (at)) toggleSection (guitarSection);
 }
@@ -1227,9 +1230,9 @@ void SF2PlayerEditor::drawSectionTitle (juce::Graphics& g, juce::Rectangle<int> 
 {
     g.setColour (SF2Look::dim);
     g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
-    if (s != effectsSection || showEffectControls)   // the effects fold only with their controls shown
-        g.drawText (juce::String::fromUTF8 (collapsed[(size_t) s] ? "\xe2\x96\xb8" : "\xe2\x96\xbe"), panel.getX() + 8, panel.getY() + 7, 12, 14,
-                    juce::Justification::centred);
+    const bool folded = s == effectsSection ? ! showEffectControls || collapsed[(size_t) s] : collapsed[(size_t) s];
+    g.drawText (juce::String::fromUTF8 (folded ? "\xe2\x96\xb8" : "\xe2\x96\xbe"), panel.getX() + 8, panel.getY() + 7, 12, 14,
+                juce::Justification::centred);
     g.drawText (title, panel.getX() + 22, panel.getY() + 8, 100, 14, juce::Justification::centredLeft);
 }
 
@@ -1688,13 +1691,10 @@ void SF2PlayerEditor::showHelpMenu()
     menu.addItem (2, "About Okami SF2 Player");
     menu.addSeparator();
     menu.addItem (3, "Show hints at the top", true, showHints);
-    menu.addItem (4, "Show reverb and chorus controls (advanced)", true, showEffectControls);
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (helpButton), [this] (int chosen)
     {
         if (chosen == 1) openGuide (Guide::start);
         else if (chosen == 2) openGuide (Guide::about);
-        else if (chosen == 4)
-            toggleEffectControls();
         else if (chosen == 3)
         {
             showHints = ! showHints;
@@ -1736,10 +1736,12 @@ void SF2PlayerEditor::showHint()
 // The reverb's and chorus's knobs and presets, shown or not; the window grows or shrinks by them.
 void SF2PlayerEditor::toggleEffectControls()
 {
-    showEffectControls = ! showEffectControls;
+    // Shown but folded away (to fit the screen): open them; else show or hide.
+    if (! (showEffectControls && collapsed[effectsSection]))
+        showEffectControls = ! showEffectControls;
     settings->setValue ("showEffectControls", showEffectControls);
     settings->saveIfNeeded();
-    if (showEffectControls) collapsed[effectsSection] = false;   // asked for: open
+    collapsed[effectsSection] = false;   // the controls' visibility is this switch alone
     showSectionContents();
     applyHeight();
     resized();

@@ -36,8 +36,8 @@ release bumps it and adds an entry here: one line per change a player would noti
     name in a display (about 45 chord types, slash chords, partial chords, intervals), with lights
     for the strum's direction and palm-muted notes. **Draw chords on it** to see their name, and
     click the name to hear them; saved with the project.
-- Reverb and chorus show only their switches, playing as the SoundFont sets them; their knobs and
-  presets are an advanced setting in the ? menu.
+- Reverb and chorus show only their switches, playing as the SoundFont sets them; a click on their
+  title (or a right-click on the bar) shows their knobs and presets.
 - **Help built in:** the ? button opens a guide (Start, Guitar, Controls) and About; the header
   explains whatever control the mouse is over (turn it off in the ? menu).
 - Reverb preset "Short Room" and chorus preset "Bright", for acoustic guitar.

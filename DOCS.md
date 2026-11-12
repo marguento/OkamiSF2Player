@@ -87,7 +87,8 @@ which are folded, for every project.
 ## Reverb and Chorus
 
 Each shows only its switch, as on the original sound module: the effects play as the SoundFont
-sets them. **? → Show reverb and chorus controls (advanced)** brings back their knobs and presets.
+sets them. A click on **▸ REVERB** or **▸ CHORUS** (or a right-click on their bars) brings back
+their knobs and presets.
 
 Each SoundFont says **how much** each instrument sends to the reverb and the chorus; the
 plugin provides **one** shared reverb and **one** shared chorus (like a mixing desk). Each
