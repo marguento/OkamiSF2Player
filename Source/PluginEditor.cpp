@@ -317,8 +317,8 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     };
     setUpCombo (guitarPanelBox, { "Auto", "On", "Off" }, "guitarPanel", {});
     guitarPanelBox.setVisible (false);   // holds the parameter; the panel button beside the instrument sets it
-    panelButton.setTooltip ("Which panel this instrument gets: Auto detects guitars; choose Guitar or No panel when it's wrong "
-                            "(remembered for this instrument)");
+    panelButton.setTooltip ("Which panel this instrument gets: detected automatically (guitars get the Guitar panel), or chosen "
+                            "here when the detection is wrong (remembered for this instrument)");
     panelButton.setColour (juce::TextButton::buttonColourId, SF2Look::panel);
     panelButton.onClick = [this] { showPanelMenu(); };
     addAndMakeVisible (panelButton);
@@ -1402,7 +1402,7 @@ void SF2PlayerEditor::resized()
     favouriteButton.setBounds (row.removeFromRight (28));
     previewButton.setBounds (row.removeFromRight (28));
     row.removeFromRight (4);
-    panelButton.setBounds (row.removeFromRight (78).reduced (0, 2));
+    panelButton.setBounds (row.removeFromRight (104).reduced (0, 2));
     row.reduce (6, 0);
     searchBox.setBounds (row.removeFromLeft (130));
     row.removeFromLeft (6);
@@ -1772,9 +1772,9 @@ void SF2PlayerEditor::showPanelMenu()
     const int current = juce::roundToInt (player.parameters.getRawParameterValue ("guitarPanel")->load());
     juce::PopupMenu menu;
     menu.addSectionHeader ("Panel for this instrument");
-    menu.addItem (1, juce::String ("Auto (") + (player.detectedGuitar() ? "a guitar" : "not a guitar") + ")", true, current == 0);
-    menu.addItem (2, "Guitar", true, current == 1);
-    menu.addItem (3, "No panel", true, current == 2);
+    menu.addItem (1, juce::String ("Automatic (detected: ") + (player.detectedGuitar() ? "guitar" : "standard instrument") + ")", true, current == 0);
+    menu.addItem (2, "Guitar panel", true, current == 1);
+    menu.addItem (3, "Standard (no extra panel)", true, current == 2);
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (panelButton), [this] (int chosen)
     {
         if (chosen <= 0) return;
@@ -1793,11 +1793,12 @@ void SF2PlayerEditor::showPanelMenu()
     });
 }
 
-// The button says what the instrument gets: "Guitar" (lit) or "No panel".
+// The button says what the instrument gets, Guitar (lit) or Standard, and whether that was detected.
 void SF2PlayerEditor::refreshPanelButton()
 {
     const bool guitar = player.guitarPanelActive();
-    const auto text = guitar ? juce::String ("Guitar") : juce::String ("No panel");
+    const bool automatic = juce::roundToInt (player.parameters.getRawParameterValue ("guitarPanel")->load()) == 0;
+    const auto text = juce::String (guitar ? "Guitar" : "Standard") + (automatic ? juce::String::fromUTF8 (" \xc2\xb7 auto") : juce::String());
     if (panelButton.getButtonText() != text)
     {
         panelButton.setButtonText (text);

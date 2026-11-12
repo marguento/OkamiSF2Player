@@ -161,7 +161,7 @@ private:
             };
             case guitar: return {
                 { "The Guitar panel", "" },
-                { "When it shows", "By itself for a guitar (General MIDI 24-31, or an instrument named one). The button beside the instrument says Guitar or No panel; click it to choose for an instrument that's detected wrong. Remembered for that instrument." },
+                { "When it shows", "By itself for a guitar (General MIDI 24-31, or an instrument named one). The button beside the instrument says Guitar or Standard (· auto when detected); click it to choose for an instrument that's detected wrong. Remembered for that instrument." },
                 { "Presets", "The menu next to GUITAR: Acoustic Strum, Campfire, Double-Tracked, Slow Ballad, High Strings, Folk Pattern, Fingerpicking, Bass & Pick. Off (Direct) plays the SoundFont as it is." },
                 { "The keyboard's zones", "" },
                 { "Main zone, E1 to B4", "Where you play notes (Solo, Harmony) or take chords (Chords, Bass & Chord, Bass & Pick). Chords are recognized from the keys: C E G is C, one key is its major chord, C + Eb is C minor, C + Bb is C7." },

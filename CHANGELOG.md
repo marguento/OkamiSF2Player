@@ -7,7 +7,7 @@ release bumps it and adds an entry here: one line per change a player would noti
 
 - **Guitar panel**, to play guitar SoundFonts the way the classic keyboard guitar instruments do.
   It appears by itself for a guitar (General MIDI 24-31, or an instrument named one), or for any
-  instrument from the button beside the instrument (**Guitar** / **No panel**), remembered for each
+  instrument from the button beside the instrument (**Guitar** / **Standard**, detected or chosen), remembered for each
   instrument of each SoundFont. It starts in **Direct**: the SoundFont as it is.
   - **Zones:** the Main zone (E1-B4) plays notes or takes chords; the Repeat zones (C1-D#1, C5-C6,
     tinted on the keyboard) repeat them: strums up and down, muted strums, basses, single strings.

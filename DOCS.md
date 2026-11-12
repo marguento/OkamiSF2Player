@@ -141,9 +141,9 @@ At their defaults (x1, Linear, 0, Poly, Off) they change nothing.
 
 The **GUITAR** panel appears by itself, first under the instrument, when it's a guitar (General
 MIDI programs 24-31, or an instrument named "guitar" or "gtr"). The button beside the instrument
-says what it got: **Guitar** or **No panel**. For a SoundFont that doesn't follow General MIDI (a
-guitar on program 0, a piano named "Gtr"), click it and choose **Guitar** or **No panel**; **Auto**
-goes back to detecting. The choice is remembered for that instrument of that SoundFont, in every
+says what it got, **Guitar** or **Standard** (with "· auto" when detected). For a SoundFont that doesn't follow General MIDI (a
+guitar on program 0, a piano named "Gtr"), click it and choose **Guitar panel** or **Standard**;
+**Automatic** goes back to detecting. The choice is remembered for that instrument of that SoundFont, in every
 project. The panel starts in **Direct**: every note as it comes, the SoundFont exactly as it is.
 Choosing a mode turns Direct off.
 
