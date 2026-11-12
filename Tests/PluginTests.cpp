@@ -818,6 +818,16 @@ int main()
         const auto placed = GuitarEngine::placeOnStrings (cShape, 5, 3);
         expect (placed == std::array<int, 6> { -1, 3, 5, 5, 5, 3 }, "Guitar: the neck places a voiced chord on its strings");
 
+        // Shape mode: the drawn open C shape (x32010) played from a D key comes out as D major.
+        {
+            const std::array<int, 6> openC { -1, 3, 2, 0, 1, 0 };
+            int moved[6] = {};
+            const int n = GuitarEngine::shapeNotes (openC, 50, moved);
+            expect (std::vector<int> (moved, moved + n) == std::vector<int> { 50, 54, 57, 62, 66 }
+                        && GuitarEngine::unpackShape (GuitarEngine::packShape (openC)) == openC,
+                    "Guitar: a drawn shape is played from any key (and kept through packing)");
+        }
+
         // A C major chord voiced at the 3rd fret: C on the A string, then G, C, E, G.
         const int keys[] = { 60, 64, 67 };
         int voiced[16] = {};

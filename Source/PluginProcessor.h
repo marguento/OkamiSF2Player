@@ -107,6 +107,12 @@ public:
     };
     GuitarView guitarView;
 
+    // The chord drawn on the neck (Shape mode): a fret per string from the low E, -1 not played.
+    // Saved with the project. Message thread sets it; the audio thread reads the packed copy.
+    void setGuitarShape (const std::array<int, 6>& frets);
+    std::array<int, 6> guitarShapeFrets() const { return GuitarEngine::unpackShape (guitarShape.load()); }
+    std::atomic<juce::uint32> guitarShape { GuitarEngine::packShape ({ -1, -1, -1, -1, -1, -1 }) };
+
     // Voices sounding after the last block (for the editor and tests).
     std::atomic<int> activeVoices { 0 };
     // Tests: render with another interpolation (FLUID_INTERP_*); -1 keeps the 7th order.

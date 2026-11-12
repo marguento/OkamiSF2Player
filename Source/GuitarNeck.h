@@ -2,18 +2,58 @@
 
 #include "GuitarEngine.h"
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <functional>
 
 // The Guitar panel's strip: the chord's name, a six-string neck with where its notes lie, an
 // arrow lit by each strum (down or up) and a light for palm-muted notes. Fed by the editor's
 // timer from the processor's GuitarView; draws nothing until something is played.
-class GuitarNeck : public juce::Component
+class GuitarNeck : public juce::Component, public juce::SettableTooltipClient
 {
 public:
     struct Colours
     {
         juce::Colour text, dim, accent, panel, line;
     };
-    explicit GuitarNeck (Colours c) : colours (c) { setInterceptsMouseClicks (false, false); }
+    explicit GuitarNeck (Colours c) : colours (c) {}
+
+    // Drawing chords: a click on a string at a fret puts a finger there (again: lifts it); left
+    // of the nut, a string toggles open and not played. The drawn chord is shown (and named)
+    // while `shapeMode` is on, and every change goes to `onShapeChanged`. A click on the name
+    // plays the chord (`onAudition`).
+    std::function<void (const std::array<int, 6>&)> onShapeChanged;
+    std::function<void()> onAudition;
+
+    void setShape (const std::array<int, 6>& frets, bool shapeModeOn)
+    {
+        if (frets == shapeFrets && shapeModeOn == shapeMode) return;
+        shapeFrets = frets;
+        shapeMode = shapeModeOn;
+        repaint();
+    }
+
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        const auto at = e.position;
+        if (at.x < nameWidth)
+        {
+            if (onAudition) onAudition();
+            return;
+        }
+        const auto geometry = layout();
+        const int string = 5 - juce::jlimit (0, 5, juce::roundToInt ((at.y - geometry.neck.getY()) / geometry.rowGap));
+        auto frets = shapeFrets;
+        if (at.x < geometry.board.getX())
+            frets[(size_t) string] = frets[(size_t) string] == 0 ? -1 : 0;   // open, or not played
+        else
+        {
+            const int fret = 1 + juce::jlimit (0, fretCount - 1, (int) ((at.x - geometry.board.getX()) / geometry.columnWidth));
+            frets[(size_t) string] = frets[(size_t) string] == fret ? -1 : fret;
+        }
+        shapeFrets = frets;
+        shapeMode = true;
+        if (onShapeChanged) onShapeChanged (frets);
+        repaint();
+    }
 
     // A new chord or note (the processor's sequence moved on).
     void show (const int* notes, int count, int pitchClasses, int bass, bool up, bool strummed, bool palm, int fretPosition)
@@ -81,14 +121,39 @@ public:
     void paint (juce::Graphics& g) override
     {
         auto area = getLocalBounds().toFloat();
-        const float fade = age < fadeAfter ? 1.0f : juce::jmax (0.35f, 1.0f - (age - fadeAfter));
+        float fade = age < fadeAfter ? 1.0f : juce::jmax (0.35f, 1.0f - (age - fadeAfter));
+        // Shape mode shows the drawn chord, always bright; otherwise the last one played.
+        auto frets = this->frets;
+        auto name = this->name;
+        int noteCount = this->noteCount;
+        bool drawn = false;
+        if (shapeMode)
+        {
+            drawn = true;
+            fade = 1.0f;
+            frets = shapeFrets;
+            std::array<int, 6> notes {};
+            noteCount = 0;
+            int classes = 0;
+            for (size_t s = 0; s < 6; ++s)
+                if (frets[s] >= 0) { notes[(size_t) noteCount++] = GuitarEngine::strings[s] + frets[s]; classes |= 1 << ((GuitarEngine::strings[s] + frets[s]) % 12); }
+            std::sort (notes.begin(), notes.begin() + noteCount);
+            name = noteCount > 0 ? chordName (classes, notes[0] % 12) : juce::String();
+        }
 
         // Left: the chord's name, the strum arrow and the palm light.
-        auto left = area.removeFromLeft (96.0f);
+        auto left = area.removeFromLeft (nameWidth);
         g.setColour (colours.text.withAlpha (noteCount > 0 ? fade : 0.25f));
         g.setFont (juce::FontOptions (22.0f, juce::Font::bold));
         g.drawText (noteCount > 0 ? (name.isNotEmpty() ? name : juce::String ("?")) : juce::String::fromUTF8 ("\xe2\x80\x93"),
                     left.removeFromTop (left.getHeight() * 0.6f), juce::Justification::centredLeft);
+        if (drawn && noteCount == 0)
+        {
+            g.setColour (colours.dim);
+            g.setFont (juce::FontOptions (11.0f));
+            g.drawText ("Click the strings to draw a chord", area.withTrimmedLeft (8.0f).removeFromBottom (12.0f),
+                        juce::Justification::centredRight);
+        }
         g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
         auto lights = left;
         g.setColour (colours.dim.interpolatedWith (colours.accent, arrowGlow));
@@ -97,18 +162,19 @@ public:
         g.setColour (colours.dim.withAlpha (0.5f).interpolatedWith (colours.accent, palmGlow));
         g.drawText ("PALM", lights, juce::Justification::centredLeft);
 
-        // Right: the neck, high E on top as in tablature.
-        area.removeFromLeft (8.0f);
-        auto numbers = area.removeFromBottom (12.0f);
-        auto neck = area.withTrimmedTop (12.0f).withTrimmedBottom (4.0f);
-        int low = 99, high = 0;
-        for (int f : frets) if (f > 0) { low = juce::jmin (low, f); high = juce::jmax (high, f); }
-        const int first = low == 99 ? 1 : juce::jmax (1, juce::jmin (low, high - 4));
-        const int columns = juce::jmax (5, high - first + 1);
-        const float openRoom = 14.0f;
-        auto board = neck.withTrimmedLeft (openRoom);
-        const float columnWidth = board.getWidth() / (float) columns;
-        const float rowGap = neck.getHeight() / 5.0f;
+        // Right: the neck, high E on top as in tablature, frets 1 to 12.
+        const auto geometry = layout();
+        auto numbers = geometry.numbers;
+        auto neck = geometry.neck;
+        auto board = geometry.board;
+        const int first = 1, columns = fretCount;
+        const float columnWidth = geometry.columnWidth, rowGap = geometry.rowGap, openRoom = board.getX() - neck.getX();
+        for (int c : { 3, 5, 7, 9, 12 })   // the inlay dots of a real neck
+        {
+            g.setColour (colours.line.withAlpha (0.6f));
+            const float x = board.getX() + (c - 0.5f) * columnWidth;
+            g.fillEllipse (x - 2.5f, neck.getCentreY() - 2.5f, 5.0f, 5.0f);
+        }
 
         g.setColour (colours.line);
         for (int c = 0; c <= columns; ++c)   // fret wires; the nut thicker
@@ -155,6 +221,22 @@ public:
 
 private:
     static constexpr float fadeAfter = 3.0f;   // seconds before a chord's dots dim
+    static constexpr float nameWidth = 96.0f;
+    static constexpr int fretCount = 12;
+    struct Geometry { juce::Rectangle<float> neck, board, numbers; float columnWidth, rowGap; };
+    Geometry layout() const
+    {
+        auto area = getLocalBounds().toFloat().withTrimmedLeft (nameWidth + 8.0f);
+        Geometry g;
+        g.numbers = area.removeFromBottom (12.0f);
+        g.neck = area.withTrimmedTop (12.0f).withTrimmedBottom (4.0f);
+        g.board = g.neck.withTrimmedLeft (16.0f);
+        g.columnWidth = g.board.getWidth() / (float) fretCount;
+        g.rowGap = g.neck.getHeight() / 5.0f;
+        return g;
+    }
+    std::array<int, 6> shapeFrets { -1, -1, -1, -1, -1, -1 };
+    bool shapeMode = false;
     Colours colours;
     std::array<int, 6> shown {};
     std::array<int, 6> frets { -1, -1, -1, -1, -1, -1 };

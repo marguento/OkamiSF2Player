@@ -13,10 +13,10 @@ struct EditorTestAccess
     static void fold (SF2PlayerEditor& editor, const juce::String& sections)
     {
         const auto names = juce::StringArray::fromTokens (sections, ",", "");
-        editor.collapsed = { names.contains ("effects"), names.contains ("play"), names.contains ("guitar") };
+        editor.collapsed = { names.contains ("effects"), names.contains ("play"), names.contains ("guitar"), names.contains ("keyboard") };
         editor.showSectionContents();
         editor.setResizeLimits (620, editor.minimumHeight(), 1600, 1400);
-        editor.setSize (editor.getWidth(), editor.minimumHeight() + 22);
+        editor.setSize (editor.getWidth(), editor.minimumHeight() + 22 + (editor.collapsed[3] ? 0 : 0));
         editor.resized();
     }
 
@@ -136,6 +136,14 @@ int main (int argc, char** argv)
             p.selectLayerPreset (48);
             auto* parameter = p.parameters.getParameter ("layerMode");
             parameter->setValueNotifyingHost (parameter->convertTo0to1 ((float) std::atoi (layer)));
+        }
+        if (const char* shape = std::getenv ("SHAPE"))   // "-1,3,2,0,1,0": that chord drawn, Shape mode
+        {
+            std::array<int, 6> frets {};
+            const auto parts = juce::StringArray::fromTokens (shape, ",", "");
+            for (int i = 0; i < 6; ++i) frets[(size_t) i] = parts[i].getIntValue();
+            p.setGuitarShape (frets);
+            p.parameters.getParameter ("guitarMode")->setValueNotifyingHost (p.parameters.getParameter ("guitarMode")->convertTo0to1 (3.0f));
         }
         std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
         if (std::getenv ("CHORD") != nullptr)

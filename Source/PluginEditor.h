@@ -186,8 +186,10 @@ private:
 
     // Sections that fold to their title strip (a click on the title), remembered for every
     // project in the settings file. The window shrinks or grows by the difference.
-    enum Section { effectsSection = 0, playSection = 1, guitarSection = 2 };
-    std::array<bool, 3> collapsed {};
+    enum Section { effectsSection = 0, playSection = 1, guitarSection = 2, keyboardSection = 3 };
+    std::array<bool, 4> collapsed {};
+    juce::TextButton keysButton;   // folds the keyboard
+    int keyboardHeight = 120;      // the keyboard's height when it was last shown
     static constexpr int panelHeight = 118, collapsedHeight = 26, panelGap = 12;
     static constexpr int neckHeight = 74;   // the Guitar panel's neck strip, under its knobs
     int heightOf (Section s) const
@@ -196,6 +198,7 @@ private:
     }
     GuitarNeck neck { { SF2Look::text, SF2Look::dim, SF2Look::accent, SF2Look::panel, SF2Look::line.brighter (0.35f) } };
     int shownGuitarSequence = 0;
+    int auditionKey = -1, auditionTicks = 0;   // the drawn chord, played by a click on its name
     int guitarExtra() const { return guitarShown ? panelGap + heightOf (guitarSection) : 0; }
     int minimumHeight() const;
     void toggleSection (Section);

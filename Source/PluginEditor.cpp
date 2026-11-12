@@ -281,8 +281,8 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     };
     setUpCombo (guitarPanelBox, { "Guitar: Auto", "Guitar: On", "Guitar: Off" }, "guitarPanel",
                 "The Guitar panel: Auto shows it for guitars (General MIDI 24-31, or named so); On or Off for any instrument");
-    setUpCombo (guitarModeBox, { "Solo", "Chords", "Bass & Pick" }, "guitarMode",
-                "Solo: notes as played. Chords: notes played together are strummed. Bass & Pick: the lowest note first, then the rest picked");
+    setUpCombo (guitarModeBox, { "Solo", "Chords", "Bass & Pick", "Shape" }, "guitarMode",
+                "Solo: notes as played. Chords: notes played together are strummed. Bass & Pick: the lowest note first, then the rest picked. Shape: every key strums the chord drawn on the neck");
     setUpCombo (strumDirectionBox, { "Down", "Up", "Alternate" }, "strumDirection",
                 "Down: low string to high. Up: high to low. Alternate: down, up, down...");
     setUpCombo (tremoloSyncBox, { "Free", "1/2", "1/4", "1/8", "1/16", "1/4T", "1/8T" }, "tremoloSync",
@@ -302,6 +302,34 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     tremoloDepth.slider.setTooltip ("Stereo tremolo depth (0: off)");
     tremoloRate.slider.setTooltip ("Tremolo speed when Sync is Free");
     addAndMakeVisible (neck);
+    keysButton.setTooltip ("Show or hide the keyboard");
+    keysButton.setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+    keysButton.setColour (juce::TextButton::textColourOffId, SF2Look::dim);
+    keysButton.onClick = [this] { toggleSection (keyboardSection); };
+    addAndMakeVisible (keysButton);
+    neck.setTooltip ("Click a string at a fret to draw a chord (Shape mode plays it on every key); click the name to hear it");
+    neck.onShapeChanged = [this] (const std::array<int, 6>& frets)
+    {
+        player.setGuitarShape (frets);
+        // Drawing means playing the drawing: switch to Shape mode.
+        if (guitarModeBox.getSelectedItemIndex() != GuitarEngine::shape)
+            guitarModeBox.setSelectedItemIndex (GuitarEngine::shape, juce::sendNotificationSync);
+    };
+    neck.onAudition = [this]
+    {
+        std::array<int, 6> notes {};
+        if (GuitarEngine::shapeNotes (player.guitarShapeFrets(), 0, notes.data()) == 0) return;
+        if (guitarModeBox.getSelectedItemIndex() != GuitarEngine::shape)
+            guitarModeBox.setSelectedItemIndex (GuitarEngine::shape, juce::sendNotificationSync);
+        // The key that puts the shape where it was drawn: its own lowest note.
+        int lowest = 127;
+        const auto frets = player.guitarShapeFrets();
+        for (size_t s = 0; s < 6; ++s) if (frets[s] >= 0) lowest = juce::jmin (lowest, GuitarEngine::strings[s] + frets[s]);
+        if (auditionKey >= 0) player.keyboardState.noteOff (1, auditionKey, 0.0f);
+        auditionKey = lowest;
+        auditionTicks = 30;   // 1.5 s at 20 Hz
+        player.keyboardState.noteOn (1, auditionKey, 0.8f);
+    };
     attack.slider.setTooltip ("How long notes take to start: x1 is the SoundFont's own");
     release.slider.setTooltip ("How long notes take to fade after the key is let go: x1 is the SoundFont's own");
     velocityCurve.slider.setTooltip ("+ makes soft playing louder, - makes it softer. Linear: velocities as played");
@@ -368,15 +396,17 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     setResizable (true, true);
     {
         const auto folded = juce::StringArray::fromTokens (settings->getValue ("collapsedSections"), ",", "");
-        collapsed = { folded.contains ("effects"), folded.contains ("play"), folded.contains ("guitar") };
+        collapsed = { folded.contains ("effects"), folded.contains ("play"), folded.contains ("guitar"), folded.contains ("keyboard") };
     }
     setResizeLimits (620, minimumHeight(), 1600, 1400);
     if (getHeight() == 0)
         setSize (620, 628 - (collapsed[effectsSection] ? panelHeight - collapsedHeight : 0)
-                          - (collapsed[playSection] ? panelHeight - collapsedHeight : 0));
+                          - (collapsed[playSection] ? panelHeight - collapsedHeight : 0)
+                          - (collapsed[keyboardSection] ? keyboardHeight : 0));
     showSectionContents();
     refreshLayerControls();
     refreshGuitarPanel();
+    neck.setShape (player.guitarShapeFrets(), guitarModeBox.getSelectedItemIndex() == GuitarEngine::shape);
 }
 
 SF2PlayerEditor::~SF2PlayerEditor()
@@ -825,16 +855,21 @@ int SF2PlayerEditor::minimumHeight() const
     for (auto s : { effectsSection, playSection })
         if (collapsed[(size_t) s])
             height -= panelHeight - collapsedHeight;
+    if (collapsed[keyboardSection])
+        height -= 120;   // the keyboard's smallest height
     return height;
 }
 
 void SF2PlayerEditor::toggleSection (Section s)
 {
-    const int delta = collapsed[(size_t) s] ? panelHeight - collapsedHeight : collapsedHeight - panelHeight;
+    if (s == keyboardSection && ! collapsed[keyboardSection])
+        keyboardHeight = juce::jmax (120, keyboard.getHeight());
+    const int delta = s == keyboardSection ? (collapsed[(size_t) s] ? keyboardHeight : -keyboardHeight)
+                    : collapsed[(size_t) s] ? panelHeight - collapsedHeight : collapsedHeight - panelHeight;
     collapsed[(size_t) s] = ! collapsed[(size_t) s];
     juce::StringArray folded;
     for (auto [section, name] : { std::pair { effectsSection, "effects" }, std::pair { playSection, "play" },
-                                  std::pair { guitarSection, "guitar" } })
+                                  std::pair { guitarSection, "guitar" }, std::pair { keyboardSection, "keyboard" } })
         if (collapsed[(size_t) section]) folded.add (name);
     settings->setValue ("collapsedSections", folded.joinIntoString (","));
     settings->saveIfNeeded();
@@ -850,6 +885,8 @@ void SF2PlayerEditor::toggleSection (Section s)
 // the presets and the Guitar menu, so they stay at hand.
 void SF2PlayerEditor::showSectionContents()
 {
+    keyboard.setVisible (! collapsed[keyboardSection]);
+    keysButton.setButtonText (juce::String::fromUTF8 (collapsed[keyboardSection] ? "\xe2\x96\xb8 Keyboard" : "\xe2\x96\xbe Keyboard"));
     const bool effects = ! collapsed[effectsSection];
     for (auto* knob : { &reverbLevel, &reverbRoom, &reverbDamping, &reverbWidth, &chorusLevel, &chorusRate, &chorusDepth, &chorusVoices })
         knob->slider.setVisible (effects), knob->label.setVisible (effects);
@@ -900,6 +937,12 @@ void SF2PlayerEditor::timerCallback()
                    view.strummed.load(), view.palm.load(), juce::roundToInt (player.parameters.getRawParameterValue ("fretPosition")->load()));
     }
     neck.tick (1.0f / 20.0f);
+    neck.setShape (player.guitarShapeFrets(), guitarModeBox.getSelectedItemIndex() == GuitarEngine::shape);
+    if (auditionKey >= 0 && --auditionTicks <= 0)
+    {
+        player.keyboardState.noteOff (1, auditionKey, 0.0f);
+        auditionKey = -1;
+    }
     const float peak = player.outputPeak.exchange (0.0f);
     shownPeak = juce::jmax (peak, shownPeak * 0.85f);
 
@@ -1116,7 +1159,8 @@ void SF2PlayerEditor::resized()
     area.removeFromTop (4);
     auto notes = area.removeFromTop (22);
     sendsToggle.setBounds (notes.removeFromRight (210));
-    warningLabel.setBounds (notes.withTrimmedLeft (-4));
+    keysButton.setBounds (notes.removeFromLeft (84));
+    warningLabel.setBounds (notes.withTrimmedLeft (4));
 
     area.removeFromTop (6);
     auto keys = area.withTrimmedBottom (14);

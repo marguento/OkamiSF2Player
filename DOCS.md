@@ -140,7 +140,8 @@ choose **On** to use it with any instrument (a harp, a ukulele, a piano), or **O
 With every control at Off or 0 it changes nothing.
 
 - **Mode:** **Solo** plays notes as you play them. **Chords** strums the notes you play together.
-  **Bass & Pick** plays the lowest note first, then picks the rest.
+  **Bass & Pick** plays the lowest note first, then picks the rest. **Shape** strums the chord
+  drawn on the neck on every key, moved so its bass is the key you play.
 - **Way:** strum **Down** (low string to high), **Up**, or **Alternate** (down, up, down...).
 - **Strum:** how long a chord takes from its first string to its last, 0 to 80 ms. Chords are
   gathered for 12 ms, so in Chords mode notes start that much later.
@@ -153,6 +154,10 @@ With every control at Off or 0 it changes nothing.
   original on the left (double-tracking). The knob is the second take's level.
 - **Tremolo** and **Rate:** a stereo tremolo; the menu at the top right locks it to Ableton's
   tempo (1/2 to 1/16, triplets).
+- **Drawing a chord:** click a string at a fret to put a finger there (click again to lift it);
+  left of the nut, a click switches the string between open (○) and not played (×). The name
+  appears as you draw, and drawing switches the mode to **Shape**. Click the name to hear it.
+  The drawing is saved with the project.
 - **The neck** under the knobs shows the last chord or note: its name (C, Am7, G/B: the bass after
   the slash), where its notes lie on six strings (high E on top, as in tablature; × a string not
   played, ○ an open one), **↓ DOWN** / **↑ UP** lit by each strum, and **PALM** lit by a

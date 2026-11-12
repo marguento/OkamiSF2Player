@@ -17,7 +17,7 @@
 class GuitarEngine
 {
 public:
-    enum Mode { solo = 0, chords = 1, bassAndPick = 2 };
+    enum Mode { solo = 0, chords = 1, bassAndPick = 2, shape = 3 };
     enum Direction { down = 0, up = 1, alternate = 2 };
 
     struct Settings
@@ -29,11 +29,14 @@ public:
         float palm = 0;         // 0 to 1: how short and dark notes under velocity 45 get
         float humanize = 0;     // 0 to 1
         float doubleMix = 0;    // 0 to 1: Double's level (0: off)
+        // Shape mode: the chord drawn on the neck, a fret per string from the low E (-1: not
+        // played, 0: open). Each key played strums it, moved so its bass is that key.
+        std::array<int, 6> shapeFrets { -1, -1, -1, -1, -1, -1 };
         // True when nothing would change: the processor then plays notes directly.
         bool isNeutral() const
         {
             return strumMs <= 0.0f && fret == 0 && palm <= 0.0f && humanize <= 0.0f && doubleMix <= 0.0f
-                && (mode == chords || mode == solo);
+                && (mode == chords || mode == solo);   // Shape always plays the drawn chord
         }
     };
 
@@ -80,6 +83,20 @@ public:
     void noteOn (const Settings& s, int channel, int note, int velocity, juce::int64 time)
     {
         auto& pending = chordsPending[(size_t) channel];
+        if (s.mode == shape)
+        {
+            std::array<int, 6> notes {};
+            const int count = shapeNotes (s.shapeFrets, note, notes.data());
+            if (count == 0)   // nothing drawn: the key as played
+            {
+                const std::array<int, 1> one { note };
+                startGroupWith (s, channel, one.data(), 1, one.data(), 1, velocity, time, false);
+                return;
+            }
+            const std::array<int, 1> key { note };
+            startGroupWith (s, channel, key.data(), 1, notes.data(), count, velocity, time, true);
+            return;
+        }
         if (s.mode == solo)
         {
             const std::array<int, 1> one { note };
@@ -215,6 +232,44 @@ public:
         bool up = false, strummed = false, palm = false;
     };
     const LastPlayed& lastPlayed() const { return last; }
+
+    // The drawn shape's notes, low to high, moved so the lowest is `bassKey` (none if nothing drawn).
+    static int shapeNotes (const std::array<int, 6>& frets, int bassKey, int* out)
+    {
+        int count = 0, lowest = 999;
+        for (size_t string = 0; string < 6; ++string)
+            if (frets[string] >= 0)
+                lowest = juce::jmin (lowest, strings[string] + frets[string]);
+        if (lowest == 999) return 0;
+        for (size_t string = 0; string < 6; ++string)
+            if (frets[string] >= 0)
+            {
+                const int note = strings[string] + frets[string] + bassKey - lowest;
+                if (juce::isPositiveAndBelow (note, 128)) out[count++] = note;
+            }
+        std::sort (out, out + count);
+        return count;
+    }
+
+    // A shape as six numbers packed in 30 bits (5 per string; 31: not played), so the editor can
+    // hand it to the audio thread in one atomic.
+    static juce::uint32 packShape (const std::array<int, 6>& frets)
+    {
+        juce::uint32 packed = 0;
+        for (size_t i = 0; i < 6; ++i)
+            packed |= (juce::uint32) (frets[i] < 0 ? 31 : juce::jlimit (0, 24, frets[i])) << (5 * i);
+        return packed;
+    }
+    static std::array<int, 6> unpackShape (juce::uint32 packed)
+    {
+        std::array<int, 6> frets;
+        for (size_t i = 0; i < 6; ++i)
+        {
+            const int value = (int) ((packed >> (5 * i)) & 31u);
+            frets[i] = value == 31 ? -1 : value;
+        }
+        return frets;
+    }
 
     // Where the notes lie on six strings for the neck picture: one note per string, strings
     // rising with the notes, frets (0-19) as close to `around` as possible. -1: string not played.

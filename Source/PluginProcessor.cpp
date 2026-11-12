@@ -90,7 +90,7 @@ static juce::AudioProcessorValueTreeState::ParameterLayout makeLayout()
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "guitarPanel", 6 }, "Guitar Panel",
                                                               juce::StringArray { "Auto", "On", "Off" }, 0));
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "guitarMode", 6 }, "Guitar Mode",
-                                                              juce::StringArray { "Solo", "Chords", "Bass & Pick" }, 1));
+                                                              juce::StringArray { "Solo", "Chords", "Bass & Pick", "Shape" }, 1));
     layout.add (std::make_unique<Float> (juce::ParameterID { "strum", 6 }, "Strum", range (0.0f, 80.0f, 1.0f), 0.0f,
                                          Attributes().withStringFromValueFunction ([] (float v, int)
                                          { return v < 0.5f ? juce::String ("Off") : juce::String (juce::roundToInt (v)) + " ms"; })));
@@ -870,6 +870,13 @@ void SF2PlayerProcessor::Biquad::process (float* samples, int count) noexcept
 
 // ---------------------------------------------------------------------------- guitar
 
+void SF2PlayerProcessor::setGuitarShape (const std::array<int, 6>& frets)
+{
+    const auto packed = GuitarEngine::packShape (frets);
+    if (guitarShape.exchange (packed) != packed)
+        markProjectChanged();
+}
+
 bool SF2PlayerProcessor::isGuitar (const Preset& p)
 {
     // General MIDI's guitars are programs 24-31 (nylon, steel, jazz, clean, muted, overdriven,
@@ -901,6 +908,7 @@ GuitarEngine::Settings SF2PlayerProcessor::currentGuitarSettings() const
     s.palm = value ("palmMute");
     s.humanize = value ("humanize");
     s.doubleMix = value ("doubleMix");
+    s.shapeFrets = GuitarEngine::unpackShape (guitarShape.load (std::memory_order_relaxed));
     return s;
 }
 
@@ -1258,6 +1266,11 @@ void SF2PlayerProcessor::getStateInformation (juce::MemoryBlock& destData)
         saved.setProperty ("layerBank", st->layerBank, nullptr);
         saved.setProperty ("layerNumber", st->layerNumber, nullptr);
     }
+    {
+        juce::StringArray frets;
+        for (int fret : guitarShapeFrets()) frets.add (juce::String (fret));
+        saved.setProperty ("guitarShape", frets.joinIntoString (","), nullptr);
+    }
     if (auto xml = saved.createXml())
         copyXmlToBinary (*xml, destData);
 }
@@ -1281,6 +1294,13 @@ void SF2PlayerProcessor::setStateInformation (const void* data, int sizeInBytes)
     savedNumber = (int) state.getProperty ("presetNumber", -1);
     savedLayerBank = (int) state.getProperty ("layerBank", -1);
     savedLayerNumber = (int) state.getProperty ("layerNumber", -1);
+    {
+        std::array<int, 6> frets { -1, -1, -1, -1, -1, -1 };
+        const auto parts = juce::StringArray::fromTokens (state.getProperty ("guitarShape").toString(), ",", "");
+        for (int i = 0; i < 6 && i < parts.size(); ++i)
+            frets[(size_t) i] = juce::jlimit (-1, 24, parts[i].getIntValue());
+        guitarShape = GuitarEngine::packShape (frets);
+    }
 
     // Published at once, before the (possibly long) load: a save meanwhile gets this project's
     // file and instruments along with its parameters, never the previous project's.

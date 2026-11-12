@@ -19,8 +19,13 @@ release bumps it and adds an entry here: one line per change a player would noti
 - Reverb preset "Short Room" and chorus preset "Bright", for acoustic guitar.
 - The Guitar panel shows what it plays: the chord's name (C, Am7, G/B...), a six-string neck with
   where its notes lie, an arrow lit by each strum (down or up) and a light for palm-muted notes.
+- **Draw chords on the neck:** click a string at a fret (12 frets) to put a finger there, left of
+  the nut for open or not played; the chord is named as you draw. The new **Shape** mode strums
+  that chord on every key you play, moved so its bass is the key: one finger plays a whole
+  progression. A click on the chord's name plays it. Saved with the project.
 - Sections fold: a click on REVERB / CHORUS, PLAY or GUITAR folds it to its title (its switch and
-  presets stay), and the window shrinks. Remembered for every project.
+  presets stay), and the window shrinks. **▾ Keyboard** folds the keyboard. Remembered for every
+  project.
 
 ## 1.2.6 — Nov 11, 2026
 
