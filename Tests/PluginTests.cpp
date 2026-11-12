@@ -896,7 +896,12 @@ int main()
             std::array<std::array<int, 6>, 4> dShapes;
             for (int p = 0; p < 4; ++p) dShapes[(size_t) p] = GuitarEngine::voiceChord (GuitarEngine::recognize (d, 3, false), p, 57, GuitarEngine::tunings[0]).notes;
             const bool distinct = dShapes[0] != dShapes[1] && dShapes[1] != dShapes[2] && dShapes[2] != dShapes[3];
-            expect (ok && distinct, "Guitar: Chord Position places the voicing (I: open C, its second bass G; Drop D's low D; III and IV higher; each position its own shape)",
+            // Kbd: the octave the chord is played in picks the position (E1: I ... E4: IV).
+            const auto dChord = GuitarEngine::recognize (d, 3, false);
+            bool kbd = true;
+            for (int p = 0; p < 4; ++p)
+                kbd = kbd && GuitarEngine::voiceChord (dChord, 4, 42 + 12 * p, GuitarEngine::tunings[0]).notes == dShapes[(size_t) p];
+            expect (ok && distinct && kbd, "Guitar: Chord Position places the voicing (I: open C, its second bass G; Drop D's low D; III and IV higher; each position its own shape; Kbd by the octave played)",
                     juce::String (third.top()) + ", " + juce::String (fourth.top()));
         }
 

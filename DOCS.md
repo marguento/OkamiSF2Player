@@ -180,7 +180,8 @@ letting the chord go stops them all (unless Hold).
 - **Velocity FX:** Slow Strum on Higher Velo / on Lower Velo (a chord played above or below
   **Velo** is strummed over **Time**), Velo Mute (notes under Velo are muted).
 - **Chord Position:** where chords lie on the neck, by their highest note: I (E3-G#3, the open
-  position), II (G3-B3), III (A#3-D4), IV (C#4-F4), or Kbd (the octave you play in).
+  position), II (G3-B3), III (A#3-D4), IV (C#4-F4), or Kbd: the octave you play the chord in picks
+  it, E to E (from E1: I, from E2: II, from E3: III, from E4: IV).
 - **Strings** (Chords): the six strings, low E to high E; the lit ones are strummed. A click on one
   at either end leaves it out, on an unlit one brings it back (they stay a range).
 - **Strings #** (Bass & Chord): how many upper strings the Repeat keys strum.

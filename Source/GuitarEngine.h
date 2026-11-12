@@ -534,10 +534,13 @@ public:
     }
 
     // The voicing whose highest note falls in the Chord Position's range (I: E3-G#3, II: G3-B3,
-    // III: A#3-D4, IV: C#4-F4, Kbd: the octave from the E at or below the highest key played),
-    // the lowest such fret; else the closest. Bass II found too.
-    static Voicing voiceChord (const Chord& chord, int position, int highestKey, const Tuning& tuning)
+    // III: A#3-D4, IV: C#4-F4), the lowest such fret; else the closest. Kbd: the position is the
+    // octave of the Main zone the chord is played in, E to E (E1: I, E2: II, E3: III, E4: IV),
+    // by its lowest key. Bass II found too.
+    static Voicing voiceChord (const Chord& chord, int position, int lowestKey, const Tuning& tuning)
     {
+        if (position < 0 || position > 3)
+            position = juce::jlimit (0, 3, (lowestKey - mainLow) / 12);
         static constexpr int ranges[4][2] = { { 64, 68 }, { 67, 71 }, { 70, 74 }, { 73, 77 } };
         auto distanceTo = [] (int top, int low, int high) { return top < low ? low - top : top > high ? top - high : 0; };
         // Every shape the neck offers, by the fret it starts at.
@@ -555,7 +558,6 @@ public:
             return found;
         };
         int chosen = -1;
-        if (position >= 0 && position < 4)
         {
             // Each position climbs the neck: when the shape it finds is the one the position below
             // found (their ranges overlap), it takes the next different shape further up.
@@ -575,11 +577,6 @@ public:
                 below = fret;
             }
             chosen = below;
-        }
-        else
-        {
-            const int low = highestKey - ((highestKey - 4) % 12 + 12) % 12;
-            chosen = closest (low, low + 11, 0);
         }
         Voicing best = chosen >= 0 ? shapes[(size_t) chosen] : Voicing {};
         if (! best.valid()) return best;
@@ -943,7 +940,7 @@ private:
         if (keys.count == 0) return;
         std::sort (keys.keys.begin(), keys.keys.begin() + keys.count);
         const auto chord = recognize (keys.keys.data(), keys.count, s.chordBass);
-        c.voicing = voiceChord (chord, s.position, keys.keys[(size_t) keys.count - 1], tuningOf (s.tuning));
+        c.voicing = voiceChord (chord, s.position, keys.keys[0], tuningOf (s.tuning));
         if (s.pattern && ! c.patternRunning) { c.since = time; c.patternRunning = true; }   // the rhythm starts with the chord
         if (! c.voicing.valid() || s.pattern) { showVoicing (c.voicing, false, false); return; }
         const int velocity = c.velocity;

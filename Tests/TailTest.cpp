@@ -27,7 +27,7 @@ struct EditorTestAccess
     static void showChord (SF2PlayerEditor& editor)
     {
         const int keys[] = { 60, 64, 67 };
-        const auto v = GuitarEngine::voiceChord (GuitarEngine::recognize (keys, 3, false), 0, 67, GuitarEngine::tunings[0]);
+        const auto v = GuitarEngine::voiceChord (GuitarEngine::recognize (keys, 3, false), 0, 60, GuitarEngine::tunings[0]);
         int voiced[6] = {}, n = 0, classes = 0;
         for (int note : v.notes) if (note >= 0) { voiced[n++] = note; classes |= 1 << (note % 12); }
         editor.neck.show (voiced, n, classes, voiced[0] % 12, false, true, false, 1);
