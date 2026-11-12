@@ -1167,15 +1167,15 @@ void SF2PlayerEditor::applyHeight()
     if (getHeight() != height) setSize (getWidth(), height);
 }
 
-// The window's height: 558 with every section open, no Guitar panel and no info row.
+// The window's height: exactly what it shows (the same pieces as resized()).
 int SF2PlayerEditor::minimumHeight() const
 {
-    int height = 558 + guitarExtra() + (infoLabel.isVisible() ? 22 : 0);
-    for (auto s : { effectsSection, playSection })
-        height -= panelHeight - heightOf (s);
-    if (collapsed[keyboardSection])
-        height -= keyboardHeight;
-    return height;
+    int height = 46 + 28 + (infoLabel.isVisible() ? 22 : 0) + 8 + 28;   // title, file, info, instrument
+    height += 12 + generalHeight();
+    height += 12 + (guitarShown ? heightOf (guitarSection) : pianoHeight);
+    height += 12 + 22;                                                     // the keyboard's row
+    if (! collapsed[keyboardSection]) height += 6 + keyboardHeight;
+    return height + 14;
 }
 
 void SF2PlayerEditor::toggleSection (Section s)
@@ -1337,7 +1337,38 @@ void SF2PlayerEditor::paint (juce::Graphics& g)
     g.setColour (db > -1.0f ? SF2Look::warning : SF2Look::accent);
     g.fillRoundedRectangle (meterArea.toFloat().withWidth ((float) meterArea.getWidth() * fraction), 2.0f);
 
-    g.setColour (SF2Look::panel);
+    // GENERAL: a cool slate under everything every instrument has.
+    {
+        const auto area = generalPanel.toFloat();
+        g.setGradientFill (juce::ColourGradient::vertical (juce::Colour (0xff262b34), area.getY(), juce::Colour (0xff1c2027), area.getBottom()));
+        g.fillRoundedRectangle (area, 6.0f);
+        g.setColour (juce::Colours::white.withAlpha (0.06f));
+        g.drawRoundedRectangle (area.reduced (0.5f), 6.0f, 1.0f);
+        g.setColour (SF2Look::dim);
+        g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
+        g.drawText ("GENERAL", generalPanel.getX() + 12, generalPanel.getY() + 7, 120, 14, juce::Justification::centredLeft);
+    }
+    // PIANO (or INSTRUMENT): ink blue, for what a non-guitar instrument has of its own.
+    if (! guitarShown && ! pianoPanel.isEmpty())
+    {
+        const auto area = pianoPanel.toFloat();
+        g.setGradientFill (juce::ColourGradient::vertical (juce::Colour (0xff1f2742), area.getY(), juce::Colour (0xff161b2e), area.getBottom()));
+        g.fillRoundedRectangle (area, 6.0f);
+        g.setColour (juce::Colours::white.withAlpha (0.07f));
+        g.drawRoundedRectangle (area.reduced (0.5f), 6.0f, 1.0f);
+        bool piano = false;
+        if (juce::isPositiveAndBelow (st->preset, (int) st->presets.size()))
+        {
+            const auto& p = st->presets[(size_t) st->preset];
+            // By name: program numbers mean pianos only in General MIDI SoundFonts (bells sit at 0 elsewhere).
+            for (const char* word : { "piano", "grand", "upright", "rhodes", "wurli", "e.piano", "epiano", "clav", "harpsi", "keys" })
+                piano = piano || p.name.containsIgnoreCase (word);
+        }
+        g.setColour (juce::Colour (0xffa9b4d6));
+        g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
+        g.drawText (piano ? "PIANO" : "INSTRUMENT", pianoPanel.getX() + 12, pianoPanel.getY() + 7, 160, 14, juce::Justification::centredLeft);
+    }
+    g.setColour (juce::Colour (0xff2c313b));
     g.fillRoundedRectangle (playPanel.toFloat(), 6.0f);
     drawSectionTitle (g, playPanel, "PLAY", playSection);
     g.setFont (juce::FontOptions (11.0f));
@@ -1358,7 +1389,7 @@ void SF2PlayerEditor::paint (juce::Graphics& g)
     const bool sends = sendsToggle.getToggleState();
     for (auto [area, title] : { std::pair { reverbPanel, "REVERB" }, std::pair { chorusPanel, "CHORUS" } })
     {
-        g.setColour (SF2Look::panel);
+        g.setColour (juce::Colour (0xff2c313b));
         g.fillRoundedRectangle (area.toFloat(), 6.0f);
         drawSectionTitle (g, area, title, effectsSection);
         // What the chosen instrument sends to this effect, and where it goes.
@@ -1422,32 +1453,61 @@ void SF2PlayerEditor::resized()
     row.removeFromLeft (6);
     presetBox.setBounds (row);
 
-    area.removeFromTop (10);
-    row = area.removeFromTop (24);
+    // GENERAL: what every instrument has. Gain and Tone, the effects, PLAY; the separate outputs
+    // switch in its title bar.
+    area.removeFromTop (panelGap);
+    generalPanel = area.removeFromTop (generalHeight());
+    auto general = generalPanel.reduced (10, 0);
+    sendsToggle.setBounds (general.getRight() - 210, generalPanel.getY() + 2, 210, 22);
+    general.removeFromTop (26);
+    row = general.removeFromTop (24);
     auto toneRow = row.removeFromRight ((row.getWidth() - 16) / 2);
     row.removeFromRight (16);
     gainLabel.setBounds (row.removeFromLeft (40));
     gainSlider.setBounds (row);
     toneLabel.setBounds (toneRow.removeFromLeft (40));
     toneSlider.setBounds (toneRow);
+    general.removeFromTop (10);
+    auto panels = general.removeFromTop (heightOf (effectsSection));
+    reverbPanel = panels.removeFromLeft ((panels.getWidth() - 12) / 2);
+    panels.removeFromLeft (12);
+    chorusPanel = panels;
+    for (auto [panel, toggle, knobs] : { std::tuple { reverbPanel, &reverbToggle, std::array<Knob*, 4> { &reverbLevel, &reverbRoom, &reverbDamping, &reverbWidth } },
+                                         std::tuple { chorusPanel, &chorusToggle, std::array<Knob*, 4> { &chorusLevel, &chorusRate, &chorusDepth, &chorusVoices } } })
+    {
+        toggle->setBounds (panel.getRight() - 32, panel.getY() + 4, 26, 22);
+        (toggle == &reverbToggle ? reverbPresets : chorusPresets).setBounds (panel.getRight() - 32 - 92, panel.getY() + 6, 88, 18);
+        if (collapsed[effectsSection] || ! showEffectControls)
+            continue;
+        auto inner = panel.reduced (6).withTrimmedTop (18);
+        const int width = inner.getWidth() / 4;
+        for (auto* knob : knobs)
+            knob->setBounds (inner.removeFromLeft (width));
+    }
 
-    area.removeFromTop (10);
-    row = area.removeFromTop (26);
-    layerLabel.setBounds (row.removeFromLeft (44));
-    layerModeBox.setBounds (row.removeFromLeft (84));
-    row.removeFromLeft (6);
-    layerLevelSlider.setBounds (row.removeFromRight (140));
-    layerLevelLabel.setBounds (row.removeFromRight (40));
-    row.removeFromRight (6);
-    splitSlider.setBounds (row.removeFromRight (100));
-    row.removeFromRight (6);
-    layerPresetBox.setBounds (row);
+    general.removeFromTop (10);
+    playPanel = general.removeFromTop (heightOf (playSection));
+    if (! collapsed[playSection])
+    {
+        auto inner = playPanel.reduced (6).withTrimmedTop (18);
+        const int width = inner.getWidth() / 8;
+        for (auto* knob : { &attack, &release, &velocityCurve, &transpose, &fineTune, &bendRange, &glide })
+            knob->setBounds (inner.removeFromLeft (width));
+        auto modeArea = inner;
+        playModeLabel.setBounds (modeArea.removeFromTop (16));
+        playMode.setBounds (modeArea.withSizeKeepingCentre (juce::jmin (modeArea.getWidth() - 4, 84), 24).translated (0, -6));
+    }
 
-    // A guitar's panel comes first, right under the instrument: it's what's played with.
+
+
+
+
+    // The instrument's own panel: GUITAR, or PIANO / INSTRUMENT (the layer).
+    area.removeFromTop (panelGap);
     if (guitarShown)
     {
-        area.removeFromTop (panelGap);
         guitarPanel = area.removeFromTop (heightOf (guitarSection));
+        pianoPanel = {};
         // The title bar: presets, the Controllers button, Strum and Hold.
         guitarPresets.setBounds (guitarPanel.getX() + 82, guitarPanel.getY() + 5, 150, 18);
         controllersButton.setBounds (guitarPresets.getRight() + 8, guitarPanel.getY() + 4, 100, 20);
@@ -1474,45 +1534,24 @@ void SF2PlayerEditor::resized()
         refreshModeOptions();
     }
     else
+    {
         guitarPanel = {};
-
-    area.removeFromTop (panelGap);
-    auto panels = area.removeFromTop (heightOf (effectsSection));
-    reverbPanel = panels.removeFromLeft ((panels.getWidth() - 12) / 2);
-    panels.removeFromLeft (12);
-    chorusPanel = panels;
-    for (auto [panel, toggle, knobs] : { std::tuple { reverbPanel, &reverbToggle, std::array<Knob*, 4> { &reverbLevel, &reverbRoom, &reverbDamping, &reverbWidth } },
-                                         std::tuple { chorusPanel, &chorusToggle, std::array<Knob*, 4> { &chorusLevel, &chorusRate, &chorusDepth, &chorusVoices } } })
-    {
-        toggle->setBounds (panel.getRight() - 32, panel.getY() + 4, 26, 22);
-        (toggle == &reverbToggle ? reverbPresets : chorusPresets).setBounds (panel.getRight() - 32 - 92, panel.getY() + 6, 88, 18);
-        if (collapsed[effectsSection] || ! showEffectControls)
-            continue;
-        auto inner = panel.reduced (6).withTrimmedTop (18);
-        const int width = inner.getWidth() / 4;
-        for (auto* knob : knobs)
-            knob->setBounds (inner.removeFromLeft (width));
+        pianoPanel = area.removeFromTop (pianoHeight);
+        auto inner = pianoPanel.reduced (10, 0).withTrimmedTop (28).withHeight (26);
+        layerLabel.setBounds (inner.removeFromLeft (44));
+        layerModeBox.setBounds (inner.removeFromLeft (84));
+        inner.removeFromLeft (6);
+        layerLevelSlider.setBounds (inner.removeFromRight (140));
+        layerLevelLabel.setBounds (inner.removeFromRight (40));
+        inner.removeFromRight (6);
+        splitSlider.setBounds (inner.removeFromRight (100));
+        inner.removeFromRight (6);
+        layerPresetBox.setBounds (inner);
     }
-
-    area.removeFromTop (panelGap);
-    playPanel = area.removeFromTop (heightOf (playSection));
-    if (! collapsed[playSection])
-    {
-        auto inner = playPanel.reduced (6).withTrimmedTop (18);
-        const int width = inner.getWidth() / 8;
-        for (auto* knob : { &attack, &release, &velocityCurve, &transpose, &fineTune, &bendRange, &glide })
-            knob->setBounds (inner.removeFromLeft (width));
-        auto modeArea = inner;
-        playModeLabel.setBounds (modeArea.removeFromTop (16));
-        playMode.setBounds (modeArea.withSizeKeepingCentre (juce::jmin (modeArea.getWidth() - 4, 84), 24).translated (0, -6));
-    }
-
-
-
-
+    for (auto* c : std::initializer_list<juce::Component*> { &layerLabel, &layerModeBox, &layerPresetBox, &splitSlider, &layerLevelLabel, &layerLevelSlider })
+        c->setVisible (! guitarShown);   // a guitar's keyboard belongs to its zones
     area.removeFromTop (panelGap);   // the same gap as between the panels
     auto notes = area.removeFromTop (22);
-    sendsToggle.setBounds (notes.removeFromRight (210));
     keysButton.setBounds (notes.removeFromLeft (84));
     warningLabel.setBounds (notes.withTrimmedLeft (4));
 

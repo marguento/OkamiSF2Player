@@ -308,6 +308,8 @@ private:
     int auditionCount = 0, auditionTicks = 0;
     void stopAudition();
     int guitarExtra() const { return guitarShown ? panelGap + heightOf (guitarSection) : 0; }
+    // GENERAL: Gain and Tone, the effects and PLAY (what every instrument has).
+    int generalHeight() const { return 26 + 24 + 10 + heightOf (effectsSection) + 10 + heightOf (playSection) + 10; }
     int minimumHeight() const;
     void toggleSection (Section);
     void fitToScreen (int keep = -1);   // folds sections until the window fits the screen
@@ -330,7 +332,8 @@ private:
     void showHint();
     friend struct EditorTestAccess;   // TailTest's snapshots fold sections without touching the settings file
 
-    juce::Rectangle<int> meterArea, reverbPanel, chorusPanel, playPanel, guitarPanel;
+    juce::Rectangle<int> meterArea, reverbPanel, chorusPanel, playPanel, guitarPanel, generalPanel, pianoPanel;
+    static constexpr int pianoHeight = 64;   // the PIANO / INSTRUMENT panel: its title and the layer row
     float shownPeak = 0.0f;
     int lastNoteCount = 0, midiFlash = 0;
     bool dragging = false;
