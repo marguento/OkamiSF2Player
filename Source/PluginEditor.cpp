@@ -636,6 +636,8 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     refreshGuitarPanel();
     neck.setShape (player.guitarShapeFrets(), GuitarEngine::tuningOf (player.guitarTuning()));
     showGuitarPreset();
+    juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<SF2PlayerEditor> (this)]
+                                     { if (safe != nullptr) safe->fitToScreen(); });
 }
 
 SF2PlayerEditor::~SF2PlayerEditor()
@@ -1106,6 +1108,31 @@ void SF2PlayerEditor::refreshGuitarPanel()
     setSize (getWidth(), juce::jmax (minimumHeight(), height + guitarExtra() - before));
     resized();
     repaint();
+    if (show)   // a guitar: what's played with comes first, the effects and PLAY fold away
+    {
+        for (auto section : { effectsSection, playSection })
+            if (! collapsed[(size_t) section]) toggleSection (section);
+        fitToScreen (guitarSection);
+    }
+}
+
+// Folds the effects, then PLAY, then the controllers' rows (never `keep`) until the window fits
+// the screen it's on, then shrinks it to fit.
+void SF2PlayerEditor::fitToScreen (int keep)
+{
+    if (fitting) return;
+    const juce::ScopedValueSetter<bool> busy (fitting, true);
+    const auto& displays = juce::Desktop::getInstance().getDisplays();
+    const auto* display = isShowing() ? displays.getDisplayForRect (getScreenBounds()) : displays.getPrimaryDisplay();
+    if (display == nullptr) return;
+    const int available = display->userArea.getHeight() - 60;   // the host's title bar and a margin
+    for (auto section : { effectsSection, playSection })
+        if (getHeight() > available && section != keep && ! collapsed[(size_t) section])
+            toggleSection (section);
+    if (getHeight() > available && showControllers && keep != -2)
+        toggleControllers();
+    if (getHeight() > available)
+        setSize (getWidth(), juce::jmax (minimumHeight(), available));
 }
 
 // The smallest window: 606 with every section open and no Guitar panel.
@@ -1142,6 +1169,7 @@ void SF2PlayerEditor::toggleSection (Section s)
         setSize (getWidth(), juce::jmax (minimumHeight(), height + delta));
     resized();
     repaint();
+    if (delta > 0) fitToScreen (s);   // opened: the others make room
 }
 
 // What a folded section hides: its knobs and menus. Its title strip keeps the on/off switches,
@@ -1632,6 +1660,7 @@ void SF2PlayerEditor::toggleControllers()
     setSize (getWidth(), juce::jmax (minimumHeight(), height + delta));
     resized();
     repaint();
+    if (delta > 0) fitToScreen (-2);
 }
 
 void SF2PlayerEditor::showHelpMenu()

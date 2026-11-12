@@ -283,7 +283,7 @@ private:
     juce::TextButton keysButton;   // folds the keyboard
     int keyboardHeight = 120;      // the keyboard's height when it was last shown
     static constexpr int panelHeight = 118, collapsedHeight = 26, panelGap = 12;
-    static constexpr int baseNeckHeight = 242, controllersHeight = 56;
+    static constexpr int baseNeckHeight = 224, controllersHeight = 56;
     // The neck, the mode buttons and the options box, under the knobs (the controllers' rows too when shown).
     int neckHeight() const { return baseNeckHeight + (showControllers ? controllersHeight : 0); }
     int heightOf (Section s) const
@@ -298,6 +298,8 @@ private:
     int guitarExtra() const { return guitarShown ? panelGap + heightOf (guitarSection) : 0; }
     int minimumHeight() const;
     void toggleSection (Section);
+    void fitToScreen (int keep = -1);   // folds sections until the window fits the screen
+    bool fitting = false;
     void showSectionContents();
     void drawSectionTitle (juce::Graphics&, juce::Rectangle<int> panel, const juce::String& title, Section);
     void mouseUp (const juce::MouseEvent&) override;
