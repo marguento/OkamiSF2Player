@@ -58,6 +58,12 @@ the plugin says so in a red line.
 - **The keyboard** lights the notes that arrive, plays on click (lower on a key = louder) and
   dims the keys the instrument doesn't have.
 
+## Folding sections
+
+A click on a section's title (**▾ REVERB**, **CHORUS**, **PLAY**, **GUITAR**) folds it to a strip
+with its title, switch and presets, and the window shrinks; another click opens it. Reverb and
+chorus fold together. The plugin remembers which are folded, for every project.
+
 ## Gain and Tone
 
 - **Gain:** output level, -24 to +12 dB. 0 dB is the original.

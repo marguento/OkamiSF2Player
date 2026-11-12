@@ -181,8 +181,21 @@ private:
     juce::AudioProcessorValueTreeState::ComboBoxAttachment guitarPanelAttachment, guitarModeAttachment,
         strumDirectionAttachment, tremoloSyncAttachment;
     bool guitarShown = false;
-    static constexpr int guitarPanelHeight = 130;   // the panel and the gap above it
     void refreshGuitarPanel();
+
+    // Sections that fold to their title strip (a click on the title), remembered for every
+    // project in the settings file. The window shrinks or grows by the difference.
+    enum Section { effectsSection = 0, playSection = 1, guitarSection = 2 };
+    std::array<bool, 3> collapsed {};
+    static constexpr int panelHeight = 118, collapsedHeight = 26, panelGap = 12;
+    int heightOf (Section s) const { return collapsed[(size_t) s] ? collapsedHeight : panelHeight; }
+    int guitarExtra() const { return guitarShown ? panelGap + heightOf (guitarSection) : 0; }
+    int minimumHeight() const;
+    void toggleSection (Section);
+    void showSectionContents();
+    void drawSectionTitle (juce::Graphics&, juce::Rectangle<int> panel, const juce::String& title, Section);
+    void mouseUp (const juce::MouseEvent&) override;
+    friend struct EditorTestAccess;   // TailTest's snapshots fold sections without touching the settings file
 
     juce::Rectangle<int> meterArea, reverbPanel, chorusPanel, playPanel, guitarPanel;
     float shownPeak = 0.0f;

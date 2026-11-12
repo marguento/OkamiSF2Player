@@ -365,9 +365,15 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     refresh();
     startTimerHz (20);
     setResizable (true, true);
-    setResizeLimits (620, 606, 1600, 1200);
+    {
+        const auto folded = juce::StringArray::fromTokens (settings->getValue ("collapsedSections"), ",", "");
+        collapsed = { folded.contains ("effects"), folded.contains ("play"), folded.contains ("guitar") };
+    }
+    setResizeLimits (620, minimumHeight(), 1600, 1400);
     if (getHeight() == 0)
-        setSize (620, 628);
+        setSize (620, 628 - (collapsed[effectsSection] ? panelHeight - collapsedHeight : 0)
+                          - (collapsed[playSection] ? panelHeight - collapsedHeight : 0));
+    showSectionContents();
     refreshLayerControls();
     refreshGuitarPanel();
 }
@@ -799,23 +805,84 @@ void SF2PlayerEditor::changeListenerCallback (juce::ChangeBroadcaster*)
 void SF2PlayerEditor::refreshGuitarPanel()
 {
     const bool show = player.guitarPanelActive();
-    for (auto* knob : { &strum, &fretPosition, &palmMute, &humanize, &doubleMix, &tremoloDepth, &tremoloRate })
-    {
-        knob->slider.setVisible (show);
-        knob->label.setVisible (show);
-    }
-    for (juce::Component* c : { (juce::Component*) &guitarModeBox, (juce::Component*) &strumDirectionBox,
-                                (juce::Component*) &tremoloSyncBox, (juce::Component*) &guitarModeLabel,
-                                (juce::Component*) &strumDirectionLabel })
-        c->setVisible (show);
     tremoloRate.slider.setEnabled (tremoloSyncBox.getSelectedItemIndex() <= 0);
     if (show == guitarShown)
         return;
+    const int before = guitarExtra();
     guitarShown = show;
-    setResizeLimits (620, 606 + (show ? guitarPanelHeight : 0), 1600, 1400);
-    setSize (getWidth(), juce::jmax (606 + (show ? guitarPanelHeight : 0), getHeight() + (show ? guitarPanelHeight : -guitarPanelHeight)));
+    showSectionContents();
+    setResizeLimits (620, minimumHeight(), 1600, 1400);
+    setSize (getWidth(), juce::jmax (minimumHeight(), getHeight() + guitarExtra() - before));
     resized();
     repaint();
+}
+
+// The smallest window: 606 with every section open and no Guitar panel.
+int SF2PlayerEditor::minimumHeight() const
+{
+    int height = 606 + guitarExtra();
+    for (auto s : { effectsSection, playSection })
+        if (collapsed[(size_t) s])
+            height -= panelHeight - collapsedHeight;
+    return height;
+}
+
+void SF2PlayerEditor::toggleSection (Section s)
+{
+    const int delta = collapsed[(size_t) s] ? panelHeight - collapsedHeight : collapsedHeight - panelHeight;
+    collapsed[(size_t) s] = ! collapsed[(size_t) s];
+    juce::StringArray folded;
+    for (auto [section, name] : { std::pair { effectsSection, "effects" }, std::pair { playSection, "play" },
+                                  std::pair { guitarSection, "guitar" } })
+        if (collapsed[(size_t) section]) folded.add (name);
+    settings->setValue ("collapsedSections", folded.joinIntoString (","));
+    settings->saveIfNeeded();
+    showSectionContents();
+    setResizeLimits (620, minimumHeight(), 1600, 1400);
+    if (s != guitarSection || guitarShown)
+        setSize (getWidth(), juce::jmax (minimumHeight(), getHeight() + delta));
+    resized();
+    repaint();
+}
+
+// What a folded section hides: its knobs and menus. Its title strip keeps the on/off switches,
+// the presets and the Guitar menu, so they stay at hand.
+void SF2PlayerEditor::showSectionContents()
+{
+    const bool effects = ! collapsed[effectsSection];
+    for (auto* knob : { &reverbLevel, &reverbRoom, &reverbDamping, &reverbWidth, &chorusLevel, &chorusRate, &chorusDepth, &chorusVoices })
+        knob->slider.setVisible (effects), knob->label.setVisible (effects);
+    const bool play = ! collapsed[playSection];
+    for (auto* knob : { &attack, &release, &velocityCurve, &transpose, &fineTune, &bendRange, &glide })
+        knob->slider.setVisible (play), knob->label.setVisible (play);
+    playMode.setVisible (play);
+    playModeLabel.setVisible (play);
+    const bool guitar = guitarShown && ! collapsed[guitarSection];
+    for (auto* knob : { &strum, &fretPosition, &palmMute, &humanize, &doubleMix, &tremoloDepth, &tremoloRate })
+        knob->slider.setVisible (guitar), knob->label.setVisible (guitar);
+    for (juce::Component* c : { (juce::Component*) &guitarModeBox, (juce::Component*) &strumDirectionBox,
+                                (juce::Component*) &tremoloSyncBox, (juce::Component*) &guitarModeLabel,
+                                (juce::Component*) &strumDirectionLabel })
+        c->setVisible (guitar);
+}
+
+void SF2PlayerEditor::mouseUp (const juce::MouseEvent& e)
+{
+    const auto at = e.getPosition();
+    auto title = [] (juce::Rectangle<int> panel) { return panel.withHeight (collapsedHeight); };
+    if (title (reverbPanel).contains (at) || title (chorusPanel).contains (at)) toggleSection (effectsSection);
+    else if (title (playPanel).contains (at)) toggleSection (playSection);
+    else if (guitarShown && title (guitarPanel).contains (at)) toggleSection (guitarSection);
+}
+
+// A section's title with its fold arrow: ▾ open, ▸ folded.
+void SF2PlayerEditor::drawSectionTitle (juce::Graphics& g, juce::Rectangle<int> panel, const juce::String& title, Section s)
+{
+    g.setColour (SF2Look::dim);
+    g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
+    g.drawText (juce::String::fromUTF8 (collapsed[(size_t) s] ? "\xe2\x96\xb8" : "\xe2\x96\xbe"), panel.getX() + 8, panel.getY() + 7, 12, 14,
+                juce::Justification::centred);
+    g.drawText (title, panel.getX() + 22, panel.getY() + 8, 100, 14, juce::Justification::centredLeft);
 }
 
 void SF2PlayerEditor::timerCallback()
@@ -882,23 +949,19 @@ void SF2PlayerEditor::paint (juce::Graphics& g)
 
     g.setColour (SF2Look::panel);
     g.fillRoundedRectangle (playPanel.toFloat(), 6.0f);
-    g.setColour (SF2Look::dim);
-    g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
-    g.drawText ("PLAY", playPanel.getX() + 12, playPanel.getY() + 8, 100, 14, juce::Justification::centredLeft);
+    drawSectionTitle (g, playPanel, "PLAY", playSection);
     g.setFont (juce::FontOptions (11.0f));
-    g.drawText ("x1, Linear, 0, Poly and Off leave the SoundFont as it is", playPanel.getX() + 52, playPanel.getY() + 8,
-                playPanel.getWidth() - 64 - 120, 14, juce::Justification::centredLeft);
+    g.drawText ("x1, Linear, 0, Poly and Off leave the SoundFont as it is", playPanel.getX() + 64, playPanel.getY() + 8,
+                playPanel.getWidth() - 76 - 120, 14, juce::Justification::centredLeft);
 
     if (guitarShown)
     {
         g.setColour (SF2Look::panel);
         g.fillRoundedRectangle (guitarPanel.toFloat(), 6.0f);
-        g.setColour (SF2Look::dim);
-        g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
-        g.drawText ("GUITAR", guitarPanel.getX() + 12, guitarPanel.getY() + 8, 100, 14, juce::Justification::centredLeft);
+        drawSectionTitle (g, guitarPanel, "GUITAR", guitarSection);
         g.setFont (juce::FontOptions (11.0f));
-        g.drawText ("Off and 0 leave the SoundFont as it is", guitarPanel.getX() + 70, guitarPanel.getY() + 8,
-                    guitarPanel.getWidth() - 70 - 100, 14, juce::Justification::centredLeft);
+        g.drawText ("Off and 0 leave the SoundFont as it is", guitarPanel.getX() + 82, guitarPanel.getY() + 8,
+                    guitarPanel.getWidth() - 82 - 100, 14, juce::Justification::centredLeft);
     }
 
     const bool sends = sendsToggle.getToggleState();
@@ -906,9 +969,7 @@ void SF2PlayerEditor::paint (juce::Graphics& g)
     {
         g.setColour (SF2Look::panel);
         g.fillRoundedRectangle (area.toFloat(), 6.0f);
-        g.setColour (SF2Look::dim);
-        g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
-        g.drawText (title, area.getX() + 12, area.getY() + 8, 100, 14, juce::Justification::centredLeft);
+        drawSectionTitle (g, area, title, effectsSection);
         // What the chosen instrument sends to this effect, and where it goes.
         const auto& presets = st->presets;
         const int index = st->preset;
@@ -927,7 +988,7 @@ void SF2PlayerEditor::paint (juce::Graphics& g)
                                     : "sends " + amount;
             g.setColour (high > 0.0f ? (sends ? SF2Look::accent : SF2Look::text) : SF2Look::dim);
             g.setFont (juce::FontOptions (11.0f));
-            g.drawText (text, area.getX() + 72, area.getY() + 8, area.getWidth() - 72 - 32 - 96, 14, juce::Justification::centredLeft);
+            g.drawText (text, area.getX() + 84, area.getY() + 8, area.getWidth() - 84 - 32 - 96, 14, juce::Justification::centredLeft);
         }
     }
 
@@ -985,8 +1046,8 @@ void SF2PlayerEditor::resized()
     row.removeFromRight (6);
     layerPresetBox.setBounds (row);
 
-    area.removeFromTop (12);
-    auto panels = area.removeFromTop (118);
+    area.removeFromTop (panelGap);
+    auto panels = area.removeFromTop (heightOf (effectsSection));
     reverbPanel = panels.removeFromLeft ((panels.getWidth() - 12) / 2);
     panels.removeFromLeft (12);
     chorusPanel = panels;
@@ -995,14 +1056,17 @@ void SF2PlayerEditor::resized()
     {
         toggle->setBounds (panel.getRight() - 32, panel.getY() + 4, 26, 22);
         (toggle == &reverbToggle ? reverbPresets : chorusPresets).setBounds (panel.getRight() - 32 - 92, panel.getY() + 6, 88, 18);
+        if (collapsed[effectsSection])
+            continue;
         auto inner = panel.reduced (6).withTrimmedTop (18);
         const int width = inner.getWidth() / 4;
         for (auto* knob : knobs)
             knob->setBounds (inner.removeFromLeft (width));
     }
 
-    area.removeFromTop (12);
-    playPanel = area.removeFromTop (118);
+    area.removeFromTop (panelGap);
+    playPanel = area.removeFromTop (heightOf (playSection));
+    if (! collapsed[playSection])
     {
         auto inner = playPanel.reduced (6).withTrimmedTop (18);
         const int width = inner.getWidth() / 8;
@@ -1016,8 +1080,8 @@ void SF2PlayerEditor::resized()
 
     if (guitarShown)
     {
-        area.removeFromTop (12);
-        guitarPanel = area.removeFromTop (guitarPanelHeight - 12);
+        area.removeFromTop (panelGap);
+        guitarPanel = area.removeFromTop (heightOf (guitarSection));
         tremoloSyncBox.setBounds (guitarPanel.getRight() - 6 - 70, guitarPanel.getY() + 5, 70, 18);
         auto inner = guitarPanel.reduced (6).withTrimmedTop (18);
         const int width = inner.getWidth() / 9;

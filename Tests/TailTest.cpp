@@ -1,9 +1,25 @@
 // Plays one note, releases it, and prints the output level each half second
 // afterwards, with the reverb and the chorus on and off: where a tail of noise comes from.
 #include "../Source/PluginProcessor.h"
+#include "../Source/PluginEditor.h"
 #include <juce_events/juce_events.h>
 #include <cstdio>
 #include <cstdlib>
+
+// Folds the editor's sections for a picture, the way a click on their titles would, without
+// writing the user's settings file.
+struct EditorTestAccess
+{
+    static void fold (SF2PlayerEditor& editor, const juce::String& sections)
+    {
+        const auto names = juce::StringArray::fromTokens (sections, ",", "");
+        editor.collapsed = { names.contains ("effects"), names.contains ("play"), names.contains ("guitar") };
+        editor.showSectionContents();
+        editor.setResizeLimits (620, editor.minimumHeight(), 1600, 1400);
+        editor.setSize (editor.getWidth(), editor.minimumHeight() + 22);
+        editor.resized();
+    }
+};
 
 int main (int argc, char** argv)
 {
@@ -111,6 +127,8 @@ int main (int argc, char** argv)
             parameter->setValueNotifyingHost (parameter->convertTo0to1 ((float) std::atoi (layer)));
         }
         std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+        if (const char* fold = std::getenv ("FOLD"))   // "effects,play,guitar": those sections folded
+            EditorTestAccess::fold (*dynamic_cast<SF2PlayerEditor*> (editor.get()), juce::String (fold));
         editor->setVisible (true);
         auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f);
         juce::FileOutputStream out { juce::File { juce::String (argv[4]) } };
