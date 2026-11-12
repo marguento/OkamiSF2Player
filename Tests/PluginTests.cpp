@@ -915,8 +915,12 @@ int main()
             take (g, s, { 67, 60, 64 }, 0);
             const auto h = drain (g, second);
             const auto window = (juce::int64) (GuitarEngine::chordWindowMs * 0.001 * rate);
-            const bool timing = h.ons.size() == 5 && h.ons.front() == std::pair<juce::int64, int> { window, 48 }
-                             && h.ons.back() == std::pair<juce::int64, int> { window + 1920, 64 };
+            // Low to high, starting when the window closes; a hand's spread: under the 40 ms set (a
+            // hard stroke is quicker), never all at once.
+            bool rising = h.ons.size() == 5;
+            for (size_t i = 1; rising && i < h.ons.size(); ++i) rising = h.ons[i].second > h.ons[i - 1].second && h.ons[i].first >= h.ons[i - 1].first;
+            const auto spread = h.ons.empty() ? 0 : h.ons.back().first - h.ons.front().first;
+            const bool timing = rising && h.ons.front() == std::pair<juce::int64, int> { window, 48 } && spread > 1200 && spread <= 1920;
             for (int key : { 60, 64, 67 }) g.noteOff (0, key, second);
             const auto after = drain (g, second * 2);
             expect (timing && after.offs == 5 && ! g.hasWork(), "Chords: the chord is strummed low to high over the strum time; letting go ends it",
@@ -936,7 +940,8 @@ int main()
             const auto muted = drain (g, second * 3);
             g.noteOn (s, 0, 38, 100, second * 3);
             const auto down = drain (g, second * 4);
-            const bool ok = up.ons.size() == 5 && up.ons.front().second == 64 && ! up.palm && muted.palm && muted.ons.size() == 5
+            // An up stroke catches the high strings (four of the five here), the high E first.
+            const bool ok = up.ons.size() == 4 && up.ons.front().second == 64 && ! up.palm && muted.palm && muted.ons.size() == 4
                          && down.ons.size() == 5 && down.ons.front().second == 48;
             expect (ok, "Chords: the Repeat keys strum the chord again (white up or down, black muted)");
         }

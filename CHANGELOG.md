@@ -24,7 +24,10 @@ release bumps it and adds an entry here: one line per change a player would noti
     a Bass Zone; Velocity FX Slide Up, Slide Down, Bend and Reverse Bend.
   - **Controllers:** the pitch bender, mod wheel and aftertouch as Pitch, Slide (by semitones),
     Mono Bend (the lowest note) or Modulation.
-  - Every note lies on a string: a new note on a string stops the one ringing there.
+  - Every note lies on a string: a new note on a string stops the one ringing there
+    when the pick reaches it. Strums are played by a hand: a hard stroke is quicker, an up stroke
+    quicker and on the high strings, the strings between fall a little early or late, the first
+    ones hit are the strongest.
   - **Strum time** (up to 250 ms) and **Hold** in the panel's title bar; the rest stays out of the
     way under **Controllers**: velocity curve, Accent, Release, the wheels, **Double** (a second
     take, 18 ms later and a little sharp, on the right), **Humanize** (small random changes of

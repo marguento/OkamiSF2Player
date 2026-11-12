@@ -1044,6 +1044,14 @@ private:
         for (int i = 0; i < 6; ++i)
             if (use[(size_t) i] && v.notes[(size_t) i] >= 0) { notes[(size_t) n] = v.notes[(size_t) i]; strings[(size_t) n++] = i; }
         if (n == 0) return;
+        // An up stroke catches the high strings: a full chord loses its lowest one or two (a hard
+        // stroke reaches further down).
+        if (goingUp && n > 4)
+        {
+            const int skip = n - (velocity >= 110 ? 5 : 4);
+            for (int i = skip; i < n; ++i) { notes[(size_t) (i - skip)] = notes[(size_t) i]; strings[(size_t) (i - skip)] = strings[(size_t) i]; }
+            n -= skip;
+        }
         playOnStrings (s, channel, { notes.data(), n }, { strings.data(), n }, velocity, time, true, goingUp, muted);
         showVoicing (v, goingUp, true);
         last.palm = muted;
@@ -1061,7 +1069,6 @@ private:
     void playOnStrings (const Settings& s, int channel, Span notes, Span strings, int velocity, juce::int64 time,
                         bool strummed, bool goingUp, bool muted)
     {
-        for (int i = 0; i < strings.count; ++i) endString (channel, strings.values[(size_t) i], time);
         auto stroke = s;
         stroke.direction = goingUp ? up : down;
         if (strummed && stroke.strumMs <= 0.0f) stroke.strumMs = 18.0f;   // a pick takes time to cross the strings
@@ -1079,7 +1086,10 @@ private:
             for (int k = 0; k < notes.count; ++k)
                 if (notes.values[(size_t) k] == group->outputs[(size_t) i])
                 {
-                    c.strings[(size_t) strings.values[(size_t) k]] = { group->outputs[(size_t) i], group->onsets[(size_t) i], group->doubled };
+                    // The string rings until the pick reaches it again, not until the stroke begins.
+                    const int string = strings.values[(size_t) k];
+                    endString (channel, string, group->onsets[(size_t) i]);
+                    c.strings[(size_t) string] = { group->outputs[(size_t) i], group->onsets[(size_t) i], group->doubled };
                     break;
                 }
         }
@@ -1202,15 +1212,30 @@ private:
         last.palm = palm;
         ++last.sequence;
         const int n = group->outputCount;
+        // A hand, not a machine: a hard stroke crosses the strings faster, an up stroke faster still;
+        // the strings between the first and the last fall a little early or late; the first ones hit
+        // are the strongest.
+        if (strum && n > 1)
+        {
+            strumTotal = (juce::int64) ((double) strumTotal * (1.2 - 0.4 * velocity / 127.0) * (goingUp ? 0.8 : 1.0));
+            last.strummed = strumTotal > 0;
+        }
         for (int i = 0; i < n; ++i)
         {
             const int index = goingUp ? n - 1 - i : i;
             const int note = outputs[index];
             group->outputs[(size_t) i] = (juce::uint8) juce::jlimit (0, 127, note);
             juce::int64 at = time;
-            if (n > 1)
-                at += (strumTotal * i) / (n - 1);
             int vel = velocity;
+            if (n > 1)
+            {
+                double t = (double) i / (n - 1);
+                if (strum && i > 0 && i < n - 1)
+                    t += (random.nextDouble() - 0.5) * 0.3 / (n - 1);
+                at += (juce::int64) ((double) strumTotal * t);
+                if (strum)
+                    vel = juce::roundToInt (velocity * (1.0 - (goingUp ? 0.10 : 0.14) * t)) + random.nextInt (7) - 3;
+            }
             juce::int8 detune = 0;
             if (s.humanize > 0.0f)
             {
