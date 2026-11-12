@@ -440,6 +440,11 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     keyboard.setAvailableRange (21, 108);   // a piano's 88 keys
     keyboard.setVelocity (0.8f, true);      // clicking lower on a key plays louder
     keyboard.setScrollButtonsVisible (false);
+    // The computer's keys belong to the host (Ableton's own computer keyboard): JUCE's default
+    // mapping (A W S E D...) played them here too once the window had focus, and a key let go
+    // after focus moved never sent its note-off, so the note stuck.
+    keyboard.clearKeyMappings();
+    keyboard.setWantsKeyboardFocus (false);
     keyboard.setColour (juce::MidiKeyboardComponent::mouseOverKeyOverlayColourId, juce::Colours::transparentBlack);
     keyboard.setColour (juce::MidiKeyboardComponent::keyDownOverlayColourId, juce::Colours::transparentBlack);
     addAndMakeVisible (keyboard);
