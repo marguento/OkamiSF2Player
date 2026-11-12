@@ -1110,7 +1110,7 @@ void SF2PlayerEditor::applyGuitarPreset (int index)
             parameter->setValueNotifyingHost (parameter->getDefaultValue());
 }
 
-// The menu names the preset the controls match, else "Custom".
+// The menu names the preset the controls match, else invites a choice ("Presets...", dimmed).
 void SF2PlayerEditor::showGuitarPreset()
 {
     for (int p = 0; p < (int) std::size (guitarPresetList); ++p)
@@ -1124,8 +1124,11 @@ void SF2PlayerEditor::showGuitarPreset()
             return;
         }
     }
-    if (guitarPresets.getText() != "Custom")
-        guitarPresets.setText ("Custom", juce::dontSendNotification);
+    if (guitarPresets.getSelectedId() != 0 || guitarPresets.getTextWhenNothingSelected().isEmpty())
+    {
+        guitarPresets.setTextWhenNothingSelected (juce::String::fromUTF8 ("Presets\xe2\x80\xa6"));
+        guitarPresets.setSelectedId (0, juce::dontSendNotification);
+    }
 }
 
 // Shows or hides the Guitar panel (Auto follows the instrument), growing the window by its height.
@@ -1214,7 +1217,7 @@ void SF2PlayerEditor::toggleSection (Section s)
 void SF2PlayerEditor::showSectionContents()
 {
     keyboard.setVisible (! collapsed[keyboardSection]);
-    keysButton.setButtonText (juce::String::fromUTF8 (collapsed[keyboardSection] ? "\xe2\x96\xb8 Keyboard" : "\xe2\x96\xbe Keyboard"));
+    keysButton.setButtonText (juce::String::fromUTF8 (collapsed[keyboardSection] ? "\xe2\x96\xb8" : "\xe2\x96\xbe"));
     const bool effects = ! collapsed[effectsSection] && showEffectControls;
     reverbPresets.setVisible (showEffectControls);
     chorusPresets.setVisible (showEffectControls);
@@ -1339,17 +1342,6 @@ void SF2PlayerEditor::paint (juce::Graphics& g)
     g.setFont (juce::FontOptions (11.0f));
     g.drawText (juce::String ("v") + JucePlugin_VersionString, 166, 15, 60, 18, juce::Justification::centredLeft);
 
-    // MIDI light and output meter, top right.
-    const auto dot = juce::Rectangle<float> ((float) meterArea.getX() - 16.0f, (float) meterArea.getCentreY() - 3.5f, 7.0f, 7.0f);
-    g.setColour (midiFlash > 0 ? SF2Look::accent : SF2Look::line);
-    g.fillEllipse (dot);
-
-    g.setColour (SF2Look::line);
-    g.fillRoundedRectangle (meterArea.toFloat(), 2.0f);
-    const float db = juce::Decibels::gainToDecibels (shownPeak, -60.0f);
-    const float fraction = juce::jlimit (0.0f, 1.0f, (db + 60.0f) / 60.0f);
-    g.setColour (db > -1.0f ? SF2Look::warning : SF2Look::accent);
-    g.fillRoundedRectangle (meterArea.toFloat().withWidth ((float) meterArea.getWidth() * fraction), 2.0f);
 
     // SOUNDFONT: graphite under the file and the instrument.
     {
@@ -1373,6 +1365,18 @@ void SF2PlayerEditor::paint (juce::Graphics& g)
         g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
         g.drawText ("GENERAL", generalPanel.getX() + 12, generalPanel.getY() + 7, 120, 14, juce::Justification::centredLeft);
     }
+    // The MIDI light and the output meter, in GENERAL's title bar.
+    const auto dot = juce::Rectangle<float> ((float) meterArea.getX() - 16.0f, (float) meterArea.getCentreY() - 3.5f, 7.0f, 7.0f);
+    g.setColour (midiFlash > 0 ? SF2Look::accent : juce::Colour (0xff12151a));
+    g.fillEllipse (dot);
+
+    g.setColour (juce::Colour (0xff12151a));
+    g.fillRoundedRectangle (meterArea.toFloat(), 2.0f);
+    const float db = juce::Decibels::gainToDecibels (shownPeak, -60.0f);
+    const float fraction = juce::jlimit (0.0f, 1.0f, (db + 60.0f) / 60.0f);
+    g.setColour (db > -1.0f ? SF2Look::warning : SF2Look::accent);
+    g.fillRoundedRectangle (meterArea.toFloat().withWidth ((float) meterArea.getWidth() * fraction), 2.0f);
+
     // PIANO (or INSTRUMENT): ink blue, for what a non-guitar instrument has of its own.
     if (! guitarShown && ! pianoPanel.isEmpty())
     {
@@ -1451,8 +1455,6 @@ void SF2PlayerEditor::resized()
     auto area = getLocalBounds().reduced (16, 0);
 
     auto header = area.removeFromTop (46);
-    meterArea = header.removeFromRight (110).withSizeKeepingCentre (110, 6);
-    header.removeFromRight (26);   // the MIDI light
     helpButton.setBounds (header.removeFromRight (24).withSizeKeepingCentre (24, 22));
     hintLabel.setBounds (header.withTrimmedLeft (220).withTrimmedRight (10).withSizeKeepingCentre (header.getWidth() - 230, 30));
     if (guide != nullptr) guide->setBounds (getLocalBounds());
@@ -1487,6 +1489,8 @@ void SF2PlayerEditor::resized()
     generalPanel = area.removeFromTop (generalHeight());
     auto general = generalPanel.reduced (10, 0);
     sendsToggle.setBounds (general.getRight() - 210, generalPanel.getY() + 2, 210, 22);
+    // The MIDI light and the output meter: what comes in and what goes out, after the title.
+    meterArea = juce::Rectangle<int> (generalPanel.getX() + 112, generalPanel.getY() + 11, 110, 6);
     general.removeFromTop (26);
     row = general.removeFromTop (24);
     auto toneRow = row.removeFromRight ((row.getWidth() - 16) / 2);
@@ -1580,7 +1584,7 @@ void SF2PlayerEditor::resized()
         c->setVisible (! guitarShown);   // a guitar's keyboard belongs to its zones
     area.removeFromTop (panelGap);   // the same gap as between the panels
     auto notes = area.removeFromTop (22);
-    keysButton.setBounds (notes.removeFromLeft (84));
+    keysButton.setBounds (notes.removeFromLeft (28));
     warningLabel.setBounds (notes.withTrimmedLeft (4));
 
     area.removeFromTop (6);
