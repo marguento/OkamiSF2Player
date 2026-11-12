@@ -1137,6 +1137,13 @@ void SF2PlayerEditor::refreshGuitarPanel()
     repaint();
     if (show)   // a guitar: what's played with comes first, the effects and PLAY fold away
     {
+        // The layer has no place on a guitar (its zones take the keyboard): it goes off.
+        if (auto* layer = player.parameters.getParameter ("layerMode"); layer != nullptr && layer->getValue() > 0.0f)
+        {
+            layer->setValueNotifyingHost (0.0f);
+            layerModeBox.setSelectedItemIndex (0, juce::dontSendNotification);
+            refreshLayerControls();
+        }
         for (auto section : { effectsSection, playSection })
             if (! collapsed[(size_t) section]) toggleSection (section);
         fitToScreen (guitarSection);
