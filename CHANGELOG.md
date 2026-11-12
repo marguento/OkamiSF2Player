@@ -40,6 +40,8 @@ release bumps it and adds an entry here: one line per change a player would noti
 - **Help built in:** the ? button opens a guide (Start, Guitar, Controls) and About; the header
   explains whatever control the mouse is over (turn it off in the ? menu).
 - Reverb preset "Short Room" and chorus preset "Bright", for acoustic guitar.
+- A compact on-screen keyboard (it shows what's played; a MIDI or computer keyboard plays): the
+  window is as tall as what it shows and stretches only sideways.
 - The window never grows past the screen: with a guitar the effects and PLAY start folded, and
   opening a section folds others when it wouldn't fit.
 - Sections fold: a click on REVERB / CHORUS, PLAY or GUITAR folds it to its title (its switch and

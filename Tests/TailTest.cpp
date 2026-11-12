@@ -15,8 +15,7 @@ struct EditorTestAccess
         const auto names = juce::StringArray::fromTokens (sections, ",", "");
         editor.collapsed = { names.contains ("effects"), names.contains ("play"), names.contains ("guitar"), names.contains ("keyboard") };
         editor.showSectionContents();
-        editor.setResizeLimits (620, editor.minimumHeight(), 1600, 1400);
-        editor.setSize (editor.getWidth(), editor.minimumHeight() + 22 + (editor.collapsed[3] ? 0 : 0));
+        editor.applyHeight();
         editor.resized();
     }
 

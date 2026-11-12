@@ -281,7 +281,8 @@ private:
     enum Section { effectsSection = 0, playSection = 1, guitarSection = 2, keyboardSection = 3 };
     std::array<bool, 4> collapsed {};
     juce::TextButton keysButton;   // folds the keyboard
-    int keyboardHeight = 120;      // the keyboard's height when it was last shown
+    static constexpr int keyboardHeight = 64;   // a small keyboard: it shows what's played, a MIDI keyboard plays
+    void applyHeight();   // the window's height is its contents': it never stretches
     static constexpr int panelHeight = 118, collapsedHeight = 26, panelGap = 12;
     static constexpr int baseNeckHeight = 224, controllersHeight = 112, guitarHeader = 30;
     // The neck, the mode buttons and the options box, under the knobs (the controllers' rows too when shown).

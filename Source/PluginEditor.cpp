@@ -636,12 +636,7 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
         const auto folded = juce::StringArray::fromTokens (settings->getValue ("collapsedSections"), ",", "");
         collapsed = { folded.contains ("effects"), folded.contains ("play"), folded.contains ("guitar"), folded.contains ("keyboard") };
     }
-    setResizeLimits (620, minimumHeight(), 1600, 1400);
-    // refresh() above has already given the window its full height: take the folded sections off.
-    setSize (620, juce::jmax (minimumHeight(), (infoLabel.isVisible() ? 628 : 606)
-                                               - (panelHeight - heightOf (effectsSection))
-                                               - (panelHeight - heightOf (playSection))
-                                               - (collapsed[keyboardSection] ? keyboardHeight : 0)));
+    applyHeight();
     showSectionContents();
     refreshLayerControls();
     refreshGuitarPanel();
@@ -774,10 +769,8 @@ void SF2PlayerEditor::refresh()
         // The row comes or goes: the window grows or shrinks by its height, keeping the user's size otherwise.
         const bool first = getHeight() == 0;
         infoLabel.setVisible (showInfo);
-        if (first)
-            setSize (620, showInfo ? 628 : 606);
-        else
-            setSize (getWidth(), juce::jmax (606, getHeight() + (showInfo ? 22 : -22)));
+        if (first) setSize (620, minimumHeight());
+        applyHeight();
     }
 
     const int index = st->preset;
@@ -1115,11 +1108,9 @@ void SF2PlayerEditor::refreshGuitarPanel()
         return;
     // The height first: setResizeLimits already moves the window to a new minimum, and the
     // panel's height was then added on top of that (the window came out far too tall).
-    const int before = guitarExtra(), height = getHeight();
     guitarShown = show;
     showSectionContents();
-    setResizeLimits (620, minimumHeight(), 1600, 1400);
-    setSize (getWidth(), juce::jmax (minimumHeight(), height + guitarExtra() - before));
+    applyHeight();
     resized();
     repaint();
     if (show)   // a guitar: what's played with comes first, the effects and PLAY fold away
@@ -1141,48 +1132,45 @@ void SF2PlayerEditor::fitToScreen (int keep)
     if (display == nullptr) return;
     const int available = display->userArea.getHeight() - 60;   // the host's title bar and a margin
     for (auto section : { effectsSection, playSection })
-        if (getHeight() > available && section != keep && ! collapsed[(size_t) section])
+        if (minimumHeight() > available && section != keep && ! collapsed[(size_t) section])
             toggleSection (section);
-    if (getHeight() > available && showControllers && keep != -2)
+    if (minimumHeight() > available && showControllers && keep != -2)
         toggleControllers();
-    if (getHeight() > available)
-        setSize (getWidth(), juce::jmax (minimumHeight(), available));
 }
 
-// The smallest window: 606 with every section open and no Guitar panel.
+void SF2PlayerEditor::applyHeight()
+{
+    const int height = minimumHeight();
+    setResizeLimits (620, height, 1600, height);
+    if (getHeight() != height) setSize (getWidth(), height);
+}
+
+// The window's height: 550 with every section open, no Guitar panel and no info row.
 int SF2PlayerEditor::minimumHeight() const
 {
-    int height = 606 + guitarExtra();
+    int height = 550 + guitarExtra() + (infoLabel.isVisible() ? 22 : 0);
     for (auto s : { effectsSection, playSection })
         height -= panelHeight - heightOf (s);
     if (collapsed[keyboardSection])
-        height -= 120;   // the keyboard's smallest height
+        height -= keyboardHeight;
     return height;
 }
 
 void SF2PlayerEditor::toggleSection (Section s)
 {
-    if (s == keyboardSection && ! collapsed[keyboardSection])
-        keyboardHeight = juce::jmax (120, keyboard.getHeight());
-    // By the section's own heights: the Guitar panel folds its neck strip too.
-    const int before = s == keyboardSection ? 0 : heightOf (s);
     collapsed[(size_t) s] = ! collapsed[(size_t) s];
-    const int delta = s == keyboardSection ? (collapsed[(size_t) s] ? -keyboardHeight : keyboardHeight)
-                                           : heightOf (s) - before;
+    const bool opened = ! collapsed[(size_t) s];
     juce::StringArray folded;
     for (auto [section, name] : { std::pair { effectsSection, "effects" }, std::pair { playSection, "play" },
                                   std::pair { guitarSection, "guitar" }, std::pair { keyboardSection, "keyboard" } })
         if (collapsed[(size_t) section]) folded.add (name);
     settings->setValue ("collapsedSections", folded.joinIntoString (","));
     settings->saveIfNeeded();
-    const int height = getHeight();   // before setResizeLimits moves it
     showSectionContents();
-    setResizeLimits (620, minimumHeight(), 1600, 1400);
-    if (s != guitarSection || guitarShown)
-        setSize (getWidth(), juce::jmax (minimumHeight(), height + delta));
+    applyHeight();
     resized();
     repaint();
-    if (delta > 0) fitToScreen (s);   // opened: the others make room
+    if (opened) fitToScreen (s);   // opened: the others make room
 }
 
 // What a folded section hides: its knobs and menus. Its title strip keeps the on/off switches,
@@ -1501,7 +1489,7 @@ void SF2PlayerEditor::resized()
     warningLabel.setBounds (notes.withTrimmedLeft (4));
 
     area.removeFromTop (6);
-    auto keys = area.withTrimmedBottom (14);
+    auto keys = area.removeFromTop (keyboardHeight);
     keyboard.setBounds (keys);
     keyboard.setKeyWidth ((float) keys.getWidth() / 52.0f);   // 52 white keys in 88
     keyboard.setLowestVisibleKey (21);
@@ -1673,17 +1661,13 @@ void SF2PlayerEditor::refreshModeOptions()
 // The controllers' rows in the options box, shown or hidden; the window grows or shrinks by them.
 void SF2PlayerEditor::toggleControllers()
 {
-    const int before = heightOf (guitarSection);
     showControllers = ! showControllers;
     settings->setValue ("guitarControllers", showControllers);
     settings->saveIfNeeded();
-    const int delta = heightOf (guitarSection) - before;
-    const int height = getHeight();   // before setResizeLimits moves it
-    setResizeLimits (620, minimumHeight(), 1600, 1400);
-    setSize (getWidth(), juce::jmax (minimumHeight(), height + delta));
+    applyHeight();
     resized();
     repaint();
-    if (delta > 0) fitToScreen (-2);
+    if (showControllers) fitToScreen (-2);
 }
 
 void SF2PlayerEditor::showHelpMenu()
@@ -1741,17 +1725,13 @@ void SF2PlayerEditor::showHint()
 // The reverb's and chorus's knobs and presets, shown or not; the window grows or shrinks by them.
 void SF2PlayerEditor::toggleEffectControls()
 {
-    const int before = heightOf (effectsSection);
     showEffectControls = ! showEffectControls;
     settings->setValue ("showEffectControls", showEffectControls);
     settings->saveIfNeeded();
     if (showEffectControls) collapsed[effectsSection] = false;   // asked for: open
-    const int delta = heightOf (effectsSection) - before;
-    const int height = getHeight();   // before setResizeLimits moves it
     showSectionContents();
-    setResizeLimits (620, minimumHeight(), 1600, 1400);
-    setSize (getWidth(), juce::jmax (minimumHeight(), height + delta));
+    applyHeight();
     resized();
     repaint();
-    if (delta > 0) fitToScreen (effectsSection);
+    if (showEffectControls) fitToScreen (effectsSection);
 }
