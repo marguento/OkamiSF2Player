@@ -283,12 +283,13 @@ private:
     juce::TextButton keysButton;   // folds the keyboard
     int keyboardHeight = 120;      // the keyboard's height when it was last shown
     static constexpr int panelHeight = 118, collapsedHeight = 26, panelGap = 12;
-    static constexpr int baseNeckHeight = 224, controllersHeight = 56;
+    static constexpr int baseNeckHeight = 224, controllersHeight = 112, guitarHeader = 30;
     // The neck, the mode buttons and the options box, under the knobs (the controllers' rows too when shown).
     int neckHeight() const { return baseNeckHeight + (showControllers ? controllersHeight : 0); }
     int heightOf (Section s) const
     {
-        return collapsed[(size_t) s] ? collapsedHeight : panelHeight + (s == guitarSection ? neckHeight() : 0);
+        if (collapsed[(size_t) s]) return collapsedHeight;
+        return s == guitarSection ? guitarHeader + neckHeight() : panelHeight;
     }
     GuitarNeck neck { { SF2Look::text, SF2Look::dim, SF2Look::accent, SF2Look::panel, SF2Look::line.brighter (0.35f) } };
     int shownGuitarSequence = 0;

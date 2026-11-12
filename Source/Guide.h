@@ -162,7 +162,7 @@ private:
             case guitar: return {
                 { "The Guitar panel", "" },
                 { "When it shows", "By itself for a guitar (General MIDI 24-31, or an instrument named one). Force it On or Off with the Guitar menu in PLAY's header." },
-                { "Presets", "The menu next to GUITAR: Acoustic Strum, Campfire, Double-Tracked, Slow Ballad, Muted Rock, Folk Pattern, Fingerpicking, Bass & Pick. Off (Direct) plays the SoundFont as it is." },
+                { "Presets", "The menu next to GUITAR: Acoustic Strum, Campfire, Double-Tracked, Slow Ballad, High Strings, Folk Pattern, Fingerpicking, Bass & Pick. Off (Direct) plays the SoundFont as it is." },
                 { "The keyboard's zones", "" },
                 { "Main zone, E1 to B4", "Where you play notes (Solo, Harmony) or take chords (Chords, Bass & Chord, Bass & Pick). Chords are recognized from the keys: C E G is C, one key is its major chord, C + Eb is C minor, C + Bb is C7." },
                 { "Repeat zones, C1 to D#1 and C5 to C6", "Tinted on the keyboard. They repeat what the Main zone holds: in Chords, C, E and G strum up; D, F, A and B down; the black keys strum muted. Keep the chord with one hand and play the rhythm with the other." },
@@ -191,14 +191,11 @@ private:
             };
             case controls: return {
                 { "Guitar", "" },
-                { "Strum", "Strum time: how long a chord takes from the first string to the last, up to 250 ms. Off: a pick's natural 18 ms." },
-                { "Way", "The Main zone's strums: down (low to high), up, or alternating." },
-                { "Tune", "Standard, Drop D, Drop C, Open G or DADGAD: chords are voiced for those strings." },
-                { "Palm", "Soft notes (velocity under 45) are muted by the hand: shorter and darker." },
-                { "Humanize", "Small random changes in timing, velocity and tuning, so it doesn't sound mechanical." },
-                { "Double", "A second take of every note, slightly late and out of tune, on the other side: double-tracking." },
-                { "Velocity strings", "Soft playing catches only the high strings, hard playing all six, like a real pick." },
-                { "Tremolo, Rate", "A stereo tremolo; the menu at the top right locks it to Ableton's tempo." },
+                { "Strum, Hold", "In the title bar. Strum: how long a chord takes from the first string to the last, up to 250 ms (Off: a pick's natural 18 ms)." },
+                { "Double", "Under Controllers: a second take of every note, slightly late and out of tune, on the other side (double-tracking)." },
+                { "Humanize", "Under Controllers: small random changes in timing, velocity and tuning, so it doesn't sound mechanical." },
+                { "Tune", "Under Controllers: Standard, Drop D, Drop C, Open G or DADGAD; chords are voiced for those strings." },
+                { "Tremolo, Rate", "Under Controllers: a stereo tremolo; the menu beside it locks it to Ableton's tempo." },
                 { "Controllers (the button at the top of the panel)", "" },
                 { "Velo curve, Accent", "The curve velocities go through (linear, convex: soft notes louder, concave: softer, S), and the velocity where soft playing turns hard." },
                 { "Release", "How long notes ring after they're let go (the same as PLAY's Release)." },

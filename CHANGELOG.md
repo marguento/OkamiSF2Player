@@ -21,15 +21,15 @@ release bumps it and adds an entry here: one line per change a player would noti
   - **Solo's articulations:** H.O. (hammer-on and pull-off) and Slide between legato notes, always
     or on key switches (C1-D#1) and the pedal, with Tremolo, Sustain 1-2 Mono, Velo Mute and Muted;
     a Bass Zone; Velocity FX Slide Up, Slide Down, Bend and Reverse Bend.
-  - **Controllers:** velocity curve, Accent, Release, and the pitch bender, mod wheel and
-    aftertouch as Pitch, Slide (by semitones), Mono Bend (the lowest note) or Modulation.
+  - **Controllers:** the pitch bender, mod wheel and aftertouch as Pitch, Slide (by semitones),
+    Mono Bend (the lowest note) or Modulation.
   - Every note lies on a string: a new note on a string stops the one ringing there.
-  - **Strum time** (up to 250 ms), **Way** (down, up, alternate), **Tunings** (Standard, Drop D,
-    Drop C, Open G, DADGAD), **Velocity strings** (a soft strum catches only the high strings).
-  - **Palm:** soft notes are stopped by the hand, shorter and darker. **Humanize:** small random
-    changes of velocity, timing and tuning. **Double:** a second take, 18 ms later and a little
-    sharp, on the right. **Tremolo:** stereo, at a rate or locked to Ableton's tempo.
-  - **Presets:** Acoustic Strum, Campfire, Double-Tracked, Slow Ballad, Muted Rock, Folk Pattern,
+  - **Strum time** (up to 250 ms) and **Hold** in the panel's title bar; the rest stays out of the
+    way under **Controllers**: velocity curve, Accent, Release, the wheels, **Double** (a second
+    take, 18 ms later and a little sharp, on the right), **Humanize** (small random changes of
+    velocity, timing and tuning), **Tune** (Standard, Drop D, Drop C, Open G, DADGAD) and a stereo
+    **Tremolo** (at a rate or locked to Ableton's tempo).
+  - **Presets:** Acoustic Strum, Campfire, Double-Tracked, Slow Ballad, High Strings, Folk Pattern,
     Fingerpicking, Bass & Pick, and Off (Direct).
   - **The neck** shows what's played (a rosewood neck, frets, inlays, strings) and the chord's
     name in a display (about 45 chord types, slash chords, partial chords, intervals), with lights
@@ -38,6 +38,8 @@ release bumps it and adds an entry here: one line per change a player would noti
 - **Help built in:** the ? button opens a guide (Start, Guitar, Controls) and About; the header
   explains whatever control the mouse is over (turn it off in the ? menu).
 - Reverb preset "Short Room" and chorus preset "Bright", for acoustic guitar.
+- The window never grows past the screen: with a guitar the effects and PLAY start folded, and
+  opening a section folds others when it wouldn't fit.
 - Sections fold: a click on REVERB / CHORUS, PLAY or GUITAR folds it to its title (its switch and
   presets stay), and the window shrinks. **▾ Keyboard** folds the keyboard. Remembered for every
   project.

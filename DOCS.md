@@ -206,20 +206,20 @@ along the frets), Mono Bend (the lowest note only), Modulation, or as usual.
 
 **The rest of the panel:**
 
-- **Presets** (next to GUITAR): Acoustic Strum, Campfire, Double-Tracked, Slow Ballad, Muted Rock,
+- **Presets** (next to GUITAR): Acoustic Strum, Campfire, Double-Tracked, Slow Ballad, High Strings,
   Folk Pattern, Fingerpicking, Bass & Pick, or Off (Direct). Move a control and it says Custom.
-- **Way:** the Main zone's strums go **Down** (low string to high), **Up**, or **Alternate**.
-- **Tune:** Standard, Drop D, Drop C, Open G or DADGAD.
-- **Velocity strings** (at the top): a soft strum catches only the three high strings, a medium
-  one all but the lowest, a hard one all six.
-- **Strum:** strum time, from the first string to the last, up to 250 ms (Off: a pick's 18 ms).
-- **Palm:** notes softer than velocity 45 are stopped by the hand: shorter and darker the higher it is.
-- **Humanize:** small random changes to each note's velocity (up to ±5), timing (up to 5 ms later)
-  and tuning (up to ±5 cents).
-- **Double:** a second take of every note, 18 ms later and 4 cents sharp, on the right, with the
-  original on the left (double-tracking). The knob is the second take's level.
-- **Tremolo** and **Rate:** a stereo tremolo; the menu at the top right locks it to Ableton's
-  tempo (1/2 to 1/16, triplets).
+- **Strum** (in the title bar): strum time, from the first string to the last, up to 250 ms (Off:
+  a pick's 18 ms). **Hold** is beside it.
+- **Controllers** (the title bar's button) adds, besides the curve, Accent, Release and wheels:
+  - **Double:** a second take of every note, 18 ms later and 4 cents sharp, on the right, with
+    the original on the left (double-tracking); the slider is the second take's level.
+  - **Humanize:** small random changes to each note's velocity (up to ±5), timing (up to 5 ms
+    later) and tuning (up to ±5 cents).
+  - **Tune:** Standard, Drop D, Drop C, Open G or DADGAD.
+  - **Tremolo** and **Rate:** a stereo tremolo; the menu beside them locks it to Ableton's tempo
+    (1/2 to 1/16, triplets).
+- When a guitar loads, REVERB / CHORUS and PLAY fold so the panel fits; the window never grows
+  past the screen.
 - **The neck** shows the last chord or note: its name in the display (C, Am7, G/B), where its
   notes lie (high E on top, as in tablature; × a string not played, ○ an open one), and lights for
   the strum's direction and palm-muted notes.
