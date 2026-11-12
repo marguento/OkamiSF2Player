@@ -96,6 +96,7 @@ or credential file, or a personal pattern (listed in the ignored `scripts/releas
 | `CMakeLists.txt` | the plugin target, three console test targets, ctest, the version |
 | `Source/PluginProcessor.h/.cpp` | parameters, the FluidSynth engine (created, swapped under a lock), MIDI routing (transpose, velocity curve, layer/split, program changes), MIDI kept while the engine is busy, rendering into six channels, tone filter, gain, outputs, saved state, missing-file handling |
 | `Source/PluginEditor.h/.cpp` | the look (`SF2Look`), the keyboard with key ranges and the split tint, every control, instrument lists by family with favorites, effect presets, preview |
+| `Source/GuitarNeck.h` | the Guitar panel's strip: chord name, six-string neck, strum arrow, palm light |
 | `Source/GuitarEngine.h` | the Guitar panel's engine: chords gathered, voiced at a fret, strummed, palm-muted, humanized, doubled; fixed arrays, audio thread only |
 | `Source/SoundFontInfo.h` | what FluidSynth doesn't expose, read from the file itself: name, author, comment, each preset's key range and reverb/chorus sends (bounded against hostile files) |
 | `Tests/PluginTests.cpp` | the test suite (what `ctest` runs) |
@@ -218,7 +219,7 @@ Settings file `~/Library/Application Support/SF2 Player/SF2 Player.settings`: `r
 
 ## Tests
 
-`ctest` runs `PluginTests` (49 checks). Each renders through the real processor and fails on a
+`ctest` runs `PluginTests` (51 checks). Each renders through the real processor and fails on a
 wrong result:
 
 - **Fidelity:** bit-identical output to FluidSynth at the defaults.
@@ -231,7 +232,7 @@ wrong result:
 - **State and files:** the saved state (file, instruments, knobs), saving without waiting for a
   load, a missing file kept, a file lost during a rate change reported then reloaded, a failed
   rebuild not undoing a newer file, global key ranges, hostile files refused quickly.
-- **Guitar panel:** chord voicing at a fret, strum order and timing, every voiced note ended on release, the panel on with neutral controls bit-identical, strumming spreading a chord's start, Double's twin later on the right, tremolo swinging.
+- **Guitar panel:** chord voicing at a fret, strum order and timing, every voiced note ended on release, the panel on with neutral controls bit-identical, strumming spreading a chord's start, Double's twin later on the right, tremolo swinging, chord names and the neck's string placement.
 - **CPU:** 64 string notes under 30 % of a 128-sample block (reported, not judged, under
   Rosetta).
 

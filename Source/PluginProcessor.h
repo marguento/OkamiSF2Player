@@ -94,6 +94,19 @@ public:
     bool guitarPanelActive() const;
     static bool isGuitar (const Preset&);
 
+    // The last chord or note the Guitar panel's engine started, for the editor's neck, chord
+    // name, strum arrow and palm light (written by the audio thread, `sequence` last).
+    struct GuitarView
+    {
+        std::atomic<int> sequence { 0 };
+        std::array<std::atomic<int>, 6> notes {};   // the lowest six, low to high
+        std::atomic<int> count { 0 };
+        std::atomic<int> pitchClasses { 0 };        // bit n: pitch class n sounds
+        std::atomic<int> bass { -1 };
+        std::atomic<bool> up { false }, strummed { false }, palm { false };
+    };
+    GuitarView guitarView;
+
     // Voices sounding after the last block (for the editor and tests).
     std::atomic<int> activeVoices { 0 };
     // Tests: render with another interpolation (FLUID_INTERP_*); -1 keeps the 7th order.

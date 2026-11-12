@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PluginProcessor.h"
+#include "GuitarNeck.h"
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_audio_utils/juce_audio_utils.h>
 
@@ -188,7 +189,13 @@ private:
     enum Section { effectsSection = 0, playSection = 1, guitarSection = 2 };
     std::array<bool, 3> collapsed {};
     static constexpr int panelHeight = 118, collapsedHeight = 26, panelGap = 12;
-    int heightOf (Section s) const { return collapsed[(size_t) s] ? collapsedHeight : panelHeight; }
+    static constexpr int neckHeight = 74;   // the Guitar panel's neck strip, under its knobs
+    int heightOf (Section s) const
+    {
+        return collapsed[(size_t) s] ? collapsedHeight : panelHeight + (s == guitarSection ? neckHeight : 0);
+    }
+    GuitarNeck neck { { SF2Look::text, SF2Look::dim, SF2Look::accent, SF2Look::panel, SF2Look::line.brighter (0.35f) } };
+    int shownGuitarSequence = 0;
     int guitarExtra() const { return guitarShown ? panelGap + heightOf (guitarSection) : 0; }
     int minimumHeight() const;
     void toggleSection (Section);

@@ -3,6 +3,7 @@
 // Orchestral collection in ~/Downloads it also checks that collection and the CPU use.
 #include "../Source/PluginProcessor.h"
 #include "../Source/SoundFontInfo.h"
+#include "../Source/GuitarNeck.h"
 #include <fluidsynth.h>
 #include <juce_events/juce_events.h>
 #include <algorithm>
@@ -804,6 +805,19 @@ int main()
 
     // ------------------------------------------------------------------ Guitar panel
     {
+        // The neck's chord names: the bass as root first, a slash when it isn't the root.
+        auto classes = [] (std::initializer_list<int> pcs) { int m = 0; for (int pc : pcs) m |= 1 << pc; return m; };
+        const bool names = GuitarNeck::chordName (classes ({ 0, 4, 7 }), 0) == "C"
+                        && GuitarNeck::chordName (classes ({ 9, 0, 4, 7 }), 9) == "Am7"
+                        && GuitarNeck::chordName (classes ({ 7, 11, 2 }), 11) == "G/B"
+                        && GuitarNeck::chordName (classes ({ 2, 6, 9, 0 }), 2) == "D7"
+                        && GuitarNeck::chordName (classes ({ 4 }), 4) == "E"
+                        && GuitarNeck::chordName (classes ({ 0, 1, 2 }), 0).isEmpty();
+        expect (names, "Guitar: chords are named (C, Am7, G/B, D7; a single note; nothing for a cluster)");
+        const int cShape[] = { 48, 55, 60, 64, 67 };
+        const auto placed = GuitarEngine::placeOnStrings (cShape, 5, 3);
+        expect (placed == std::array<int, 6> { -1, 3, 5, 5, 5, 3 }, "Guitar: the neck places a voiced chord on its strings");
+
         // A C major chord voiced at the 3rd fret: C on the A string, then G, C, E, G.
         const int keys[] = { 60, 64, 67 };
         int voiced[16] = {};

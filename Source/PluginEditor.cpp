@@ -301,6 +301,7 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     doubleMix.slider.setTooltip ("A second take: the same notes 18 ms later, a little sharp, on the right; the original on the left");
     tremoloDepth.slider.setTooltip ("Stereo tremolo depth (0: off)");
     tremoloRate.slider.setTooltip ("Tremolo speed when Sync is Free");
+    addAndMakeVisible (neck);
     attack.slider.setTooltip ("How long notes take to start: x1 is the SoundFont's own");
     release.slider.setTooltip ("How long notes take to fade after the key is let go: x1 is the SoundFont's own");
     velocityCurve.slider.setTooltip ("+ makes soft playing louder, - makes it softer. Linear: velocities as played");
@@ -862,7 +863,7 @@ void SF2PlayerEditor::showSectionContents()
         knob->slider.setVisible (guitar), knob->label.setVisible (guitar);
     for (juce::Component* c : { (juce::Component*) &guitarModeBox, (juce::Component*) &strumDirectionBox,
                                 (juce::Component*) &tremoloSyncBox, (juce::Component*) &guitarModeLabel,
-                                (juce::Component*) &strumDirectionLabel })
+                                (juce::Component*) &strumDirectionLabel, (juce::Component*) &neck })
         c->setVisible (guitar);
 }
 
@@ -888,6 +889,17 @@ void SF2PlayerEditor::drawSectionTitle (juce::Graphics& g, juce::Rectangle<int> 
 void SF2PlayerEditor::timerCallback()
 {
     refreshGuitarPanel();
+    // The neck: what the Guitar panel's engine played last, and its lights fading.
+    auto& view = player.guitarView;
+    if (const int sequence = view.sequence.load (std::memory_order_acquire); sequence != shownGuitarSequence)
+    {
+        shownGuitarSequence = sequence;
+        std::array<int, 6> notes {};
+        for (size_t i = 0; i < 6; ++i) notes[i] = view.notes[i].load (std::memory_order_relaxed);
+        neck.show (notes.data(), view.count.load(), view.pitchClasses.load(), view.bass.load(), view.up.load(),
+                   view.strummed.load(), view.palm.load(), juce::roundToInt (player.parameters.getRawParameterValue ("fretPosition")->load()));
+    }
+    neck.tick (1.0f / 20.0f);
     const float peak = player.outputPeak.exchange (0.0f);
     shownPeak = juce::jmax (peak, shownPeak * 0.85f);
 
@@ -1084,6 +1096,7 @@ void SF2PlayerEditor::resized()
         guitarPanel = area.removeFromTop (heightOf (guitarSection));
         tremoloSyncBox.setBounds (guitarPanel.getRight() - 6 - 70, guitarPanel.getY() + 5, 70, 18);
         auto inner = guitarPanel.reduced (6).withTrimmedTop (18);
+        neck.setBounds (inner.removeFromBottom (neckHeight - 6).reduced (8, 0));
         const int width = inner.getWidth() / 9;
         // Two rows on the left: the mode, and which way chords are strummed.
         auto combos = inner.removeFromLeft (width * 2).reduced (2, 6);

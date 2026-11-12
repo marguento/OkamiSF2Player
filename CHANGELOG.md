@@ -17,6 +17,8 @@ release bumps it and adds an entry here: one line per change a player would noti
   - **Double:** a second take, 18 ms later and a little sharp, on the right; the original on the left.
   - **Tremolo:** stereo, at a rate or locked to Ableton's tempo.
 - Reverb preset "Short Room" and chorus preset "Bright", for acoustic guitar.
+- The Guitar panel shows what it plays: the chord's name (C, Am7, G/B...), a six-string neck with
+  where its notes lie, an arrow lit by each strum (down or up) and a light for palm-muted notes.
 - Sections fold: a click on REVERB / CHORUS, PLAY or GUITAR folds it to its title (its switch and
   presets stay), and the window shrinks. Remembered for every project.
 

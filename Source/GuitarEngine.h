@@ -3,6 +3,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <algorithm>
 #include <array>
+#include <limits>
 
 // The Guitar panel's playing engine: turns the notes a clip or keyboard sends into what a
 // guitarist would play. Chords (notes arriving together) are voiced on six strings at a fret
@@ -205,6 +206,46 @@ public:
     static constexpr float chordWindowMs = 12.0f;
     static constexpr int palmVelocity = 45;
 
+    // The last chord (or note) started, for the panel's neck, chord name and strum arrow.
+    struct LastPlayed
+    {
+        int sequence = 0;            // grows with every chord or note started
+        std::array<int, 16> notes {};   // low to high
+        int count = 0;
+        bool up = false, strummed = false, palm = false;
+    };
+    const LastPlayed& lastPlayed() const { return last; }
+
+    // Where the notes lie on six strings for the neck picture: one note per string, strings
+    // rising with the notes, frets (0-19) as close to `around` as possible. -1: string not played.
+    // At most six notes (the lowest six).
+    static std::array<int, 6> placeOnStrings (const int* notes, int count, int around)
+    {
+        std::array<int, 6> best;
+        best.fill (-1);
+        count = juce::jmin (count, 6);
+        if (count <= 0) return best;
+        int bestCost = std::numeric_limits<int>::max();
+        // Every way to pick `count` rising strings (at most 6 choose 3 = 20 tries per size).
+        for (int mask = 0; mask < (1 << 6); ++mask)
+        {
+            if (__builtin_popcount ((unsigned) mask) != count) continue;
+            std::array<int, 6> frets;
+            frets.fill (-1);
+            int cost = 0, n = 0;
+            bool fits = true;
+            for (int string = 0; string < 6 && fits; ++string)
+            {
+                if (! (mask & (1 << string))) continue;
+                const int fret = notes[n++] - strings[(size_t) string];
+                if (fret < 0 || fret > 19) fits = false;
+                else { frets[(size_t) string] = fret; cost += fret == 0 ? 0 : std::abs (fret - around); }
+            }
+            if (fits && cost < bestCost) { bestCost = cost; best = frets; }
+        }
+        return best;
+    }
+
 private:
     struct Pending
     {
@@ -252,12 +293,19 @@ private:
         group->heldCount = group->inputCount;
         group->outputCount = juce::jmin (outputCount, 16);
         group->doubled = s.doubleMix > 0.0f;
+        last.count = group->outputCount;
+        for (int i = 0; i < last.count; ++i) last.notes[(size_t) i] = outputs[i];
+        std::sort (last.notes.begin(), last.notes.begin() + last.count);
 
         // Order: a down strum goes low to high, an up strum high to low.
         bool goingUp = s.direction == up || (s.direction == alternate && nextUp);
         if (s.direction == alternate && strum) nextUp = ! nextUp;
         const auto strumTotal = strum ? samples (s.strumMs) : 0;
         const bool palm = s.palm > 0.0f && velocity < palmVelocity;
+        last.up = goingUp;
+        last.strummed = strum && strumTotal > 0 && group->outputCount > 1;
+        last.palm = palm;
+        ++last.sequence;
         const int n = group->outputCount;
         for (int i = 0; i < n; ++i)
         {
@@ -313,5 +361,6 @@ private:
     std::array<Pending, 16> chordsPending {};
     std::array<Group, 64> groups {};
     bool nextUp = false;
+    LastPlayed last;
     juce::Random random { 1 };   // seeded: renders repeat exactly
 };

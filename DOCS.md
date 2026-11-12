@@ -153,6 +153,10 @@ With every control at Off or 0 it changes nothing.
   original on the left (double-tracking). The knob is the second take's level.
 - **Tremolo** and **Rate:** a stereo tremolo; the menu at the top right locks it to Ableton's
   tempo (1/2 to 1/16, triplets).
+- **The neck** under the knobs shows the last chord or note: its name (C, Am7, G/B: the bass after
+  the slash), where its notes lie on six strings (high E on top, as in tablature; × a string not
+  played, ○ an open one), **↓ DOWN** / **↑ UP** lit by each strum, and **PALM** lit by a
+  palm-muted note. The dots dim a few seconds after the chord.
 - For acoustic guitar, try the reverb preset **Short Room** and the chorus preset **Bright**.
 
 ## MIDI from clips

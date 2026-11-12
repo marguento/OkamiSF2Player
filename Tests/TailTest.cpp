@@ -19,6 +19,17 @@ struct EditorTestAccess
         editor.setSize (editor.getWidth(), editor.minimumHeight() + 22);
         editor.resized();
     }
+
+    // The neck as after a C major chord strummed down at the 3rd fret.
+    static void showChord (SF2PlayerEditor& editor)
+    {
+        const int keys[] = { 60, 64, 67 };
+        int voiced[16] = {};
+        const int n = GuitarEngine::voice (keys, 3, 3, voiced);
+        int classes = 0;
+        for (int i = 0; i < n; ++i) classes |= 1 << (voiced[i] % 12);
+        editor.neck.show (voiced, n, classes, voiced[0] % 12, false, true, false, 3);
+    }
 };
 
 int main (int argc, char** argv)
@@ -127,6 +138,8 @@ int main (int argc, char** argv)
             parameter->setValueNotifyingHost (parameter->convertTo0to1 ((float) std::atoi (layer)));
         }
         std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+        if (std::getenv ("CHORD") != nullptr)
+            EditorTestAccess::showChord (*dynamic_cast<SF2PlayerEditor*> (editor.get()));
         if (const char* fold = std::getenv ("FOLD"))   // "effects,play,guitar": those sections folded
             EditorTestAccess::fold (*dynamic_cast<SF2PlayerEditor*> (editor.get()), juce::String (fold));
         editor->setVisible (true);

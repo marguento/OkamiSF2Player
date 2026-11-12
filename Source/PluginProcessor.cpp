@@ -1067,6 +1067,21 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                     handleMidi (juce::MidiMessage (metadata.data, metadata.numBytes));
             }
             render (position, numSamples);
+
+            if (const auto& last = guitar.lastPlayed(); last.sequence != guitarView.sequence.load (std::memory_order_relaxed))
+            {
+                const int shown = juce::jmin (last.count, 6);
+                int classes = 0;
+                for (int i = 0; i < last.count; ++i) classes |= 1 << (last.notes[(size_t) i] % 12);
+                for (int i = 0; i < 6; ++i) guitarView.notes[(size_t) i].store (i < shown ? last.notes[(size_t) i] : -1, std::memory_order_relaxed);
+                guitarView.count.store (shown, std::memory_order_relaxed);
+                guitarView.pitchClasses.store (classes, std::memory_order_relaxed);
+                guitarView.bass.store (last.count > 0 ? last.notes[0] % 12 : -1, std::memory_order_relaxed);
+                guitarView.up.store (last.up, std::memory_order_relaxed);
+                guitarView.strummed.store (last.strummed, std::memory_order_relaxed);
+                guitarView.palm.store (last.palm, std::memory_order_relaxed);
+                guitarView.sequence.store (last.sequence, std::memory_order_release);
+            }
         }
         else
         {
