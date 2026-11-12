@@ -92,6 +92,7 @@ public:
     // The Guitar panel shows (and its controls act) for this instrument: Auto follows the
     // instrument, On and Off force it.
     bool guitarPanelActive() const;
+    bool detectedGuitar() const { return guitarInstrument.load(); }   // what Auto sees in the instrument
     static bool isGuitar (const Preset&);
 
     // The last chord or note the Guitar panel's engine started, for the editor's neck, chord

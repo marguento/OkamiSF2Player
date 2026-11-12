@@ -273,6 +273,13 @@ private:
                                                            atAttachment { player.parameters, "atAssign", atBox };
     juce::Rectangle<int> optionsArea;
     void refreshModeOptions();
+    // Beside the instrument: which panel it gets (Auto detects guitars; Guitar or No panel when a
+    // SoundFont doesn't follow General MIDI), remembered for each instrument of each SoundFont.
+    juce::TextButton panelButton;
+    juce::String panelKey;   // the instrument the choice was last applied for
+    void showPanelMenu();
+    void applyPanelChoice (const SF2PlayerProcessor::State&);
+    void refreshPanelButton();
     bool guitarShown = false;
     void refreshGuitarPanel();
 

@@ -139,9 +139,12 @@ At their defaults (x1, Linear, 0, Poly, Off) they change nothing.
 ## Guitar
 
 The **GUITAR** panel appears by itself, first under the instrument, when it's a guitar (General
-MIDI programs 24-31, or an instrument named "guitar"). The menu at the top right of PLAY says
-**Guitar: Auto**; choose **On** to use it with any instrument, or **Off** to hide it. It starts in
-**Direct**: every note as it comes, the SoundFont exactly as it is. Choosing a mode turns Direct off.
+MIDI programs 24-31, or an instrument named "guitar" or "gtr"). The button beside the instrument
+says what it got: **Guitar** or **No panel**. For a SoundFont that doesn't follow General MIDI (a
+guitar on program 0, a piano named "Gtr"), click it and choose **Guitar** or **No panel**; **Auto**
+goes back to detecting. The choice is remembered for that instrument of that SoundFont, in every
+project. The panel starts in **Direct**: every note as it comes, the SoundFont exactly as it is.
+Choosing a mode turns Direct off.
 
 **Zones.** The **Main zone** (E1-B4, MIDI 40-83: the guitar's own range) plays notes or takes
 chords. The **Repeat zones** (C1-D#1 and C5-C6, tinted on the keyboard) repeat what the Main zone

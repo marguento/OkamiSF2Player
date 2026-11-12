@@ -315,8 +315,13 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
         box.setTooltip (tip);
         addAndMakeVisible (box);
     };
-    setUpCombo (guitarPanelBox, { "Guitar: Auto", "Guitar: On", "Guitar: Off" }, "guitarPanel",
-                "The Guitar panel: Auto shows it for guitars (General MIDI 24-31, or named so); On or Off for any instrument");
+    setUpCombo (guitarPanelBox, { "Auto", "On", "Off" }, "guitarPanel", {});
+    guitarPanelBox.setVisible (false);   // holds the parameter; the panel button beside the instrument sets it
+    panelButton.setTooltip ("Which panel this instrument gets: Auto detects guitars; choose Guitar or No panel when it's wrong "
+                            "(remembered for this instrument)");
+    panelButton.setColour (juce::TextButton::buttonColourId, SF2Look::panel);
+    panelButton.onClick = [this] { showPanelMenu(); };
+    addAndMakeVisible (panelButton);
     setUpCombo (guitarModeBox, { "Solo", "Harmony", "Chords", "Bass & Chord", "Bass & Pick" }, "guitarMode", "The playing mode");
     {
         juce::StringArray tunings;
@@ -640,6 +645,7 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     showSectionContents();
     refreshLayerControls();
     refreshGuitarPanel();
+    refreshPanelButton();
     neck.setShape (player.guitarShapeFrets(), GuitarEngine::tuningOf (player.guitarTuning()));
     showGuitarPreset();
     juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<SF2PlayerEditor> (this)]
@@ -908,6 +914,8 @@ void SF2PlayerEditor::fillPresetBox (const SF2PlayerProcessor::State& state)
     previousButton.setEnabled (shown > 1);
     nextButton.setEnabled (shown > 1);
     refreshFavouriteButton (state, favourite);
+    applyPanelChoice (state);
+    refreshPanelButton();
 
     addInstruments (layerPresetBox, {}, state, favourite);
     layerPresetBox.setSelectedId (st->layer + 1, juce::dontSendNotification);
@@ -1229,6 +1237,7 @@ void SF2PlayerEditor::timerCallback()
 {
     showHint();
     refreshGuitarPanel();
+    refreshPanelButton();
     // The neck: what the Guitar panel's engine played last, and its lights fading.
     auto& view = player.guitarView;
     if (const int sequence = view.sequence.load (std::memory_order_acquire); sequence != shownGuitarSequence)
@@ -1389,6 +1398,8 @@ void SF2PlayerEditor::resized()
     row.removeFromRight (6);
     favouriteButton.setBounds (row.removeFromRight (28));
     previewButton.setBounds (row.removeFromRight (28));
+    row.removeFromRight (4);
+    panelButton.setBounds (row.removeFromRight (78).reduced (0, 2));
     row.reduce (6, 0);
     searchBox.setBounds (row.removeFromLeft (130));
     row.removeFromLeft (6);
@@ -1478,7 +1489,7 @@ void SF2PlayerEditor::resized()
         playModeLabel.setBounds (modeArea.removeFromTop (16));
         playMode.setBounds (modeArea.withSizeKeepingCentre (juce::jmin (modeArea.getWidth() - 4, 84), 24).translated (0, -6));
     }
-    guitarPanelBox.setBounds (playPanel.getRight() - 6 - 112, playPanel.getY() + 5, 112, 18);
+
 
 
 
@@ -1734,4 +1745,60 @@ void SF2PlayerEditor::toggleEffectControls()
     resized();
     repaint();
     if (showEffectControls) fitToScreen (effectsSection);
+}
+
+// ---------------------------------------------------------------------------- panel choice
+
+// A new instrument: its remembered choice (Guitar or No panel), else Auto.
+void SF2PlayerEditor::applyPanelChoice (const SF2PlayerProcessor::State& st)
+{
+    const auto key = favouriteKey (st, st.preset);
+    if (key.isEmpty() || key == panelKey) return;
+    panelKey = key;
+    const auto choices = juce::StringArray::fromLines (settings->getValue ("panelChoices"));
+    float choice = 0.0f;   // Auto
+    for (const auto& line : choices)
+        if (line.upToLastOccurrenceOf ("=", false, false) == key)
+            choice = (float) line.fromLastOccurrenceOf ("=", false, false).getIntValue();
+    if (auto* parameter = player.parameters.getParameter ("guitarPanel"))
+        if (juce::roundToInt (player.parameters.getRawParameterValue ("guitarPanel")->load()) != (int) choice)
+            parameter->setValueNotifyingHost (parameter->convertTo0to1 (choice));
+}
+
+void SF2PlayerEditor::showPanelMenu()
+{
+    const int current = juce::roundToInt (player.parameters.getRawParameterValue ("guitarPanel")->load());
+    juce::PopupMenu menu;
+    menu.addSectionHeader ("Panel for this instrument");
+    menu.addItem (1, juce::String ("Auto (") + (player.detectedGuitar() ? "a guitar" : "not a guitar") + ")", true, current == 0);
+    menu.addItem (2, "Guitar", true, current == 1);
+    menu.addItem (3, "No panel", true, current == 2);
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (panelButton), [this] (int chosen)
+    {
+        if (chosen <= 0) return;
+        const int choice = chosen - 1;   // 0 Auto, 1 Guitar (On), 2 No panel (Off)
+        if (auto* parameter = player.parameters.getParameter ("guitarPanel"))
+            parameter->setValueNotifyingHost (parameter->convertTo0to1 ((float) choice));
+        // Remembered for this instrument: Auto needs no entry.
+        auto choices = juce::StringArray::fromLines (settings->getValue ("panelChoices"));
+        choices.removeEmptyStrings();
+        for (int i = choices.size(); --i >= 0;)
+            if (choices[i].upToLastOccurrenceOf ("=", false, false) == panelKey) choices.remove (i);
+        if (choice != 0 && panelKey.isNotEmpty()) choices.add (panelKey + "=" + juce::String (choice));
+        settings->setValue ("panelChoices", choices.joinIntoString ("\n"));
+        settings->saveIfNeeded();
+        refreshPanelButton();
+    });
+}
+
+// The button says what the instrument gets: "Guitar" (lit) or "No panel".
+void SF2PlayerEditor::refreshPanelButton()
+{
+    const bool guitar = player.guitarPanelActive();
+    const auto text = guitar ? juce::String ("Guitar") : juce::String ("No panel");
+    if (panelButton.getButtonText() != text)
+    {
+        panelButton.setButtonText (text);
+        panelButton.setColour (juce::TextButton::textColourOffId, guitar ? SF2Look::accent : SF2Look::dim);
+    }
 }
