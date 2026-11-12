@@ -8,27 +8,49 @@
 #include <limits>
 
 // The Guitar panel's playing engine: turns the notes a clip or keyboard sends into what a
-// guitarist would play. Chords (notes arriving together) are voiced on six strings at a fret
-// position and strummed down, up or alternating; Bass & Pick plays the lowest note first and
-// picks the rest; soft notes can be palm-muted (cut short, darker); Humanize adds small random
-// changes of velocity, timing and tuning. Every output is a note on or off at an absolute
-// sample time, sometimes in a later block: the processor plays them as they fall due.
+// guitarist would play, in the way of the classic guitar instruments for keyboards.
 //
-// Audio thread only. Fixed arrays, no allocation. With every control neutral the processor
+// The keyboard has three zones. The Main zone (E1-B4, MIDI 40-83: the guitar's own range) plays
+// notes (Solo, Harmony) or takes chords (Chords, Bass & Chord, Bass & Pick), which are
+// recognized, voiced on six strings and played. The Repeat zones (C1-D#1, 36-39, and C5-C6,
+// 84-96) repeat what the Main zone holds: strums up or down, muted strums, the bass, single
+// strings. Notes outside the zones play as they are.
+//
+// Every note lies on a string: a new note on a string stops the one ringing there, as on a
+// real guitar. Soft notes can be palm-muted (cut short, darker); Humanize adds small random
+// changes of velocity, timing and tuning. Every output is a note on or off at an absolute sample
+// time, sometimes in a later block: the processor plays them as they fall due.
+//
+// Audio thread only. Fixed arrays, no allocation. With Direct on (the default) the processor
 // doesn't use it at all, so the SoundFont plays exactly as before.
 class GuitarEngine
 {
 public:
-    enum Mode { solo = 0, chords = 1, bassAndPick = 2, shape = 3, strumKeys = 4, pattern = 5, bassAndChord = 6, harmony = 7, keyChords = 8, autoChords = 9 };
+    enum Mode { solo = 0, harmony = 1, chords = 2, bassAndChord = 3, bassAndPick = 4 };
+    static constexpr int modeCount = 5;
 
-    // What one stroke of the pick does (Strum Keys' white keys, a pattern's steps).
-    enum Stroke { strokeDown, strokeUp, mutedDown, mutedUp, bassOnly, highDown, highUp, damp, pickString };
+    // The keyboard's zones.
+    static constexpr int leftRepeatLow = 36, leftRepeatHigh = 39, mainLow = 40, mainHigh = 83, rightRepeatLow = 84, rightRepeatHigh = 96;
+    static bool inMain (int note) { return note >= mainLow && note <= mainHigh; }
+    static bool inLeftRepeat (int note) { return note >= leftRepeatLow && note <= leftRepeatHigh; }
+    static bool inRightRepeat (int note) { return note >= rightRepeatLow && note <= rightRepeatHigh; }
+    static bool inRepeat (int note) { return inLeftRepeat (note) || inRightRepeat (note); }
 
-    // Strum Keys: keys from this one up are the pick hand; below it, the chord.
-    static constexpr int strumKeysFrom = 60;
+    // What one stroke of the pick does (Repeat keys, a pattern's steps).
+    enum Stroke { strokeDown, strokeUp, mutedDown, mutedUp, bassOnly, bassTwo, highDown, highUp, damp, pickString };
 
-    // The rhythms of Pattern mode, one character per sixteenth note, looped: D down, U up, d and
-    // u muted, B the bass alone, 1-6 one string of the chord (1 the lowest), . nothing.
+    // Harmony: what each key adds to its note.
+    static constexpr const char* harmonyNames[] = { "4th Down", "5th Up", "Octave Up", "Power Chord 1", "Power Chord 2", "2 Octaves Up" };
+    // Chord Position: where the voicing's highest note lies (I to IV), or Kbd: in the octave played.
+    static constexpr const char* positionNames[] = { "I", "II", "III", "IV", "Kbd" };
+    // Velocity Switch FX.
+    enum VelocityFx { fxOff = 0, slowStrumHigh = 1, slowStrumLow = 2, veloMute = 3 };
+    static constexpr const char* velocityFxNames[] = { "Off", "Slow Strum on Higher Velo", "Slow Strum on Lower Velo", "Velo Mute" };
+    // Bass & Pick: what the black keys among its string keys do.
+    static constexpr const char* addOnNames[] = { "Off", "Unison", "Chromatic" };
+
+    // The rhythms of Pattern, one character per sixteenth note, looped: D down, U up, d and u
+    // muted, B the bass alone, 1-6 one string of the chord (1 the lowest), . nothing.
     struct Rhythm { const char* name; const char* steps; };
     static constexpr Rhythm rhythms[] = {
         { "Down Eighths",    "D.D.D.D.D.D.D.D." },
@@ -49,34 +71,32 @@ public:
 
     struct Settings
     {
-        int mode = chords;
-        float strumMs = 0;      // 0 to 80: from the first string to the last
-        int direction = down;
-        int fret = 0;           // 0: as played; 1 to 12: chords voiced at that fret
+        bool direct = true;     // a plain sampler: the engine isn't used at all
+        int mode = solo;
+        bool pattern = false;   // the Main zone's chord plays the rhythm by itself
+        float strumMs = 0;      // from the first string to the last (0: a pick's natural 18 ms)
+        int direction = down;   // the Main zone's strums
         float palm = 0;         // 0 to 1: how short and dark notes under velocity 45 get
         float humanize = 0;     // 0 to 1
         float doubleMix = 0;    // 0 to 1: Double's level (0: off)
-        // Shape mode: the chord drawn on the neck, a fret per string from the low E (-1: not
-        // played, 0: open). Each key played strums it, moved so its bass is that key.
-        std::array<int, 6> shapeFrets { -1, -1, -1, -1, -1, -1 };
-        int rhythm = 0;         // Pattern mode: which of `rhythms`
+        int rhythm = 0;         // Pattern: which of `rhythms`
         int tuning = 0;         // which of `tunings`
         bool velocityStrings = false;   // soft strums hit only the high strings, hard ones all six
-        // Key Chords: the key's tonic (0 C ... 11 B) and scale (0 major, 1 minor, 2 major with
-        // sevenths, 3 minor with sevenths).
-        int keyRoot = 0, keyScale = 0;
-        // Mode options. Strings: chords use the strings from this one up (0: all six, 1: from the
-        // A, 2: from the D, 3: from the G). Slow strum: notes softer than `slowBelow` (0: off) are
-        // strummed over at least `slowMs`, a gentle stroke.
-        int firstString = 0;
-        int slowBelow = 0;
-        float slowMs = 150.0f;
+        // Mode options.
+        int position = 0;               // Chord Position: 0-3 I to IV, 4 Kbd
+        int topString = 1, bottomString = 6;   // Chords: the strings strummed (1 the high E, 6 the low E)
+        int repeatStrings = 4;          // Bass & Chord: how many upper strings the Repeat keys strum
+        bool chordBass = false;         // a triad over another bass is played as such (Am/G)
+        bool alterBass = false;         // the same chord again alternates its bass with the fifth
+        bool bassMono = false;          // the second bass stops the first
+        int addOn = 0;                  // Bass & Pick's black keys: 0 off, 1 unison, 2 chromatic
+        int harmony = 2;                // which of `harmonyNames`
+        int velocityFx = fxOff;         // which of `velocityFxNames`
+        int fxVelocity = 90;            // its velocity threshold
+        float fxTimeMs = 150.0f;        // a slow strum's length
+        bool hold = false;              // chords keep sounding after the keys are let go
         // True when nothing would change: the processor then plays notes directly.
-        bool isNeutral() const
-        {
-            return strumMs <= 0.0f && slowBelow <= 0 && fret == 0 && palm <= 0.0f && humanize <= 0.0f && doubleMix <= 0.0f && ! velocityStrings
-                && (mode == chords || mode == solo);   // Shape always plays the drawn chord
-        }
+        bool isNeutral() const { return direct; }
     };
 
     struct Event
@@ -96,8 +116,6 @@ public:
     static constexpr int doubleDetuneCents = 4;
 
     static constexpr int maxEvents = 1024;
-    // Standard tuning, low to high: E2 A2 D3 G3 B3 E4.
-    static constexpr std::array<int, 6> strings { 40, 45, 50, 55, 59, 64 };
     // The tunings the panel offers, low string first: Standard, Drop D, Drop C, Open G, DADGAD.
     using Tuning = std::array<int, 6>;
     static constexpr std::array<Tuning, 5> tunings { {
@@ -124,6 +142,13 @@ public:
                     flushOffs (group.channel, group.outputs[(size_t) i], false);
                     if (group.doubled) flushOffs (group.channel, group.outputs[(size_t) i], true);
                 }
+        for (int channel = 0; channel < 16; ++channel)
+            for (const auto& string : channels[(size_t) channel].strings)
+                if (string.note >= 0)
+                {
+                    flushOffs (channel, string.note, false);
+                    if (string.doubled) flushOffs (channel, string.note, true);
+                }
         for (int i = 0; i < eventCount; ++i)   // offs still to come (a twin's, a palm's)
             if (events[(size_t) i].velocity == 0)
                 flushOffs (events[(size_t) i].channel, events[(size_t) i].note, events[(size_t) i].isDouble);
@@ -134,188 +159,141 @@ public:
     {
         eventCount = 0;
         for (auto& channel : lastOnTime) channel.fill (-1);
-        for (auto& held : chordsHeld) held = {};
-        for (auto& ringing : ringingNotes) ringing = {};
-        for (auto& pending : chordsPending) pending = {};
+        for (auto& channel : channels) channel = {};
         for (auto& group : groups) group = {};
         nextUp = false;
     }
 
-    // A note on or off from the clip (channel 0-15), at an absolute sample time.
+    // A note on from the clip or keyboard (channel 0-15), at an absolute sample time.
     void noteOn (const Settings& s, int channel, int note, int velocity, juce::int64 time)
     {
-        auto& pending = chordsPending[(size_t) channel];
-        if (s.mode == keyChords)
+        auto& c = channels[(size_t) channel];
+        if (! inMain (note) && ! inRepeat (note))   // outside the zones: as it is
         {
-            std::array<int, 4> chord {};
-            const int size = keyChord (s, note, chord.data());
-            std::array<int, 16> voiced {};
-            const int n = voice (chord.data(), size, s.fret, voiced.data(), tuningOf (s.tuning), s.firstString);
-            const std::array<int, 1> key { note };
-            startGroupWith (s, channel, key.data(), 1, voiced.data(), n, velocity, time, true);
+            playKeyed (s, channel, note, &note, 1, velocity, time, false);
             return;
         }
-        if (s.mode == bassAndChord && note < strumKeysFrom)   // the left hand: bass notes, one by one
+        if (s.mode == solo || s.mode == harmony)
         {
-            const std::array<int, 1> one { note };
-            startGroupWith (s, channel, one.data(), 1, one.data(), 1, velocity, time, false);
-            return;
-        }
-        if (s.mode == harmony && note >= strumKeysFrom)
-        {
-            // The melody note and a second voice under it: the held chord's nearest tone a third
-            // to a sixth below, else a major third below.
-            int below = note - 4;
-            const auto& held = chordsHeld[(size_t) channel];
-            for (int gap = 3; gap <= 9 && held.count > 0; ++gap)
+            if (inMain (note))
             {
-                bool inChord = false;
-                for (int i = 0; i < held.count; ++i) inChord = inChord || held.keys[(size_t) i] % 12 == (note - gap + 120) % 12;
-                if (inChord) { below = note - gap; break; }
-            }
-            const std::array<int, 1> key { note };
-            const std::array<int, 2> pair { juce::jmax (0, below), note };
-            startGroupWith (s, channel, key.data(), 1, pair.data(), 2, velocity, time, true);
-            return;
-        }
-        if (s.mode == pattern || ((s.mode == strumKeys || s.mode == harmony) && note < strumKeysFrom))
-        {
-            hold (channel, note, velocity, time);   // the chord hand: silent until a stroke
-            return;
-        }
-        if (s.mode == strumKeys)
-        {
-            static constexpr int byPitchClass[12] = { strokeDown, damp, strokeUp, damp, mutedDown, mutedUp, damp,
-                                                      bassOnly, damp, highDown, damp, highUp };
-            stroke (s, channel, (Stroke) byPitchClass[note % 12], velocity, time);
-            return;
-        }
-        if (s.mode == shape)
-        {
-            std::array<int, 6> notes {};
-            const int count = shapeNotes (s.shapeFrets, note, notes.data(), tuningOf (s.tuning), s.firstString);
-            if (count == 0)   // nothing drawn: the key as played
-            {
-                const std::array<int, 1> one { note };
-                startGroupWith (s, channel, one.data(), 1, one.data(), 1, velocity, time, false);
+                addKey (c.down, note);
+                c.velocity = velocity;
+                if (s.mode == solo)
+                    playKeyed (s, channel, note, &note, 1, velocity, time, false, s.velocityFx == veloMute && velocity < s.fxVelocity);
+                else
+                {
+                    // One voice at a time: the previous interval ends.
+                    for (auto& group : groups)
+                        if (group.used && group.channel == channel && group.harmony) endGroup (group, time);
+                    std::array<int, 3> notes {};
+                    const int n = harmonyNotes (s.harmony, note, notes.data());
+                    auto* group = playKeyed (s, channel, note, notes.data(), n, velocity, time, true);
+                    if (group != nullptr) group->harmony = true;
+                    c.lastHarmony = notes;
+                    c.lastHarmonyCount = n;
+                }
                 return;
             }
-            const std::array<int, 1> key { note };
-            startGroupWith (s, channel, key.data(), 1, notes.data(), count, velocity, time, true);
+            // A Repeat key: the held notes again, white keys full, black keys muted.
+            std::array<int, 16> notes {};
+            int n = 0;
+            if (s.mode == harmony)
+            {
+                if (c.down.count > 0) { n = c.lastHarmonyCount; std::copy (c.lastHarmony.begin(), c.lastHarmony.begin() + n, notes.begin()); }
+            }
+            else
+                for (int i = 0; i < c.down.count; ++i) notes[(size_t) n++] = c.down.keys[(size_t) i];
+            if (n == 0) return;
+            std::sort (notes.begin(), notes.begin() + n);
+            playKeyed (s, channel, note, notes.data(), n, velocity, time, s.mode == harmony, isBlack (note));
             return;
         }
-        if (s.mode == solo)
+
+        // Chord modes.
+        if (inMain (note))
         {
-            const std::array<int, 1> one { note };
-            startGroupWith (s, channel, one.data(), 1, one.data(), 1, velocity, time, false);
+            if (c.down.count == 0)   // a new chord: what was latched by Hold is let go
+            {
+                if (c.latched) endStrings (channel, time);
+                c.latched = false;
+                c.since = time;
+                c.patternRunning = false;
+            }
+            addKey (c.down, note);
+            addKey (c.taken, note);
+            c.velocity = velocity;
+            if (c.triggerAt < 0) c.triggerAt = time + samples (chordWindowMs);   // gather the chord's notes
             return;
         }
-        // Notes within the window are one chord; it's played when the window closes.
-        if (pending.count == 0)
-            pending.start = time;
-        if (pending.count < (int) pending.keys.size())
-        {
-            pending.keys[(size_t) pending.count] = (juce::uint8) note;
-            pending.released[(size_t) pending.count] = false;
-            pending.velocity = juce::jmax (pending.velocity, velocity);
-            ++pending.count;
-        }
+        repeatKey (s, channel, note, velocity, time);
     }
 
     // False when the engine never took this key (it was pressed before the engine was in use):
     // the caller then passes the note-off on as it is, so the note doesn't stick.
     bool noteOff (int channel, int note, juce::int64 time)
     {
-        // The chord hand lets go: when nothing is held any more, the strings are stopped.
-        auto& held = chordsHeld[(size_t) channel];
-        for (int i = 0; i < held.count; ++i)
-            if (held.keys[(size_t) i] == note)
-            {
-                held.keys[(size_t) i] = held.keys[(size_t) --held.count];
-                if (held.count == 0) endRinging (channel, time);
-                return true;
-            }
-        // Still gathering: remember it, so the chord's note ends right after it starts.
+        auto& c = channels[(size_t) channel];
         bool known = false;
-        auto& pending = chordsPending[(size_t) channel];
-        for (int i = 0; i < pending.count; ++i)
-            if (pending.keys[(size_t) i] == note)
-                pending.released[(size_t) i] = known = true;
+        if (removeKey (c.down, note))
+        {
+            known = true;
+            if (c.down.count == 0 && c.chordMode)
+            {
+                if (c.hold) c.latched = true;
+                else if (c.triggerAt < 0) { endStrings (channel, time); c.voicing = {}; }
+                // Still gathering: the chord is played when the window closes, then let go.
+                else c.releaseAfterTrigger = true;
+            }
+        }
+        if (c.chordMode && inRepeat (note)) known = true;   // strokes ring on: nothing to end
         for (auto& group : groups)
         {
-            if (! group.used || group.channel != channel)
-                continue;
-            for (int i = 0; i < group.inputCount; ++i)
-                if (group.inputs[(size_t) i] == note && group.held[(size_t) i])
-                {
-                    group.held[(size_t) i] = false;
-                    if (--group.heldCount == 0)
-                        endGroup (group, time);
-                    return true;
-                }
+            if (! group.used || group.channel != channel || group.key != note) continue;
+            endGroup (group, time);
+            known = true;
         }
         return known;
     }
 
-    // All notes off on a channel (CC120 / CC123 from the clip): everything the engine holds
-    // or started there ends, the chord hand included.
+    // All notes off on a channel (CC120 / CC123 from the clip): everything ends.
     void allOff (int channel, juce::int64 time)
     {
-        chordsPending[(size_t) channel] = {};
-        chordsHeld[(size_t) channel] = {};
-        endRinging (channel, time);
+        endStrings (channel, time);
+        channels[(size_t) channel] = {};
         for (auto& group : groups)
             if (group.used && group.channel == channel)
                 endGroup (group, time);
     }
 
-    // Closes the chord windows that end before `until`, so their notes get scheduled.
+    // Plays the chords whose gathering window closes before `until`; lets go of chords Hold
+    // kept once Hold is switched off.
     void advance (const Settings& s, juce::int64 until)
     {
-        const auto window = samples (chordWindowMs);
+        const bool chordMode = s.mode == chords || s.mode == bassAndChord || s.mode == bassAndPick;
         for (int channel = 0; channel < 16; ++channel)
         {
-            auto& pending = chordsPending[(size_t) channel];
-            if (pending.count == 0 || pending.start + window > until)
+            auto& c = channels[(size_t) channel];
+            c.chordMode = chordMode;
+            c.hold = s.hold;
+            if (c.latched && ! s.hold && c.down.count == 0)
+            {
+                endStrings (channel, until);
+                c.latched = false;
+                c.voicing = {};
+            }
+            if (c.triggerAt < 0 || c.triggerAt > until)
                 continue;
-            const auto chord = pending;
-            pending = {};
-            std::array<int, 16> keys {};
-            int keyCount = chord.count;
-            for (int i = 0; i < chord.count; ++i)
-                keys[(size_t) i] = chord.keys[(size_t) i];
-            const auto at = chord.start + window;
-            if (s.mode == autoChords)
+            const auto at = c.triggerAt;
+            c.triggerAt = -1;
+            if (chordMode) triggerChord (s, channel, at);
+            c.taken = {};
+            if (c.releaseAfterTrigger && c.down.count == 0)
             {
-                // A key added to a chord still held changes it: the keys still down join the new
-                // ones, and the old chord ends as the new one is strummed.
-                for (auto& group : groups)
-                {
-                    if (! group.used || group.channel != channel) continue;
-                    for (int i = 0; i < group.inputCount && keyCount < (int) keys.size(); ++i)
-                        if (group.held[(size_t) i]) keys[(size_t) keyCount++] = group.inputs[(size_t) i];
-                    endGroup (group, at);
-                }
+                if (s.hold) c.latched = true;
+                else { endStrings (channel, at + 1); c.voicing = {}; }
             }
-            std::sort (keys.begin(), keys.begin() + keyCount);
-            keyCount = (int) (std::unique (keys.begin(), keys.begin() + keyCount) - keys.begin());
-            std::array<int, 16> voiced {};
-            int voicedCount = keyCount;
-            if (s.mode == autoChords)
-            {
-                std::array<int, 16> full {};
-                const int size = completeChord (keys.data(), keyCount, full.data());
-                voicedCount = voice (full.data(), size, s.fret, voiced.data(), tuningOf (s.tuning), s.firstString);
-            }
-            else if (s.fret > 0)
-                voicedCount = voice (keys.data(), keyCount, s.fret, voiced.data(), tuningOf (s.tuning), s.firstString);
-            else
-                std::copy (keys.begin(), keys.begin() + keyCount, voiced.begin());
-            startGroupWith (s, channel, keys.data(), keyCount, voiced.data(), voicedCount, chord.velocity, at, true);
-            // A key released while the chord gathered still ends its part.
-            for (int i = 0; i < chord.count; ++i)
-                if (chord.released[(size_t) i])
-                    noteOff (channel, chord.keys[(size_t) i], chord.start + window + 1);
+            c.releaseAfterTrigger = false;
         }
     }
 
@@ -350,69 +328,159 @@ public:
     {
         if (eventCount > 0) return true;
         for (auto& group : groups) if (group.used) return true;
-        for (auto& ringing : ringingNotes) if (ringing.count > 0) return true;
-        for (auto& pending : chordsPending) if (pending.count > 0) return true;
+        for (auto& c : channels)
+        {
+            if (c.triggerAt >= 0) return true;
+            for (auto& string : c.strings) if (string.note >= 0) return true;
+        }
         return false;
     }
 
-    // A chord on six strings at `fret`: for each string from the low E, the first fret from
-    // `fret` to `fret + 4` whose note is in the chord. The bass (the lowest key's note) is on
-    // the lowest string that can play it; strings below it stay silent. Returns how many.
-    static int voice (const int* keys, int count, int fret, int* out, const Tuning& tuning = tunings[0], int firstString = 0)
+    // ---- Chords: what the keys ask for, and how a guitarist holds it.
+
+    struct Chord
     {
-        if (count <= 0) return 0;
-        bool inChord[12] = {};
-        for (int i = 0; i < count; ++i) inChord[keys[i] % 12] = true;
-        const int bass = keys[0] % 12;
-        int played = 0;
-        bool bassPlaced = false;
-        firstString = juce::jlimit (0, 5, firstString);
-        for (size_t string = (size_t) firstString; string < tuning.size(); ++string)
+        int mask = 0;       // pitch classes (bit n: n)
+        int root = -1;      // pitch class
+        int bass = -1;      // pitch class of the bass (the root, or a slash chord's bass)
+    };
+
+    // The chord the keys (low to high) ask for. Exact chord types first (C E G, E G C: C); else
+    // the lowest key as the root, completed with the plainest type holding every key (one key:
+    // its major chord; C + Eb: C minor; C + Bb: C7). With `chordBass`, a major or minor triad
+    // over another bass keeps that bass (G A C E: Am/G).
+    static Chord recognize (const int* keys, int count, bool chordBass)
+    {
+        Chord chord;
+        if (count <= 0) return chord;
+        int classes = 0;
+        for (int i = 0; i < count; ++i) classes |= 1 << (keys[i] % 12);
+        const int lowest = keys[0] % 12;
+        auto relativeTo = [classes] (int root) { return ChordName::rotate (classes, root); };
+        auto absolute = [] (int mask, int root) { int out = 0; for (int i = 0; i < 12; ++i) if (mask & (1 << i)) out |= 1 << ((i + root) % 12); return out; };
+
+        if (chordBass && count >= 3)
         {
-            const int open = tuning[string];
+            int upper = 0;
+            for (int i = 1; i < count; ++i) if (keys[i] % 12 != lowest) upper |= 1 << (keys[i] % 12);
+            for (int root = 0; root < 12; ++root)
+            {
+                if (! (upper & (1 << root))) continue;
+                const int relative = ChordName::rotate (upper, root);
+                if (relative == ChordName::bits ({ 0, 4, 7 }) || relative == ChordName::bits ({ 0, 3, 7 }))
+                    return { upper | (1 << lowest), root, lowest };
+            }
+        }
+        if (juce::countNumberOfBits ((juce::uint32) classes) == 1)
+            return { absolute (ChordName::bits ({ 0, 4, 7 }), lowest), lowest, lowest };
+        // An exact type, the lowest key's pitch class tried first as the root.
+        for (int attempt = 0; attempt < 12; ++attempt)
+        {
+            const int root = (lowest + attempt) % 12;
+            if (! (classes & (1 << root))) continue;
+            for (const auto& type : ChordName::types)
+                if (relativeTo (root) == type.mask && juce::countNumberOfBits ((juce::uint32) type.mask) >= 3)
+                    return { classes, root, root };
+        }
+        // Completed: the plainest type that holds every key, the lowest key as the root first.
+        for (int attempt = 0; attempt < 12; ++attempt)
+        {
+            const int root = (lowest + attempt) % 12;
+            if (! (classes & (1 << root))) continue;
+            for (const auto& type : ChordName::types)
+                if ((type.mask & relativeTo (root)) == relativeTo (root) && juce::countNumberOfBits ((juce::uint32) type.mask) >= 3)
+                    return { absolute (type.mask, root), root, root };
+        }
+        return { absolute (ChordName::bits ({ 0, 4, 7 }), lowest), lowest, lowest };
+    }
+
+    // A chord on the six strings: a note per string (-1: not played), low E first, and where its
+    // basses lie.
+    struct Voicing
+    {
+        std::array<int, 6> notes { -1, -1, -1, -1, -1, -1 };
+        int bassString = -1;    // Bass I: the root (or the slash chord's bass)
+        int bassTwo = -1;       // Bass II: the fifth, usually on a neighbouring string (a note)
+        int bassTwoString = -1;
+        Chord chord;
+        bool valid() const { return bassString >= 0; }
+        int top() const { int t = -1; for (int n : notes) t = juce::jmax (t, n); return t; }
+    };
+
+    // The chord at `fret`: from the lowest string that has the bass, each string takes the first
+    // fret from `fret` to `fret + 4` (open strings too, in the first position) whose note is in
+    // the chord.
+    static Voicing place (const Chord& chord, int fret, const Tuning& tuning)
+    {
+        Voicing v;
+        v.chord = chord;
+        for (size_t string = 0; string < 6; ++string)
+        {
             for (int f = fret; f <= fret + 4; ++f)
             {
-                const int note = open + f;
-                if (! inChord[note % 12]) continue;
-                // Wait for a string that has the bass (on the high strings alone, any chord tone).
-                if (! bassPlaced && firstString == 0 && note % 12 != bass) continue;
-                out[played++] = note;
-                bassPlaced = true;
+                const int note = tuning[string] + f;
+                if (! (chord.mask & (1 << (note % 12)))) continue;
+                if (v.bassString < 0 && note % 12 != chord.bass) continue;   // wait for a string with the bass
+                v.notes[string] = note;
+                if (v.bassString < 0) v.bassString = (int) string;
                 break;
             }
         }
-        if (played == 0)   // the chord doesn't fit the window: play it as keyed
-        {
-            for (int i = 0; i < count; ++i) out[i] = keys[i];
-            return count;
-        }
-        return played;
+        return v;
     }
 
-    // Auto Chords: the chord the keys ask for, completed. One key: its major chord. More: the
-    // lowest key is the root, and the plainest chord type (ChordName's order) holding every key
-    // is played (C + Eb: C minor; C + Bb: C7; C + F: Csus4). Keys no type holds play as they are.
-    static int completeChord (const int* keys, int count, int* out)
+    // The voicing whose highest note falls in the Chord Position's range (I: E3-G#3, II: G3-B3,
+    // III: A#3-D4, IV: C#4-F4, Kbd: the octave from the E at or below the highest key played),
+    // the lowest such fret; else the closest. Bass II found too.
+    static Voicing voiceChord (const Chord& chord, int position, int highestKey, const Tuning& tuning)
     {
-        if (count <= 0) return 0;
-        const int root = keys[0];
-        int relative = 0;
-        for (int i = 0; i < count; ++i) relative |= 1 << ((keys[i] - root + 120) % 12);
-        int mask = 0;
-        if (count == 1 || relative == 1)
-            mask = ChordName::bits ({ 0, 4, 7 });
+        static constexpr int ranges[4][2] = { { 64, 68 }, { 67, 71 }, { 70, 74 }, { 73, 77 } };
+        int low, high;
+        if (position >= 0 && position < 4) { low = ranges[position][0]; high = ranges[position][1]; }
         else
-            for (const auto& type : ChordName::types)
-                if ((type.mask & relative) == relative) { mask = type.mask; break; }
-        if (mask == 0)
         {
-            std::copy (keys, keys + count, out);
-            return count;
+            low = highestKey - ((highestKey - 4) % 12 + 12) % 12;
+            high = low + 11;
         }
-        int n = 0;
-        for (int interval = 0; interval < 12; ++interval)
-            if (mask & (1 << interval)) out[n++] = root + interval;
-        return n;
+        Voicing best;
+        int bestDistance = std::numeric_limits<int>::max();
+        for (int fret = 0; fret <= 12; ++fret)
+        {
+            const auto v = place (chord, fret, tuning);
+            if (! v.valid()) continue;
+            const int top = v.top();
+            const int distance = top < low ? low - top : top > high ? top - high : 0;
+            if (distance < bestDistance) { best = v; bestDistance = distance; }
+            if (distance == 0) break;
+        }
+        if (! best.valid()) return best;
+        // Bass II: the fifth, on the string below the bass when it can reach it, else on one above.
+        const int fifth = (chord.bass + 7) % 12;
+        const int bassNote = best.notes[(size_t) best.bassString];
+        const int bassFret = bassNote - tuning[(size_t) best.bassString];
+        if (best.bassString > 0)
+            for (int f = juce::jmax (0, bassFret - 2); f <= bassFret + 2; ++f)
+                if ((tuning[(size_t) best.bassString - 1] + f) % 12 == fifth)
+                { best.bassTwo = tuning[(size_t) best.bassString - 1] + f; best.bassTwoString = best.bassString - 1; break; }
+        for (int string = best.bassString + 1; string < 6 && best.bassTwo < 0; ++string)
+            if (best.notes[(size_t) string] >= 0 && best.notes[(size_t) string] % 12 == fifth)
+            { best.bassTwo = best.notes[(size_t) string]; best.bassTwoString = string; }
+        if (best.bassTwo < 0) { best.bassTwo = bassNote; best.bassTwoString = best.bassString; }
+        return best;
+    }
+
+    // Harmony: the notes a key plays (low to high).
+    static int harmonyNotes (int kind, int note, int* out)
+    {
+        switch (kind)
+        {
+            case 0:  out[0] = note - 5; out[1] = note; return 2;               // a fourth down
+            case 1:  out[0] = note; out[1] = note + 7; return 2;               // a fifth up
+            case 3:  out[0] = note; out[1] = note + 7; out[2] = note + 12; return 3;   // fifth and fourth up
+            case 4:  out[0] = note; out[1] = note + 5; out[2] = note + 12; return 3;   // fourth and fifth up
+            case 5:  out[0] = note; out[1] = note + 12; out[2] = note + 24; return 3;  // two octaves
+            default: out[0] = note; out[1] = note + 12; return 2;              // an octave up
+        }
     }
 
     static constexpr float chordWindowMs = 12.0f;
@@ -428,95 +496,54 @@ public:
     };
     const LastPlayed& lastPlayed() const { return last; }
 
-    // A chord is held on `channel` (Strum Keys, Pattern): since when (-1: none) and how hard.
-    juce::int64 heldSince (int channel) const { return chordsHeld[(size_t) channel].count > 0 ? chordsHeld[(size_t) channel].since : -1; }
-    int heldVelocity (int channel) const { return chordsHeld[(size_t) channel].velocity; }
+    // A chord is held (or kept by Hold) on `channel`: since when (-1: none) and how hard.
+    juce::int64 heldSince (int channel) const
+    {
+        const auto& c = channels[(size_t) channel];
+        return (c.down.count > 0 || c.latched) && c.voicing.valid() ? c.since : -1;
+    }
+    int heldVelocity (int channel) const { return channels[(size_t) channel].velocity; }
 
-    // One stroke of the pick on the chord held on `channel` (or, with none held, the drawn shape).
-    // The strings it strikes ring until the next stroke, a damp, or the chord hand letting go.
+    // One stroke of the pick on the chord held on `channel`. Each string struck stops what rang
+    // on it; the rest ring on.
     void stroke (const Settings& s, int channel, Stroke kind, int velocity, juce::int64 time, int string = 0)
     {
-        endRinging (channel, time);
-        if (kind == damp) return;
-        std::array<int, 16> chord {};
-        const int count = heldChord (s, channel, chord.data());
-        if (count == 0) return;
-        std::array<int, 16> notes {};
-        int n = 0;
+        auto& c = channels[(size_t) channel];
+        if (kind == damp) { endStrings (channel, time); return; }
+        if (! c.voicing.valid()) return;
+        const auto& v = c.voicing;
+        std::array<bool, 6> use {};
+        int bassNote = -1, bassString = -1;
         switch (kind)
         {
-            case bassOnly:   notes[0] = chord[0]; n = 1; break;
-            case pickString: notes[0] = chord[(size_t) juce::jlimit (0, count - 1, string)]; n = 1; break;
+            case bassOnly: bassNote = v.notes[(size_t) v.bassString]; bassString = v.bassString; break;
+            case bassTwo:  bassNote = v.bassTwo; bassString = v.bassTwoString; break;
+            case pickString:
+            {
+                int k = 0;   // the string-th string of the chord, from its lowest
+                for (int i = 0; i < 6; ++i)
+                    if (v.notes[(size_t) i] >= 0 && k++ == juce::jlimit (0, 5, string)) use[(size_t) i] = true;
+                break;
+            }
             case highDown: case highUp:
-                for (int i = juce::jmax (0, count - 3); i < count; ++i) notes[(size_t) n++] = chord[(size_t) i];
+                for (int i = 3; i < 6; ++i) use[(size_t) i] = true;
                 break;
             default:
-                for (int i = 0; i < count; ++i) notes[(size_t) n++] = chord[(size_t) i];
+                for (int i = 0; i < 6; ++i) use[(size_t) i] = true;
         }
-        auto strokeSettings = s;
-        strokeSettings.direction = (kind == strokeUp || kind == mutedUp || kind == highUp) ? up : down;
-        if (strokeSettings.strumMs <= 0.0f) strokeSettings.strumMs = 18.0f;   // a pick takes time to cross the strings
-        const bool muted = kind == mutedDown || kind == mutedUp;
-        if (muted)
+        if (bassString >= 0)
         {
-            strokeSettings.palm = juce::jmax (0.85f, s.palm);
-            velocity = juce::jmin (velocity, palmVelocity - 1);   // muted strokes are palm-muted
+            playOnStrings (s, channel, { bassNote }, { bassString }, velocity, time, false, false, false);
+            return;
         }
-        auto& ringing = ringingNotes[(size_t) channel];
-        const auto* group = startGroupWith (strokeSettings, channel, nullptr, 0, notes.data(), n, velocity, time, n > 1);
-        ringing.count = n;
-        ringing.doubled = s.doubleMix > 0.0f;
-        for (int i = 0; i < group->outputCount; ++i)
-        {
-            ringing.notes[(size_t) i] = group->outputs[(size_t) i];
-            ringing.onsets[(size_t) i] = group->onsets[(size_t) i];
-        }
-        ringing.count = group->outputCount;
+        strum (s, channel, use, velocity, time, kind == strokeUp || kind == mutedUp || kind == highUp, kind == mutedDown || kind == mutedUp);
     }
 
-    // Key Chords: the chord a key plays in the chosen key. A note of the scale: the chord the
-    // scale builds on it (a triad, or a seventh chord); any other note: its major triad (a chord
-    // borrowed from outside the key, as Bb in C). Low to high, the key itself first.
-    static int keyChord (const Settings& s, int note, int* out)
+    // Plays notes now and lets them go `length` samples later (a drawn chord heard from the neck).
+    void audition (const Settings& s, int channel, const int* notes, int count, int velocity, juce::int64 time, juce::int64 length)
     {
-        static constexpr int majorScale[7] = { 0, 2, 4, 5, 7, 9, 11 };
-        static constexpr int minorScale[7] = { 0, 2, 3, 5, 7, 8, 10 };
-        const bool minor = s.keyScale == 1 || s.keyScale == 3;
-        const bool sevenths = s.keyScale >= 2;
-        const int* scale = minor ? minorScale : majorScale;
-        const int degreeOffset = ((note % 12) - s.keyRoot + 12) % 12;
-        int degree = -1;
-        for (int d = 0; d < 7; ++d) if (scale[d] == degreeOffset) degree = d;
-        if (degree < 0)   // outside the key: its major triad
-        {
-            out[0] = note; out[1] = note + 4; out[2] = note + 7;
-            return 3;
-        }
-        const int count = sevenths ? 4 : 3;
-        for (int i = 0; i < count; ++i)
-        {
-            const int step = degree + 2 * i;   // every other note of the scale: root, third, fifth, seventh
-            out[i] = note + scale[step % 7] + 12 * (step / 7) - scale[degree];
-        }
-        return count;
-    }
-
-    // The drawn shape's notes, low to high, moved so the lowest is `bassKey` (none if nothing drawn).
-    static int shapeNotes (const std::array<int, 6>& frets, int bassKey, int* out, const Tuning& strings = tunings[0], int firstString = 0)
-    {
-        int count = 0, lowest = 999;
-        for (size_t string = 0; string < 6; ++string)
-            if (frets[string] >= 0)
-                lowest = juce::jmin (lowest, strings[string] + frets[string]);
-        if (lowest == 999) return 0;
-        for (size_t string = (size_t) juce::jlimit (0, 5, firstString); string < 6; ++string)
-            if (frets[string] >= 0)
-            {
-                const int note = strings[string] + frets[string] + bassKey - lowest;
-                if (juce::isPositiveAndBelow (note, 128)) out[count++] = note;
-            }
-        std::sort (out, out + count);
-        return count;
+        auto* group = startGroupWith (s, channel, notes, count, velocity, time, true);
+        if (group != nullptr) endGroup (*group, time + length);
     }
 
     // A shape as six numbers packed in 30 bits (5 per string; 31: not played), so the editor can
@@ -539,6 +566,17 @@ public:
         return frets;
     }
 
+    // The drawn shape's notes, low to high (none if nothing drawn).
+    static int shapeNotes (const std::array<int, 6>& frets, int* out, const Tuning& strings = tunings[0])
+    {
+        int count = 0;
+        for (size_t string = 0; string < 6; ++string)
+            if (frets[string] >= 0 && juce::isPositiveAndBelow (strings[string] + frets[string], 128))
+                out[count++] = strings[string] + frets[string];
+        std::sort (out, out + count);
+        return count;
+    }
+
     // Where the notes lie on six strings for the neck picture: one note per string, strings
     // rising with the notes, frets (0-19) as close to `around` as possible. -1: string not played.
     // At most six notes (the lowest six).
@@ -549,7 +587,6 @@ public:
         count = juce::jmin (count, 6);
         if (count <= 0) return best;
         int bestCost = std::numeric_limits<int>::max();
-        // Every way to pick `count` rising strings (at most 6 choose 3 = 20 tries per size).
         for (int mask = 0; mask < (1 << 6); ++mask)
         {
             if (__builtin_popcount ((unsigned) mask) != count) continue;
@@ -569,83 +606,253 @@ public:
         return best;
     }
 
+    static bool isBlack (int note) { const int pc = note % 12; return pc == 1 || pc == 3 || pc == 6 || pc == 8 || pc == 10; }
+
 private:
-    // The chord hand (Strum Keys, Pattern) and the strings the last stroke left ringing.
-    struct Held
+    struct Keys
     {
         std::array<int, 16> keys {};
-        int count = 0, velocity = 100;
-        juce::int64 since = 0;
-    };
-    struct Ringing
-    {
-        std::array<juce::uint8, 16> notes {};
-        std::array<juce::int64, 16> onsets {};
         int count = 0;
+    };
+    static void addKey (Keys& k, int note)
+    {
+        for (int i = 0; i < k.count; ++i) if (k.keys[(size_t) i] == note) return;
+        if (k.count < (int) k.keys.size()) k.keys[(size_t) k.count++] = note;
+    }
+    static bool removeKey (Keys& k, int note)
+    {
+        for (int i = 0; i < k.count; ++i)
+            if (k.keys[(size_t) i] == note) { k.keys[(size_t) i] = k.keys[(size_t) --k.count]; return true; }
+        return false;
+    }
+
+    // A note ringing on a string until something else is played there, a damp, or the chord let go.
+    struct StringNote
+    {
+        int note = -1;
+        juce::int64 onset = 0;
         bool doubled = false;
     };
 
-    void hold (int channel, int note, int velocity, juce::int64 time)
+    struct Channel
     {
-        auto& held = chordsHeld[(size_t) channel];
-        if (held.count == 0) held.since = time;
-        if (held.count < (int) held.keys.size()) held.keys[(size_t) held.count++] = note;
-        held.velocity = velocity;
-    }
-
-    void endRinging (int channel, juce::int64 time)
-    {
-        auto& ringing = ringingNotes[(size_t) channel];
-        for (int i = 0; i < ringing.count; ++i)
-            scheduleOffs (channel, ringing.notes[(size_t) i], ringing.onsets[(size_t) i], time, ringing.doubled);
-        ringing = {};
-        // Strokes aren't tied to keys: their groups end with the ringing notes.
-        for (auto& group : groups)
-            if (group.used && group.channel == channel && group.inputCount == 0) group = {};
-    }
-
-    // The held chord as a guitarist would hold it: at the Fret knob's position, or the open
-    // position when it's off. With nothing held, the shape drawn on the neck where it was drawn.
-    int heldChord (const Settings& s, int channel, int* out) const
-    {
-        const auto& held = chordsHeld[(size_t) channel];
-        if (held.count == 0)
-        {
-            std::array<int, 16> notes {};
-            int lowest = 999;
-            const auto& tuning = tuningOf (s.tuning);
-            for (size_t i = 0; i < 6; ++i) if (s.shapeFrets[i] >= 0) lowest = juce::jmin (lowest, tuning[i] + s.shapeFrets[i]);
-            if (lowest == 999) return 0;
-            const int n = shapeNotes (s.shapeFrets, lowest, notes.data(), tuning, s.firstString);
-            std::copy (notes.begin(), notes.begin() + n, out);
-            return n;
-        }
-        std::array<int, 16> keys {};
-        std::copy (held.keys.begin(), held.keys.begin() + held.count, keys.begin());
-        std::sort (keys.begin(), keys.begin() + held.count);
-        return voice (keys.data(), held.count, s.fret, out, tuningOf (s.tuning), s.firstString);
-    }
-
-    std::array<Held, 16> chordsHeld {};
-    std::array<Ringing, 16> ringingNotes {};
-
-    struct Pending
-    {
-        std::array<juce::uint8, 16> keys {};
-        std::array<bool, 16> released {};
-        int count = 0, velocity = 0;
-        juce::int64 start = 0;
+        Keys down;               // Main zone keys held now
+        Keys taken;              // Main zone keys pressed while the chord gathers
+        int velocity = 100;
+        juce::int64 since = 0;   // when the chord was taken
+        juce::int64 triggerAt = -1;   // when the gathering window closes (-1: none)
+        bool releaseAfterTrigger = false, latched = false, chordMode = false, hold = false, patternRunning = false;
+        Voicing voicing;         // the chord held, as played
+        int lastChordMask = -1;  // Alter Bass: the previous chord, and whether its Bass II came last
+        bool lastWasBassTwo = false;
+        std::array<StringNote, 6> strings {};
+        std::array<int, 3> lastHarmony {};
+        int lastHarmonyCount = 0;
     };
 
-    // The notes started for one chord (or one solo note), ended when its last key is let go.
+    // The Main zone's chord: recognized, voiced and played as the mode says.
+    void triggerChord (const Settings& s, int channel, juce::int64 time)
+    {
+        auto& c = channels[(size_t) channel];
+        Keys keys = c.down;
+        for (int i = 0; i < c.taken.count; ++i) addKey (keys, c.taken.keys[(size_t) i]);
+        if (keys.count == 0) return;
+        std::sort (keys.keys.begin(), keys.keys.begin() + keys.count);
+        const auto chord = recognize (keys.keys.data(), keys.count, s.chordBass);
+        c.voicing = voiceChord (chord, s.position, keys.keys[(size_t) keys.count - 1], tuningOf (s.tuning));
+        if (s.pattern && ! c.patternRunning) { c.since = time; c.patternRunning = true; }   // the rhythm starts with the chord
+        if (! c.voicing.valid() || s.pattern) { showVoicing (c.voicing, false, false); return; }
+        const int velocity = c.velocity;
+        if (s.mode == chords)
+        {
+            std::array<bool, 6> use {};
+            for (int i = 0; i < 6; ++i) use[(size_t) i] = 6 - i >= s.topString && 6 - i <= s.bottomString;
+            bool goingUp = s.direction == up || (s.direction == alternate && nextUp);
+            if (s.direction == alternate) nextUp = ! nextUp;
+            strum (s, channel, use, velocity, time, goingUp, false);
+            return;
+        }
+        // Bass & Chord, Bass & Pick: the bass alone (Alter Bass: the same chord again, the fifth).
+        const int mask = c.voicing.chord.mask | (c.voicing.chord.bass << 12);
+        const bool second = s.alterBass && mask == c.lastChordMask && ! c.lastWasBassTwo;
+        c.lastChordMask = mask;
+        c.lastWasBassTwo = second;
+        endStrings (channel, time);   // a new chord: the strings change
+        playBass (s, channel, second, velocity, time);
+        showVoicing (c.voicing, false, false);
+    }
+
+    void playBass (const Settings& s, int channel, bool second, int velocity, juce::int64 time)
+    {
+        auto& c = channels[(size_t) channel];
+        const auto& v = c.voicing;
+        const int note = second ? v.bassTwo : v.notes[(size_t) v.bassString];
+        const int string = second ? v.bassTwoString : v.bassString;
+        if (s.bassMono && second) endString (channel, v.bassString, time);
+        playOnStrings (s, channel, { note }, { string }, velocity, time, false, false, false);
+    }
+
+    // A Repeat key in a chord mode.
+    void repeatKey (const Settings& s, int channel, int note, int velocity, juce::int64 time)
+    {
+        auto& c = channels[(size_t) channel];
+        if (! c.voicing.valid()) return;
+        // White keys strum (C, E, G up; D, F, A, B down); black keys strum muted (C#, F#, A# up;
+        // D#, G# down).
+        static constexpr bool upByClass[12] = { true, true, false, false, true, false, true, true, false, false, true, false };
+        const bool goingUp = upByClass[note % 12], muted = isBlack (note);
+        std::array<bool, 6> use {};
+        if (s.mode == chords)
+        {
+            for (int i = 0; i < 6; ++i) use[(size_t) i] = 6 - i >= s.topString && 6 - i <= s.bottomString;
+            strum (s, channel, use, velocity, time, goingUp, muted);
+            return;
+        }
+        if (s.mode == bassAndChord)
+        {
+            if (note == 84) { playBass (s, channel, false, velocity, time); return; }
+            if (note == 86) { playBass (s, channel, true, velocity, time); return; }
+            for (int i = 6 - juce::jlimit (1, 6, s.repeatStrings); i < 6; ++i) use[(size_t) i] = true;
+            strum (s, channel, use, velocity, time, goingUp, muted);
+            return;
+        }
+        // Bass & Pick: the right zone's keys pick strings, the left zone strums the four upper ones.
+        if (inLeftRepeat (note))
+        {
+            for (int i = 2; i < 6; ++i) use[(size_t) i] = true;
+            strum (s, channel, use, velocity, time, goingUp, muted);
+            return;
+        }
+        int target = -1, shift = 0;   // -2: Bass I, -3: Bass II, else a string index (0 the low E)
+        switch (note)
+        {
+            case 84: target = -2; break;
+            case 86: target = -3; break;
+            case 88: target = 2; break;   // the 4th string (D)
+            case 89: target = 3; break;   // the 3rd (G)
+            case 91: target = 4; break;   // the 2nd (B)
+            case 93: target = 5; break;   // the 1st (high E)
+            default:
+                if (s.addOn == 1)   // Unison: the black keys double the strings
+                    target = note == 85 ? -3 : note == 87 ? 2 : note == 90 ? 4 : (note == 92 || note >= 94) ? 5 : -1;
+                else if (s.addOn == 2)   // Chromatic: a semitone below, the top keys above the 1st string
+                {
+                    if (note == 85) { target = -3; shift = -1; }
+                    else if (note == 87) { target = 2; shift = -1; }
+                    else if (note == 90) { target = 4; shift = -1; }
+                    else if (note == 92) { target = 5; shift = -1; }
+                    else if (note >= 94) { target = 5; shift = note - 93; }
+                }
+        }
+        if (target == -1) return;
+        if (target == -2) { playBass (s, channel, false, velocity, time); return; }
+        const auto& v = c.voicing;
+        int string = target == -3 ? v.bassTwoString : target;
+        int pitch = target == -3 ? v.bassTwo : v.notes[(size_t) string];
+        if (pitch < 0) return;
+        if (target == -3 && s.bassMono) endString (channel, v.bassString, time);
+        playOnStrings (s, channel, { pitch + shift }, { string }, velocity, time, false, false, false);
+    }
+
+    // Strums the chord on the strings `use` marks, low to high (or high to low).
+    void strum (const Settings& s, int channel, const std::array<bool, 6>& use, int velocity, juce::int64 time, bool goingUp, bool muted)
+    {
+        const auto& v = channels[(size_t) channel].voicing;
+        std::array<int, 6> notes {}, strings {};
+        int n = 0;
+        for (int i = 0; i < 6; ++i)
+            if (use[(size_t) i] && v.notes[(size_t) i] >= 0) { notes[(size_t) n] = v.notes[(size_t) i]; strings[(size_t) n++] = i; }
+        if (n == 0) return;
+        playOnStrings (s, channel, { notes.data(), n }, { strings.data(), n }, velocity, time, true, goingUp, muted);
+        showVoicing (v, goingUp, true);
+        last.palm = muted;
+    }
+
+    struct Span
+    {
+        Span (std::initializer_list<int> l) { for (int x : l) values[(size_t) count++] = x; }
+        Span (const int* p, int n) { count = juce::jmin (n, 6); std::copy (p, p + count, values.begin()); }
+        std::array<int, 6> values {};
+        int count = 0;
+    };
+
+    // Notes on their strings, each stopping what rang there; they ring until stopped in turn.
+    void playOnStrings (const Settings& s, int channel, Span notes, Span strings, int velocity, juce::int64 time,
+                        bool strummed, bool goingUp, bool muted)
+    {
+        for (int i = 0; i < strings.count; ++i) endString (channel, strings.values[(size_t) i], time);
+        auto stroke = s;
+        stroke.direction = goingUp ? up : down;
+        if (strummed && stroke.strumMs <= 0.0f) stroke.strumMs = 18.0f;   // a pick takes time to cross the strings
+        if (muted)
+        {
+            stroke.palm = juce::jmax (0.85f, s.palm);
+            velocity = juce::jmin (velocity, palmVelocity - 1);   // muted strokes are palm-muted
+        }
+        auto* group = startGroupWith (stroke, channel, notes.values.data(), notes.count, velocity, time, strummed && notes.count > 1);
+        if (group == nullptr) return;
+        auto& c = channels[(size_t) channel];
+        for (int i = 0; i < group->outputCount; ++i)
+        {
+            // The outputs follow the strum's order; find each one's string.
+            for (int k = 0; k < notes.count; ++k)
+                if (notes.values[(size_t) k] == group->outputs[(size_t) i])
+                {
+                    c.strings[(size_t) strings.values[(size_t) k]] = { group->outputs[(size_t) i], group->onsets[(size_t) i], group->doubled };
+                    break;
+                }
+        }
+        *group = {};   // strings ring on their own, not tied to a key
+    }
+
+    void endString (int channel, int string, juce::int64 time)
+    {
+        if (string < 0 || string > 5) return;
+        auto& note = channels[(size_t) channel].strings[(size_t) string];
+        if (note.note >= 0) scheduleOffs (channel, note.note, note.onset, time, note.doubled);
+        note = {};
+    }
+
+    void endStrings (int channel, juce::int64 time)
+    {
+        for (int string = 0; string < 6; ++string) endString (channel, string, time);
+    }
+
+    void showVoicing (const Voicing& v, bool goingUp, bool strummed)
+    {
+        last.count = 0;
+        for (int n : v.notes) if (n >= 0) last.notes[(size_t) last.count++] = n;
+        last.up = goingUp;
+        last.strummed = strummed;
+        last.palm = false;
+        ++last.sequence;
+    }
+
+    // Notes tied to a key (Solo, Harmony, the zones' outside): they end when it's let go.
+    struct Group;
+    Group* playKeyed (const Settings& s, int channel, int key, const int* notes, int count, int velocity, juce::int64 time,
+                      bool strummed, bool muted = false)
+    {
+        auto settings = s;
+        if (muted)
+        {
+            settings.palm = juce::jmax (0.6f, s.palm);
+            velocity = juce::jmin (velocity, palmVelocity - 1);
+        }
+        auto* group = startGroupWith (settings, channel, notes, count, velocity, time, strummed);
+        if (group != nullptr) group->key = key;
+        return group;
+    }
+
     struct Group
     {
         bool used = false;
         int channel = 0;
-        std::array<juce::uint8, 16> inputs {}, outputs {};
-        std::array<bool, 16> held {};
+        int key = -1;            // the key that ends it (-1: none)
+        bool harmony = false;
+        std::array<juce::uint8, 16> outputs {};
         std::array<juce::int64, 16> onsets {};   // when each output starts (strummed: later and later)
-        int inputCount = 0, outputCount = 0, heldCount = 0;
+        int outputCount = 0;
         bool doubled = false;
     };
 
@@ -671,9 +878,9 @@ private:
     }
 
     // Starts the notes of a chord (or one note), strummed and humanized.
-    Group* startGroupWith (const Settings& s, int channel, const int* inputs, int inputCount, const int* outputs,
-                           int outputCount, int velocity, juce::int64 time, bool strum)
+    Group* startGroupWith (const Settings& s, int channel, const int* outputs, int outputCount, int velocity, juce::int64 time, bool strum)
     {
+        if (outputCount <= 0) return nullptr;
         Group* group = nullptr;
         for (auto& g : groups) if (! g.used) { group = &g; break; }
         if (group == nullptr)   // all in use (keys never let go): end one, never drop its notes
@@ -684,13 +891,6 @@ private:
         *group = {};
         group->used = true;
         group->channel = channel;
-        group->inputCount = inputs == nullptr ? 0 : juce::jmin (inputCount, 16);
-        for (int i = 0; i < group->inputCount; ++i)
-        {
-            group->inputs[(size_t) i] = (juce::uint8) inputs[i];
-            group->held[(size_t) i] = true;
-        }
-        group->heldCount = group->inputCount;
         // Velocity → strings: a soft strum catches the high strings only, a hard one all of them.
         if (s.velocityStrings && strum && outputCount > 3)
         {
@@ -705,11 +905,11 @@ private:
         std::sort (last.notes.begin(), last.notes.begin() + last.count);
 
         // Order: a down strum goes low to high, an up strum high to low.
-        bool goingUp = s.direction == up || (s.direction == alternate && nextUp);
-        if (s.direction == alternate && strum) nextUp = ! nextUp;
+        const bool goingUp = s.direction == up;
         auto strumTotal = strum ? samples (s.strumMs) : 0;
-        if (strum && s.slowBelow > 0 && velocity < s.slowBelow)   // a soft stroke: slower
-            strumTotal = juce::jmax (strumTotal, samples (s.slowMs));
+        // Velocity Switch FX: a slow strum above (or below) its velocity.
+        if (strum && ((s.velocityFx == slowStrumHigh && velocity > s.fxVelocity) || (s.velocityFx == slowStrumLow && velocity < s.fxVelocity)))
+            strumTotal = juce::jmax (strumTotal, samples (s.fxTimeMs));
         const bool palm = s.palm > 0.0f && velocity < palmVelocity;
         last.up = goingUp;
         last.strummed = strum && strumTotal > 0 && group->outputCount > 1;
@@ -720,11 +920,9 @@ private:
         {
             const int index = goingUp ? n - 1 - i : i;
             const int note = outputs[index];
-            group->outputs[(size_t) i] = (juce::uint8) note;
+            group->outputs[(size_t) i] = (juce::uint8) juce::jlimit (0, 127, note);
             juce::int64 at = time;
-            if (s.mode == bassAndPick && strum && n > 1)
-                at += i == 0 ? 0 : samples (juce::jmax (s.strumMs, 25.0f)) + (strumTotal * (i - 1)) / juce::jmax (1, n - 2);
-            else if (n > 1)
+            if (n > 1)
                 at += (strumTotal * i) / (n - 1);
             int vel = velocity;
             juce::int8 detune = 0;
@@ -736,25 +934,24 @@ private:
             }
             const auto velocityByte = (juce::uint8) juce::jlimit (1, 127, vel);
             const auto palmOff = samples (juce::jmap (s.palm, 600.0f, 70.0f));
+            const auto pitch = group->outputs[(size_t) i];
             group->onsets[(size_t) i] = at;
-            schedule ({ at, (juce::uint8) channel, (juce::uint8) note, velocityByte, detune, palm, false });
+            schedule ({ at, (juce::uint8) channel, pitch, velocityByte, detune, palm, false });
             // Palm mute: the string is stopped by the hand soon after it's struck (dropped if the
             // same pitch is struck again before then).
             if (palm)
-                schedule ({ at + palmOff, (juce::uint8) channel, (juce::uint8) note, 0, 0, false, false, at });
+                schedule ({ at + palmOff, (juce::uint8) channel, pitch, 0, 0, false, false, at });
             if (s.doubleMix > 0.0f)
             {
                 const auto twin = at + samples (doubleDelayMs);
-                schedule ({ twin, (juce::uint8) channel, (juce::uint8) note, velocityByte,
-                            (juce::int8) (detune + doubleDetuneCents), palm, true });
+                schedule ({ twin, (juce::uint8) channel, pitch, velocityByte, (juce::int8) (detune + doubleDetuneCents), palm, true });
                 if (palm)
-                    schedule ({ twin + palmOff, (juce::uint8) channel, (juce::uint8) note, 0, 0, false, true, twin });
+                    schedule ({ twin + palmOff, (juce::uint8) channel, pitch, 0, 0, false, true, twin });
             }
         }
         return group;
     }
 
-private:
     void endGroup (Group& group, juce::int64 time)
     {
         for (int i = 0; i < group.outputCount; ++i)
@@ -768,7 +965,7 @@ private:
     // When each pitch last started, per channel (16-31: the Double's twins): stale offs are dropped.
     std::array<std::array<juce::int64, 128>, 32> lastOnTime {};
     int nextVictim = 0;
-    std::array<Pending, 16> chordsPending {};
+    std::array<Channel, 16> channels {};
     std::array<Group, 64> groups {};
     bool nextUp = false;
     LastPlayed last;

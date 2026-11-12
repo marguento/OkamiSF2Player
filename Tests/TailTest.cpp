@@ -23,15 +23,14 @@ struct EditorTestAccess
     static void guide (SF2PlayerEditor& editor, int page) { editor.openGuide ((Guide::Page) page); }
     static void hint (SF2PlayerEditor& editor, const juce::String& text) { editor.hintLabel.setText (text, juce::dontSendNotification); }
 
-    // The neck as after a C major chord strummed down at the 3rd fret.
+    // The neck as after a C major chord strummed down in the first position.
     static void showChord (SF2PlayerEditor& editor)
     {
         const int keys[] = { 60, 64, 67 };
-        int voiced[16] = {};
-        const int n = GuitarEngine::voice (keys, 3, 3, voiced);
-        int classes = 0;
-        for (int i = 0; i < n; ++i) classes |= 1 << (voiced[i] % 12);
-        editor.neck.show (voiced, n, classes, voiced[0] % 12, false, true, false, 3);
+        const auto v = GuitarEngine::voiceChord (GuitarEngine::recognize (keys, 3, false), 0, 67, GuitarEngine::tunings[0]);
+        int voiced[6] = {}, n = 0, classes = 0;
+        for (int note : v.notes) if (note >= 0) { voiced[n++] = note; classes |= 1 << (note % 12); }
+        editor.neck.show (voiced, n, classes, voiced[0] % 12, false, true, false, 1);
     }
 };
 
@@ -142,16 +141,21 @@ int main (int argc, char** argv)
             auto* parameter = p.parameters.getParameter ("layerMode");
             parameter->setValueNotifyingHost (parameter->convertTo0to1 ((float) std::atoi (layer)));
         }
-        if (const char* mode = std::getenv ("MODE"))   // the Guitar panel's mode, by index (5: Pattern)
+        if (const char* mode = std::getenv ("MODE"))   // the Guitar panel's mode, by index (Direct off)
+        {
             p.parameters.getParameter ("guitarMode")->setValueNotifyingHost (
                 p.parameters.getParameter ("guitarMode")->convertTo0to1 ((float) std::atoi (mode)));
-        if (const char* shape = std::getenv ("SHAPE"))   // "-1,3,2,0,1,0": that chord drawn, Shape mode
+            p.parameters.getParameter ("guitarDirect")->setValueNotifyingHost (0.0f);
+        }
+        if (std::getenv ("PATTERN") != nullptr) p.parameters.getParameter ("guitarPattern")->setValueNotifyingHost (1.0f);
+        if (const char* fx = std::getenv ("VFX"))
+            p.parameters.getParameter ("velocityFx")->setValueNotifyingHost (p.parameters.getParameter ("velocityFx")->convertTo0to1 ((float) std::atoi (fx)));
+        if (const char* shape = std::getenv ("SHAPE"))   // "-1,3,2,0,1,0": that chord drawn
         {
             std::array<int, 6> frets {};
             const auto parts = juce::StringArray::fromTokens (shape, ",", "");
             for (int i = 0; i < 6; ++i) frets[(size_t) i] = parts[i].getIntValue();
             p.setGuitarShape (frets);
-            p.parameters.getParameter ("guitarMode")->setValueNotifyingHost (p.parameters.getParameter ("guitarMode")->convertTo0to1 (3.0f));
         }
         std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
         if (std::getenv ("CHORD") != nullptr)

@@ -830,47 +830,267 @@ int main()
         const auto placed = GuitarEngine::placeOnStrings (cShape, 5, 3);
         expect (placed == std::array<int, 6> { -1, 3, 5, 5, 5, 3 }, "Guitar: the neck places a voiced chord on its strings");
 
-        // Shape mode: the drawn open C shape (x32010) played from a D key comes out as D major.
+        // A drawn shape's notes, kept through packing.
         {
             const std::array<int, 6> openC { -1, 3, 2, 0, 1, 0 };
-            int moved[6] = {};
-            const int n = GuitarEngine::shapeNotes (openC, 50, moved);
-            expect (std::vector<int> (moved, moved + n) == std::vector<int> { 50, 54, 57, 62, 66 }
+            int notes[6] = {};
+            const int n = GuitarEngine::shapeNotes (openC, notes);
+            expect (std::vector<int> (notes, notes + n) == std::vector<int> { 48, 52, 55, 60, 64 }
                         && GuitarEngine::unpackShape (GuitarEngine::packShape (openC)) == openC,
-                    "Guitar: a drawn shape is played from any key (and kept through packing)");
+                    "Guitar: a drawn shape gives its notes (and is kept through packing)");
         }
 
-        // Strum Keys: the chord hand is silent; C strums down the open C, D up, a black key damps.
+        // Every guitar test below plays the engine directly: these collect what it sends.
+        struct Heard { std::vector<std::pair<juce::int64, int>> ons; int offs = 0; bool palm = false; };
+        auto drain = [] (GuitarEngine& g, juce::int64 until)
         {
-            GuitarEngine keys;
-            keys.prepare (rate);
-            GuitarEngine::Settings ks;
-            ks.mode = GuitarEngine::strumKeys;
-            for (int key : { 48, 52, 55 }) keys.noteOn (ks, 0, key, 100, 0);
+            Heard h;
             GuitarEngine::Event ev;
-            const bool silent = ! keys.pop ((juce::int64) rate, ev);
-            keys.noteOn (ks, 0, 60, 100, 1000);   // C: down
-            std::vector<int> down;
-            while (keys.pop ((juce::int64) rate, ev)) if (ev.velocity > 0) down.push_back (ev.note);
-            keys.noteOn (ks, 0, 62, 90, 30000);   // D: up
-            std::vector<std::pair<juce::int64, int>> up;
-            int ended = 0;
-            while (keys.pop ((juce::int64) rate * 2, ev)) { if (ev.velocity > 0) up.push_back ({ ev.time, ev.note }); else ++ended; }
-            std::sort (up.begin(), up.end());
-            keys.noteOn (ks, 0, 61, 90, 60000);   // a black key: damp
-            int damped = 0, started = 0;
-            while (keys.pop ((juce::int64) rate * 2, ev)) (ev.velocity > 0 ? started : damped)++;
-            const bool ok = silent && down == std::vector<int> { 48, 52, 55, 60, 64 } && up.size() == 5 && up.front().second == 64
-                         && ended == 5 && damped == 5 && started == 0;
-            expect (ok, "Strum Keys: the chord is held silently, C strums down the open chord, D up, a black key damps",
-                    juce::String ((int) down.size()) + " down, " + juce::String ((int) up.size()) + " up");
+            while (g.pop (until, ev))
+            {
+                if (ev.velocity > 0) { h.ons.push_back ({ ev.time, ev.note }); h.palm = h.palm || ev.palmMuted; }
+                else ++h.offs;
+            }
+            std::sort (h.ons.begin(), h.ons.end());
+            return h;
+        };
+        auto notesOf = [] (const Heard& h) { std::vector<int> n; for (auto [t, note] : h.ons) n.push_back (note); std::sort (n.begin(), n.end()); return n; };
+        const auto second = (juce::int64) rate;
+        auto chordSettings = [] (int mode) { GuitarEngine::Settings s; s.direct = false; s.mode = mode; return s; };
+        auto take = [&] (GuitarEngine& g, const GuitarEngine::Settings& s, std::initializer_list<int> keys, juce::int64 at, int velocity = 100)
+        {
+            for (int key : keys) g.noteOn (s, 0, key, velocity, at);
+            g.advance (s, at + second / 2);
+        };
+
+        // Chords are recognized like a guitarist reads them: C E G and E G C are C; one key is its
+        // major chord; added keys change it (C + Eb: Cm, C + Bb: C7); Chord/Bass keeps a triad's own
+        // bass (G A C E: Am/G).
+        {
+            auto chord = [] (std::vector<int> keys, bool chordBass = false) { return GuitarEngine::recognize (keys.data(), (int) keys.size(), chordBass); };
+            auto is = [] (GuitarEngine::Chord c, std::initializer_list<int> pcs, int root, int bass)
+            {
+                int mask = 0;
+                for (int pc : pcs) mask |= 1 << pc;
+                return c.mask == mask && c.root == root && c.bass == bass;
+            };
+            const bool ok = is (chord ({ 60, 64, 67 }), { 0, 4, 7 }, 0, 0) && is (chord ({ 52, 55, 60 }), { 0, 4, 7 }, 0, 0)
+                         && is (chord ({ 60 }), { 0, 4, 7 }, 0, 0) && is (chord ({ 60, 63 }), { 0, 3, 7 }, 0, 0)
+                         && is (chord ({ 60, 70 }), { 0, 4, 7, 10 }, 0, 0) && is (chord ({ 43, 57, 60, 64 }, true), { 7, 9, 0, 4 }, 9, 7);
+            expect (ok, "Guitar: chords are recognized (inversions, one key, partial chords, Chord/Bass)");
+        }
+
+        // Chord Position: C in position I is the open C (x32010), its second bass the low G; a D
+        // in Drop D takes the low D string; positions III and IV put the top note higher.
+        {
+            const int c[] = { 60, 64, 67 }, d[] = { 50, 54, 57 };
+            const auto cChord = GuitarEngine::recognize (c, 3, false);
+            const auto open = GuitarEngine::voiceChord (cChord, 0, 67, GuitarEngine::tunings[0]);
+            const auto dropD = GuitarEngine::voiceChord (GuitarEngine::recognize (d, 3, false), 0, 57, GuitarEngine::tunings[1]);
+            const auto third = GuitarEngine::voiceChord (cChord, 2, 67, GuitarEngine::tunings[0]);
+            const auto fourth = GuitarEngine::voiceChord (cChord, 3, 67, GuitarEngine::tunings[0]);
+            const bool ok = open.notes == std::array<int, 6> { -1, 48, 52, 55, 60, 64 } && open.bassTwo == 43
+                         && dropD.notes == std::array<int, 6> { 38, 45, 50, 57, 62, 66 }
+                         && third.top() >= 70 && third.top() <= 74 && fourth.top() >= 73 && fourth.top() <= 77;
+            expect (ok, "Guitar: Chord Position places the voicing (I: open C, its second bass G; Drop D's low D; III and IV higher)",
+                    juce::String (third.top()) + ", " + juce::String (fourth.top()));
+        }
+
+        // Chords: the Main zone's chord is strummed down, low to high over the strum time, after the
+        // gathering window; letting go ends every string.
+        {
+            GuitarEngine g;
+            g.prepare (rate);
+            auto s = chordSettings (GuitarEngine::chords);
+            s.strumMs = 40;
+            take (g, s, { 67, 60, 64 }, 0);
+            const auto h = drain (g, second);
+            const auto window = (juce::int64) (GuitarEngine::chordWindowMs * 0.001 * rate);
+            const bool timing = h.ons.size() == 5 && h.ons.front() == std::pair<juce::int64, int> { window, 48 }
+                             && h.ons.back() == std::pair<juce::int64, int> { window + 1920, 64 };
+            for (int key : { 60, 64, 67 }) g.noteOff (0, key, second);
+            const auto after = drain (g, second * 2);
+            expect (timing && after.offs == 5 && ! g.hasWork(), "Chords: the chord is strummed low to high over the strum time; letting go ends it",
+                    juce::String ((int) h.ons.size()) + " notes, " + juce::String (after.offs) + " offs");
+        }
+
+        // Repeat keys: C5 strums up (the high E first), C#5 a muted up strum, D5 down; C1 too.
+        {
+            GuitarEngine g;
+            g.prepare (rate);
+            auto s = chordSettings (GuitarEngine::chords);
+            take (g, s, { 60, 64, 67 }, 0);
+            drain (g, second);
+            g.noteOn (s, 0, 84, 100, second);
+            const auto up = drain (g, second * 2);
+            g.noteOn (s, 0, 85, 100, second * 2);
+            const auto muted = drain (g, second * 3);
+            g.noteOn (s, 0, 38, 100, second * 3);
+            const auto down = drain (g, second * 4);
+            const bool ok = up.ons.size() == 5 && up.ons.front().second == 64 && ! up.palm && muted.palm && muted.ons.size() == 5
+                         && down.ons.size() == 5 && down.ons.front().second == 48;
+            expect (ok, "Chords: the Repeat keys strum the chord again (white up or down, black muted)");
+        }
+
+        // Strings: from the 1st to the 4th, the low strings stay silent. Velocity strings: a soft
+        // chord catches the three high strings. Slow Strum on Lower Velo: a soft chord is slow.
+        {
+            GuitarEngine g;
+            g.prepare (rate);
+            auto s = chordSettings (GuitarEngine::chords);
+            s.bottomString = 4;
+            take (g, s, { 60, 64, 67 }, 0);
+            const bool strings = notesOf (drain (g, second)) == std::vector<int> { 52, 55, 60, 64 };
+            g.reset();
+            auto v = chordSettings (GuitarEngine::chords);
+            v.velocityStrings = true;
+            take (g, v, { 60, 64, 67 }, 0, 30);
+            const bool soft = notesOf (drain (g, second)) == std::vector<int> { 55, 60, 64 };
+            g.reset();
+            auto f = chordSettings (GuitarEngine::chords);
+            f.velocityFx = GuitarEngine::slowStrumLow;
+            f.fxVelocity = 60;
+            f.fxTimeMs = 200.0f;
+            take (g, f, { 60, 64, 67 }, 0, 40);
+            const auto slow = drain (g, second);
+            const double spread = (double) (slow.ons.back().first - slow.ons.front().first) * 1000.0 / rate;
+            expect (strings && soft && spread >= 190.0, "Chords: Strings limits the strings; Velocity strings and a slow soft strum",
+                    juce::String (spread, 0) + " ms");
+        }
+
+        // Bass & Chord: the chord plays its bass; D5 the second bass, E5 the upper strings;
+        // Alter Bass: the same chord again plays the second bass.
+        {
+            GuitarEngine g;
+            g.prepare (rate);
+            auto s = chordSettings (GuitarEngine::bassAndChord);
+            s.alterBass = true;
+            take (g, s, { 60, 64, 67 }, 0);
+            const auto bass = notesOf (drain (g, second));
+            g.noteOn (s, 0, 86, 100, second);
+            const auto two = notesOf (drain (g, second * 2));
+            g.noteOn (s, 0, 88, 100, second * 2);
+            const auto upper = notesOf (drain (g, second * 3));
+            for (int key : { 60, 64, 67 }) g.noteOff (0, key, second * 3);
+            take (g, s, { 60, 64, 67 }, second * 4);
+            const auto again = notesOf (drain (g, second * 5));
+            expect (bass == std::vector<int> { 48 } && two == std::vector<int> { 43 } && upper == std::vector<int> { 52, 55, 60, 64 }
+                        && again == std::vector<int> { 43 },
+                    "Bass & Chord: the bass, D5 the second bass, the other keys the upper strings; Alter Bass alternates");
+        }
+
+        // Bass & Pick: A5 the 1st string, G5 the 2nd, E5 the 4th; Chromatic: G#5 a semitone below the 1st.
+        {
+            GuitarEngine g;
+            g.prepare (rate);
+            auto s = chordSettings (GuitarEngine::bassAndPick);
+            s.addOn = 2;
+            take (g, s, { 60, 64, 67 }, 0);
+            drain (g, second);
+            std::vector<int> picked;
+            int at = 1;
+            for (int key : { 93, 91, 88, 92 })
+            {
+                g.noteOn (s, 0, key, 100, second * at);
+                for (int n : notesOf (drain (g, second * ++at))) picked.push_back (n);
+            }
+            expect (picked == std::vector<int> { 64, 60, 52, 63 }, "Bass & Pick: the string keys pick the chord's strings (and Chromatic's)");
+        }
+
+        // Harmony: one voice at a time with its interval (an octave up); C5 repeats it. Solo: C5
+        // repeats the notes held; Velo Mute mutes soft notes.
+        {
+            GuitarEngine g;
+            g.prepare (rate);
+            auto h = chordSettings (GuitarEngine::harmony);
+            g.noteOn (h, 0, 60, 100, 0);
+            const auto first = notesOf (drain (g, second));
+            g.noteOn (h, 0, 62, 100, second);
+            const auto next = drain (g, second * 2);
+            g.noteOn (h, 0, 84, 100, second * 2);
+            const auto repeated = notesOf (drain (g, second * 3));
+            g.reset();
+            auto s = chordSettings (GuitarEngine::solo);
+            s.velocityFx = GuitarEngine::veloMute;
+            s.fxVelocity = 80;
+            g.noteOn (s, 0, 60, 100, 0);
+            g.noteOn (s, 0, 64, 100, 0);
+            const auto loud = drain (g, second);
+            g.noteOn (s, 0, 84, 100, second);
+            const auto again = notesOf (drain (g, second * 2));
+            g.noteOn (s, 0, 67, 40, second * 2);
+            const auto soft = drain (g, second * 3);
+            expect (first == std::vector<int> { 60, 72 } && notesOf (next) == std::vector<int> { 62, 74 } && next.offs == 2
+                        && repeated == std::vector<int> { 62, 74 } && ! loud.palm && again == std::vector<int> { 60, 64 } && soft.palm,
+                    "Harmony plays its interval one voice at a time; Solo's Repeat keys and Velo Mute");
+        }
+
+        // Hold: the chord rings after the keys are let go, until the next chord.
+        {
+            GuitarEngine g;
+            g.prepare (rate);
+            auto s = chordSettings (GuitarEngine::chords);
+            s.hold = true;
+            take (g, s, { 60, 64, 67 }, 0);
+            for (int key : { 60, 64, 67 }) g.noteOff (0, key, second);
+            g.advance (s, second * 2);
+            const auto held = drain (g, second * 2);
+            take (g, s, { 62, 66, 69 }, second * 2);
+            const auto next = drain (g, second * 3);
+            expect (held.offs == 0 && next.offs >= 5, "Hold: the chord rings after the keys are let go, until the next one");
+        }
+
+        // Outside the zones, notes play as they are.
+        {
+            GuitarEngine g;
+            g.prepare (rate);
+            auto s = chordSettings (GuitarEngine::chords);
+            g.noteOn (s, 0, 100, 100, 0);
+            expect (notesOf (drain (g, second)) == std::vector<int> { 100 }, "Guitar: notes outside the zones play as they are");
+        }
+
+        // A release in the middle of a slow strum still ends the late strings, and a palm-mute off
+        // never cuts the same pitch struck again.
+        {
+            GuitarEngine g;
+            g.prepare (rate);
+            auto slow = chordSettings (GuitarEngine::chords);
+            slow.strumMs = 200;
+            for (int key : { 60, 64, 67 }) g.noteOn (slow, 0, key, 100, 0);
+            g.advance (slow, 1000);
+            for (int key : { 60, 64, 67 }) g.noteOff (0, key, 1000);   // let go right after the strum starts
+            std::map<int, int> sounding;
+            GuitarEngine::Event ev;
+            while (g.pop (second * 2, ev)) sounding[ev.note] += ev.velocity > 0 ? 1 : -1;
+            bool allEnded = true;
+            for (auto [note, count] : sounding) allEnded = allEnded && count == 0;
+            expect (allEnded && sounding.size() == 5, "Guitar: letting go mid-strum ends every string, the late ones too");
+
+            GuitarEngine p;
+            p.prepare (rate);
+            auto palm = chordSettings (GuitarEngine::solo);
+            palm.palm = 0.2f;   // a long palm cut (about 500 ms)
+            p.noteOn (palm, 0, 60, 30, 0);       // soft: palm-muted, its off scheduled ahead
+            p.noteOff (0, 60, 100);
+            p.noteOn (palm, 0, 60, 120, 2000);   // the same pitch, hard, before that off
+            std::vector<std::pair<juce::int64, int>> order;
+            while (p.pop (second * 2, ev)) order.push_back ({ ev.time, ev.velocity });
+            int ons = 0, offsAfterSecond = 0;
+            for (auto [time, velocity] : order)
+            {
+                if (velocity > 0) ++ons;
+                else if (ons == 2) ++offsAfterSecond;
+            }
+            expect (ons == 2 && offsAfterSecond == 0, "Guitar: a palm-mute's late off doesn't cut the same note struck again");
         }
 
         // Pattern: a held chord plays its rhythm by itself, and stops when it's let go.
         {
             Player patterned (testFont);
             patterned.set ("guitarPanel", 1);
-            patterned.set ("guitarMode", 5);
+            patterned.set ("guitarDirect", 0);
+            patterned.set ("guitarMode", 2);
+            patterned.set ("guitarPattern", 1);
             patterned.set ("strumPattern", 0);   // Down Eighths
             const auto out = patterned.render (2.0, [] (int b, juce::MidiBuffer& m)
             {
@@ -884,194 +1104,6 @@ int main()
                     db (rms (out, 0.55, 0.7)) + " playing, " + db (rms (out, 1.7, 2.0)) + " after");
         }
 
-        // Tunings: a D major in Drop D takes the low D string as its bass: D A D A D F#, open position.
-        {
-            const int dMajor[] = { 50, 54, 57 };
-            int voiced[16] = {};
-            const int n = GuitarEngine::voice (dMajor, 3, 0, voiced, GuitarEngine::tunings[1]);
-            expect (std::vector<int> (voiced, voiced + n) == std::vector<int> { 38, 45, 50, 57, 62, 66 },
-                    "Guitar: Drop D voices a D chord on all six strings, the low D as its bass", juce::String (n) + " notes");
-        }
-        // Velocity → strings: a soft strum keeps the three high strings, a hard one all of them.
-        {
-            GuitarEngine e;
-            e.prepare (rate);
-            GuitarEngine::Settings vs;
-            vs.velocityStrings = true;
-            vs.strumMs = 30;
-            auto strummed = [&] (int velocity)
-            {
-                e.reset();
-                for (int key : { 48, 52, 55, 60, 64 }) e.noteOn (vs, 0, key, velocity, 0);
-                e.advance (vs, (juce::int64) rate);
-                std::vector<int> notes;
-                GuitarEngine::Event ev;
-                while (e.pop ((juce::int64) rate, ev)) if (ev.velocity > 0) notes.push_back (ev.note);
-                std::sort (notes.begin(), notes.end());
-                return notes;
-            };
-            expect (strummed (30) == std::vector<int> { 55, 60, 64 } && strummed (120).size() == 5,
-                    "Guitar: with Velocity strings, a soft strum hits the high strings, a hard one all");
-        }
-        // Bass & Chord: below C4 one note, from C4 a strummed chord. Harmony: a chord tone under the melody.
-        {
-            GuitarEngine e;
-            e.prepare (rate);
-            GuitarEngine::Settings bc;
-            bc.mode = GuitarEngine::bassAndChord;
-            e.noteOn (bc, 0, 40, 100, 0);
-            GuitarEngine::Event ev;
-            std::vector<int> bass;
-            while (e.pop ((juce::int64) rate, ev)) if (ev.velocity > 0) bass.push_back (ev.note);
-            GuitarEngine::Settings hm;
-            hm.mode = GuitarEngine::harmony;
-            e.reset();
-            for (int key : { 48, 52, 55 }) e.noteOn (hm, 0, key, 100, 0);   // C major held: silent
-            const bool silent = ! e.pop ((juce::int64) rate, ev);
-            e.noteOn (hm, 0, 72, 100, 100);   // melody C5: the chord's G (a fourth below) under it
-            std::vector<int> pair;
-            while (e.pop ((juce::int64) rate, ev)) if (ev.velocity > 0) pair.push_back (ev.note);
-            std::sort (pair.begin(), pair.end());
-            expect (bass == std::vector<int> { 40 } && silent && pair == std::vector<int> { 67, 72 },
-                    "Guitar: Bass & Chord plays a single bass note; Harmony puts a chord tone under the melody");
-        }
-
-        // Review fixes: a release in the middle of a slow strum still ends the late strings, and a
-        // palm-mute off never cuts the same pitch struck again.
-        {
-            GuitarEngine e;
-            e.prepare (rate);
-            GuitarEngine::Settings slow;
-            slow.strumMs = 200;
-            for (int key : { 48, 52, 55 }) e.noteOn (slow, 0, key, 100, 0);
-            e.advance (slow, 1000);
-            for (int key : { 48, 52, 55 }) e.noteOff (0, key, 1000);   // let go right after the strum starts
-            std::map<int, int> sounding;
-            GuitarEngine::Event ev;
-            while (e.pop ((juce::int64) rate * 2, ev)) sounding[ev.note] += ev.velocity > 0 ? 1 : -1;
-            bool allEnded = true;
-            for (auto [note, count] : sounding) allEnded = allEnded && count == 0;
-            expect (allEnded && sounding.size() == 3, "Guitar: letting go mid-strum ends every string, the late ones too");
-
-            GuitarEngine p;
-            p.prepare (rate);
-            GuitarEngine::Settings palm;
-            palm.mode = GuitarEngine::solo;
-            palm.palm = 0.2f;   // a long palm cut (about 500 ms)
-            p.noteOn (palm, 0, 60, 30, 0);       // soft: palm-muted, its off scheduled ahead
-            p.noteOff (0, 60, 100);
-            p.noteOn (palm, 0, 60, 120, 2000);   // the same pitch, hard, before that off
-            std::vector<std::pair<juce::int64, int>> order;
-            while (p.pop ((juce::int64) rate * 2, ev)) order.push_back ({ ev.time, ev.velocity });
-            int ons = 0, offsAfterSecond = 0;
-            for (auto [time, velocity] : order)
-            {
-                if (velocity > 0) ++ons;
-                else if (ons == 2) ++offsAfterSecond;
-            }
-            expect (ons == 2 && offsAfterSecond == 0, "Guitar: a palm-mute's late off doesn't cut the same note struck again");
-        }
-
-        // Key Chords: in C major D plays D minor, B plays B diminished, Bb (outside the key) Bb major;
-        // in A minor with sevenths, E plays E minor seventh.
-        {
-            GuitarEngine::Settings kc;
-            auto chord = [&kc] (int note) { int out[4] = {}; const int n = GuitarEngine::keyChord (kc, note, out); return std::vector<int> (out, out + n); };
-            const bool major = chord (62) == std::vector<int> { 62, 65, 69 } && chord (71) == std::vector<int> { 71, 74, 77 }
-                            && chord (70) == std::vector<int> { 70, 74, 77 } && chord (60) == std::vector<int> { 60, 64, 67 };
-            kc.keyRoot = 9; kc.keyScale = 3;
-            const bool minorSevenths = chord (64) == std::vector<int> { 64, 67, 71, 74 };
-            expect (major && minorSevenths, "Key Chords: each key plays its chord in the key (Dm, Bdim, borrowed Bb; Em7 in A minor)");
-        }
-
-        // Auto Chords: one key is its major chord, more keys pick the chord holding them all
-        // (C + Eb: C minor, C + Bb: C7, C + F: Csus4); a key added to a held chord changes it.
-        {
-            auto full = [] (std::vector<int> keys) { int out[16] = {}; const int n = GuitarEngine::completeChord (keys.data(), (int) keys.size(), out); return std::vector<int> (out, out + n); };
-            const bool completes = full ({ 60 }) == std::vector<int> { 60, 64, 67 } && full ({ 60, 63 }) == std::vector<int> { 60, 63, 67 }
-                                && full ({ 60, 70 }) == std::vector<int> { 60, 64, 67, 70 } && full ({ 60, 65 }) == std::vector<int> { 60, 65, 67 };
-            GuitarEngine e;
-            e.prepare (rate);
-            GuitarEngine::Settings ac;
-            GuitarEngine::Event ev;
-            ac.mode = GuitarEngine::autoChords;
-            e.noteOn (ac, 0, 48, 100, 0);
-            e.advance (ac, (juce::int64) rate);
-            std::set<int> first, second;
-            while (e.pop ((juce::int64) rate, ev)) if (ev.velocity > 0) first.insert (ev.note % 12);
-            e.noteOn (ac, 0, 51, 100, (juce::int64) rate);   // Eb added while C is held
-            e.advance (ac, (juce::int64) rate * 2);
-            int offs = 0;
-            while (e.pop ((juce::int64) rate * 2, ev)) { if (ev.velocity > 0) second.insert (ev.note % 12); else ++offs; }
-            const bool changes = first == std::set<int> { 0, 4, 7 } && second == std::set<int> { 0, 3, 7 } && offs > 0;
-            expect (completes && changes, "Auto Chords: a key is its major chord, added keys change it (C + Eb: C minor)");
-        }
-
-        // Mode options: chords on the high strings only, and soft notes strummed slowly.
-        {
-            const int c[] = { 48, 52, 55 };
-            int out[16] = {};
-            const int n = GuitarEngine::voice (c, 3, 0, out, GuitarEngine::tunings[0], 3);   // from the G string
-            bool high = n == 3;
-            for (int i = 0; i < n; ++i) high = high && out[i] >= 55;
-            GuitarEngine e;
-            e.prepare (rate);
-            GuitarEngine::Settings slow;
-            slow.mode = GuitarEngine::keyChords;
-            slow.slowBelow = 60;
-            slow.slowMs = 200.0f;
-            auto spread = [&] (int velocity)
-            {
-                e.reset();
-                e.noteOn (slow, 0, 60, velocity, 0);
-                GuitarEngine::Event ev;
-                juce::int64 first = -1, last = 0;
-                while (e.pop ((juce::int64) rate, ev))
-                    if (ev.velocity > 0) { if (first < 0) first = ev.time; last = ev.time; }
-                return (last - first) * 1000.0 / rate;
-            };
-            const double soft = spread (40), hard = spread (100);
-            expect (high && soft >= 190.0 && hard < 1.0, "Guitar options: chords on the high strings only; soft notes strummed slowly ("
-                    + juce::String (soft, 0) + " ms soft, " + juce::String (hard, 0) + " ms hard)");
-        }
-
-        // A C major chord voiced at the 3rd fret: C on the A string, then G, C, E, G.
-        const int keys[] = { 60, 64, 67 };
-        int voiced[16] = {};
-        const int n = GuitarEngine::voice (keys, 3, 3, voiced);
-        const std::vector<int> got (voiced, voiced + n);
-        expect (got == std::vector<int> { 48, 55, 60, 64, 67 }, "Guitar: a chord is voiced on six strings at the fret position",
-                juce::String (n) + " notes");
-
-        // Three notes together, strummed down over 40 ms: low to high, 20 ms apart, after the chord window.
-        GuitarEngine engine;
-        engine.prepare (rate);
-        GuitarEngine::Settings s;
-        s.strumMs = 40;
-        for (int key : { 67, 60, 64 })
-            engine.noteOn (s, 0, key, 100, 0);
-        engine.advance (s, (juce::int64) rate);
-        std::vector<std::pair<juce::int64, int>> ons;
-        GuitarEngine::Event e;
-        while (engine.pop ((juce::int64) rate, e))
-            if (e.velocity > 0) ons.push_back ({ e.time, e.note });
-        std::sort (ons.begin(), ons.end());
-        const auto window = (juce::int64) (GuitarEngine::chordWindowMs * 0.001 * rate);
-        const bool timing = ons.size() == 3 && ons[0] == std::pair<juce::int64, int> { window, 60 }
-                         && ons[1] == std::pair<juce::int64, int> { window + 960, 64 } && ons[2] == std::pair<juce::int64, int> { window + 1920, 67 };
-        expect (timing, "Guitar: a chord is strummed low to high over the strum time");
-
-        // Letting the keys go ends every note the chord started (the voiced ones too).
-        s.fret = 3;
-        engine.reset();
-        for (int key : { 60, 64, 67 }) engine.noteOn (s, 0, key, 100, 0);
-        engine.advance (s, (juce::int64) rate);
-        while (engine.pop ((juce::int64) rate, e)) {}
-        for (int key : { 60, 64, 67 }) engine.noteOff (0, key, (juce::int64) rate);
-        int offs = 0;
-        while (engine.pop ((juce::int64) rate * 2, e)) offs += e.velocity == 0 ? 1 : 0;
-        expect (offs == 5 && ! engine.hasWork(), "Guitar: releasing a chord ends all its voiced notes", juce::String (offs) + " note-offs");
-
         // On the plugin: with the panel on but every control neutral, the sound is the SoundFont's.
         auto chord = [] (Player& player)
         {
@@ -1082,11 +1114,12 @@ int main()
             });
         };
         Player plain (testFont), neutral (testFont), strummed (testFont);
-        neutral.set ("guitarPanel", 1);
+        neutral.set ("guitarPanel", 1);   // Direct, as it starts
         strummed.set ("guitarPanel", 1);
+        strummed.set ("guitarDirect", 0);
         strummed.set ("strum", 60);
         const auto a = chord (plain), b = chord (neutral), c = chord (strummed);
-        expect (a == b, "Guitar: the panel on with neutral controls changes nothing (bit for bit)");
+        expect (a == b, "Guitar: the panel on in Direct changes nothing (bit for bit)");
         // Strummed: the top note comes ~60 ms after the bottom one, so the first 40 ms are quieter.
         const double early = rms (c, 0.0, 0.05), plainEarly = rms (a, 0.0, 0.05);
         expect (early < plainEarly * 0.9 && rms (c, 0.2, 0.9) > 0.01, "Guitar: strumming spreads the chord's start",
@@ -1096,6 +1129,8 @@ int main()
         {
             Player doubled (testFont);
             doubled.set ("guitarPanel", 1);
+            doubled.set ("guitarDirect", 0);
+            doubled.set ("guitarMode", 0);   // Solo: the note as it comes, and its twin
             doubled.set ("doubleMix", 1.0f);
             juce::AudioBuffer<float> buffer (6, block);
             std::vector<float> left, right;
@@ -1106,8 +1141,7 @@ int main()
                 doubled.p.processBlock (buffer, m);
                 for (int i = 0; i < block; ++i) { left.push_back (buffer.getSample (0, i)); right.push_back (buffer.getSample (1, i)); }
             }
-            const auto window = GuitarEngine::chordWindowMs / 1000.0;
-            const double leftEarly = rms (left, window, window + 0.015), rightEarly = rms (right, window, window + 0.015);
+            const double leftEarly = rms (left, 0.0, 0.015), rightEarly = rms (right, 0.0, 0.015);
             expect (leftEarly > rightEarly * 1.5 && rms (right, 0.1, 0.5) > 0.005,
                     "Double: the original leans left, its twin comes later on the right", db (leftEarly) + " vs " + db (rightEarly));
         }

@@ -6,21 +6,24 @@
 
 namespace
 {
-// Mode, way, strum (ms), fret, palm, humanize, double, tremolo, velocity strings, rhythm.
-struct GuitarPreset { const char* name; float values[10]; };
+// Direct, mode, pattern, way, strum (ms), chord position, palm, humanize, double, tremolo, velocity
+// strings, rhythm.
+struct GuitarPreset { const char* name; float values[12]; };
 const GuitarPreset guitarPresetList[] = {
-    { "Off",            { 1, 0,   0, 0, 0.0f, 0.00f, 0.0f, 0.00f, 0, 2 } },
-    { "Acoustic Strum", { 1, 0,  35, 0, 0.0f, 0.35f, 0.0f, 0.00f, 1, 2 } },
-    { "Campfire",       { 1, 2,  45, 0, 0.0f, 0.50f, 0.0f, 0.00f, 1, 2 } },
-    { "Double-Tracked", { 1, 2,  30, 0, 0.0f, 0.40f, 0.8f, 0.00f, 1, 2 } },
-    { "Slow Ballad",    { 1, 0, 120, 0, 0.0f, 0.30f, 0.5f, 0.15f, 0, 2 } },
-    { "Muted Rock",     { 1, 0,  20, 0, 0.6f, 0.30f, 0.0f, 0.00f, 0, 2 } },
-    { "Folk Pattern",   { 5, 0,  30, 0, 0.0f, 0.40f, 0.0f, 0.00f, 1, 2 } },
-    { "Fingerpicking",  { 5, 0,   0, 0, 0.0f, 0.45f, 0.0f, 0.00f, 0, 10 } },
-    { "Strum Keys",     { 4, 0,  30, 0, 0.0f, 0.35f, 0.0f, 0.00f, 1, 2 } },
+    { "Off (Direct)",   { 1, 2, 0, 0,   0, 0, 0.0f, 0.00f, 0.0f, 0.00f, 0, 2 } },
+    { "Acoustic Strum", { 0, 2, 0, 0,  35, 0, 0.0f, 0.35f, 0.0f, 0.00f, 1, 2 } },
+    { "Campfire",       { 0, 2, 0, 2,  45, 0, 0.0f, 0.50f, 0.0f, 0.00f, 1, 2 } },
+    { "Double-Tracked", { 0, 2, 0, 2,  30, 0, 0.0f, 0.40f, 0.8f, 0.00f, 1, 2 } },
+    { "Slow Ballad",    { 0, 2, 0, 0, 120, 1, 0.0f, 0.30f, 0.5f, 0.15f, 0, 2 } },
+    { "Muted Rock",     { 0, 2, 0, 0,  20, 1, 0.6f, 0.30f, 0.0f, 0.00f, 0, 2 } },
+    { "Folk Pattern",   { 0, 2, 1, 0,  30, 0, 0.0f, 0.40f, 0.0f, 0.00f, 1, 2 } },
+    { "Fingerpicking",  { 0, 2, 1, 0,   0, 0, 0.0f, 0.45f, 0.0f, 0.00f, 0, 10 } },
+    { "Bass & Pick",    { 0, 4, 0, 0,   0, 0, 0.0f, 0.35f, 0.0f, 0.00f, 0, 2 } },
 };
-const char* const guitarPresetIds[] = { "guitarMode", "strumDirection", "strum", "fretPosition", "palmMute", "humanize",
-                                        "doubleMix", "tremoloDepth", "strumByVelocity", "strumPattern" };
+// The neck shows played chords around this fret, by Chord Position (I to IV, Kbd).
+constexpr int positionFret[] = { 1, 3, 5, 7, 3 };
+const char* const guitarPresetIds[] = { "guitarDirect", "guitarMode", "guitarPattern", "strumDirection", "strum", "chordPosition", "palmMute",
+                                        "humanize", "doubleMix", "tremoloDepth", "strumByVelocity", "strumPattern" };
 } // namespace
 
 // ---------------------------------------------------------------------------- look
@@ -136,6 +139,8 @@ void RangeKeyboard::drawWhiteNote (int note, juce::Graphics& g, juce::Rectangle<
     auto fill = playable ? juce::Colour (0xffd9d9de) : juce::Colour (0xff4a4a52);
     if (note < splitKey)   // played by the second instrument
         fill = juce::Colour (0xffb9c9d4);
+    if (repeatZones && GuitarEngine::inRepeat (note))   // the Guitar panel's Repeat keys
+        fill = juce::Colour (0xffd8c39a);
     if (isOver) fill = fill.brighter (0.1f);
     if (isDown) fill = SF2Look::accent;
     g.setColour (fill);
@@ -151,6 +156,8 @@ void RangeKeyboard::drawBlackNote (int note, juce::Graphics& g, juce::Rectangle<
     auto fill = playable ? juce::Colour (0xff222226) : juce::Colour (0xff2e2e34);
     if (note < splitKey)
         fill = juce::Colour (0xff2a3a46);
+    if (repeatZones && GuitarEngine::inRepeat (note))
+        fill = juce::Colour (0xff4a3a22);
     if (isOver) fill = fill.brighter (0.2f);
     if (isDown) fill = SF2Look::accent.darker (0.2f);
     g.setColour (fill);
@@ -196,8 +203,6 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
       tremoloSyncAttachment (p.parameters, "tremoloSync", tremoloSyncBox),
       patternAttachment (p.parameters, "strumPattern", patternBox),
       tuningAttachment (p.parameters, "guitarTuning", tuningBox),
-      chordKeyAttachment (p.parameters, "chordKey", chordKeyBox),
-      chordScaleAttachment (p.parameters, "chordScale", chordScaleBox),
       velocityStringsAttachment (p.parameters, "strumByVelocity", velocityStringsToggle)
 {
     setLookAndFeel (&look);
@@ -309,16 +314,7 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     };
     setUpCombo (guitarPanelBox, { "Guitar: Auto", "Guitar: On", "Guitar: Off" }, "guitarPanel",
                 "The Guitar panel: Auto shows it for guitars (General MIDI 24-31, or named so); On or Off for any instrument");
-    setUpCombo (guitarModeBox, { "Solo", "Chords", "Bass & Pick", "Shape", "Strum Keys", "Pattern", "Bass & Chord", "Harmony", "Key Chords", "Auto Chords" }, "guitarMode",
-                "Solo: notes as played. Chords: notes played together are strummed. Bass & Pick: the lowest note first, then the rest picked. "
-                "Shape: every key strums the chord drawn on the neck. Strum Keys: hold a chord below C4, play the pick with the white keys from C4 "
-                "(C down, D up, E/F muted, G bass, A/B high strings, black keys damp). Pattern: hold a chord and it plays the rhythm chosen at the top. "
-                "Bass & Chord: below C4 single bass notes, from C4 strummed chords. Harmony: hold a chord below C4; each melody note from C4 gets a second voice under it. "
-                "Key Chords: every key plays its chord in the key chosen at the top (in C major: D plays Dm, G plays G). "
-                "Auto Chords: one key plays its major chord; add keys to change it (C + Eb: C minor, C + Bb: C7, C + F: Csus4)");
-    setUpCombo (chordKeyBox, { "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B" }, "chordKey", "Key Chords: the key");
-    setUpCombo (chordScaleBox, { "Major", "Minor", "Major 7ths", "Minor 7ths" }, "chordScale",
-                "Key Chords: the scale, with triads or seventh chords");
+    setUpCombo (guitarModeBox, { "Solo", "Harmony", "Chords", "Bass & Chord", "Bass & Pick" }, "guitarMode", "The playing mode");
     {
         juce::StringArray tunings;
         for (const char* name : GuitarEngine::tuningNames) tunings.add (name);
@@ -338,22 +334,65 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
         for (const auto& rhythm : GuitarEngine::rhythms) rhythms.add (rhythm.name);
         setUpCombo (patternBox, rhythms, "strumPattern", "Pattern mode's rhythm, in time with Ableton");
     }
-    setUpCombo (guitarStringsBox, { "All 6", "From A (5)", "From D (4)", "From G (3)" }, "guitarStrings",
-                "Which strings chords use: all six, or only the higher ones (brighter, lighter chords)");
-    for (auto* slider : { &slowBelowSlider, &slowTimeSlider })
     {
-        slider->setTextBoxStyle (juce::Slider::TextBoxRight, false, 52, 18);
+        juce::StringArray names;
+        for (const char* name : GuitarEngine::velocityFxNames) names.add (name);
+        setUpCombo (velocityFxBox, names, "velocityFx",
+                    "Velocity Switch FX: a slow strum above or below the velocity set (chord modes), or soft notes muted (Velo Mute)");
+        names.clear();
+        for (const char* name : GuitarEngine::harmonyNames) names.add (name);
+        setUpCombo (harmonyBox, names, "harmonyInterval", "What each key adds to its note");
+        names.clear();
+        for (const char* name : GuitarEngine::addOnNames) names.add (name);
+        setUpCombo (addOnBox, names, "addOnKeys",
+                    "The black keys among Bass & Pick's string keys: Unison doubles the strings, Chromatic plays a semitone below them");
+    }
+    fxVelocitySlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 34, 18);
+    fxTimeSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 58, 18);
+    addAndMakeVisible (fxVelocitySlider);
+    addAndMakeVisible (fxTimeSlider);
+    for (auto* slider : { &stringsTopSlider, &stringsBottomSlider, &repeatStringsSlider })
+    {
+        slider->setTextBoxStyle (juce::Slider::TextBoxLeft, false, 26, 20);
+        slider->setIncDecButtonsMode (juce::Slider::incDecButtonsNotDraggable);
         addAndMakeVisible (*slider);
     }
-    slowBelowSlider.setTooltip ("Notes softer than this are strummed slowly, a gentle stroke (Off: never)");
-    slowTimeSlider.setTooltip ("How long a soft, slow strum takes from the first string to the last");
-    for (auto* label : { &stringsLabel, &slowBelowLabel, &slowTimeLabel, &rhythmLabel, &keyLabel, &optionsNote })
+    fxVelocitySlider.setTooltip ("The velocity the Velocity FX switches at");
+    fxTimeSlider.setTooltip ("How long a slow strum takes");
+    stringsTopSlider.setTooltip ("Chords: the highest string strummed (1: the high E)");
+    stringsBottomSlider.setTooltip ("Chords: the lowest string strummed (6: the low E)");
+    repeatStringsSlider.setTooltip ("How many upper strings the Repeat keys strum");
+    chordBassToggle.setTooltip ("A major or minor chord over another bass is played as such (Am/G)");
+    alterBassToggle.setTooltip ("The same chord again plays its second bass (the fifth), alternating");
+    bassMonoToggle.setTooltip ("The second bass stops the first");
+    for (auto* toggle : { &chordBassToggle, &alterBassToggle, &bassMonoToggle })
+        addAndMakeVisible (*toggle);
+    for (int i = 0; i < (int) positionButtons.size(); ++i)
+    {
+        auto& button = positionButtons[(size_t) i];
+        button.setButtonText (GuitarEngine::positionNames[i]);
+        button.getProperties().set ("guitarMode", true);
+        button.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff4a3526));
+        button.setColour (juce::TextButton::buttonOnColourId, SF2Look::accent);
+        button.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff1e6c8));
+        button.setColour (juce::TextButton::textColourOnId, juce::Colour (0xff1d140d));
+        button.setTooltip ("Chord Position: where chords lie on the neck (I: open, up to IV), or Kbd: in the octave you play them");
+        button.onClick = [this, i]
+        {
+            if (auto* parameter = player.parameters.getParameter ("chordPosition"))
+                parameter->setValueNotifyingHost (parameter->convertTo0to1 ((float) i));
+        };
+        addAndMakeVisible (button);
+    }
+    for (auto* label : { &fxLabel, &fxVelocityLabel, &fxTimeLabel, &positionLabel, &stringsLabel, &stringsDash, &repeatStringsLabel,
+                         &harmonyLabel, &addOnLabel, &rhythmLabel, &optionsNote })
     {
         label->setFont (juce::FontOptions (12.0f));
         label->setColour (juce::Label::textColourId, SF2Look::dim);
         label->setJustificationType (juce::Justification::centredRight);
         addAndMakeVisible (*label);
     }
+    stringsDash.setJustificationType (juce::Justification::centred);
     optionsNote.setJustificationType (juce::Justification::centredLeft);
     setUpCombo (strumDirectionBox, { "Down", "Up", "Alternate" }, "strumDirection",
                 "Down: low string to high. Up: high to low. Alternate: down, up, down...");
@@ -366,8 +405,7 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
         label->setColour (juce::Label::textColourId, SF2Look::dim);
         addAndMakeVisible (*label);
     }
-    strum.slider.setTooltip ("How long a chord takes from the first string to the last (Off: all at once)");
-    fretPosition.slider.setTooltip ("Chords voiced on six strings at this fret (Off: as you play them)");
+    strum.slider.setTooltip ("Strum time: how long a chord takes from the first string to the last (Off: a pick\'s natural 18 ms)");
     palmMute.slider.setTooltip ("Notes under velocity 45 are stopped by the hand: shorter and darker");
     humanize.slider.setTooltip ("Small random changes of velocity, timing and tuning on every note");
     doubleMix.slider.setTooltip ("A second take: the same notes 18 ms later, a little sharp, on the right; the original on the left");
@@ -384,21 +422,46 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     hintLabel.setInterceptsMouseClicks (false, false);
     addAndMakeVisible (hintLabel);
     {
-        static const char* const modeNames[] = { "Solo", "Chords", "Bass & Pick", "Shape", "Strum Keys", "Pattern", "Bass & Chord", "Harmony", "Key Chords", "Auto Chords" };
-        for (size_t i = 0; i < modeButtons.size(); ++i)
+        static const char* const modeNames[] = { "Solo", "Harmony", "Chords", "Bass & Chord", "Bass & Pick" };
+        static const char* const modeTips[] = {
+            "Solo: notes as you play them. C5-C6 repeat the notes held (black keys muted)",
+            "Harmony: one note at a time, with the interval chosen below. C5-C6 repeat it",
+            "Chords: the chord taken in the Main zone (E1-B4) is recognized and strummed. C1-D#1 and C5-C6 strum it again: "
+            "C, E, G up; D, F, A, B down; black keys muted",
+            "Bass & Chord: the chord's bass plays; C5 the bass, D5 the second bass, the other Repeat keys strum the upper strings",
+            "Bass & Pick: the chord's bass plays; C5 bass, D5 second bass, E5 F5 G5 A5 the 4th to 1st strings; C1-D#1 strum the upper four" };
+        for (int mode = 0; mode < GuitarEngine::modeCount; ++mode)
         {
-            auto& button = modeButtons[i];
-            const int mode = modeOrder[i];
+            auto& button = modeButtons[(size_t) mode];
             button.setButtonText (modeNames[mode]);
             button.getProperties().set ("guitarMode", true);
             button.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff4a3526));
             button.setColour (juce::TextButton::buttonOnColourId, SF2Look::accent);
             button.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff1e6c8));
             button.setColour (juce::TextButton::textColourOnId, juce::Colour (0xff1d140d));
-            button.setTooltip (guitarModeBox.getTooltip());
-            button.onClick = [this, mode] { guitarModeBox.setSelectedItemIndex (mode, juce::sendNotificationSync); showMode(); };
+            button.setTooltip (modeTips[mode]);
+            button.onClick = [this, mode]
+            {
+                guitarModeBox.setSelectedItemIndex (mode, juce::sendNotificationSync);
+                if (directButton.getToggleState()) directButton.setToggleState (false, juce::sendNotificationSync);   // a mode means playing it
+                showMode();
+            };
             addAndMakeVisible (button);
         }
+        for (auto* button : { &patternButton, &directButton, &holdButton })
+        {
+            button->setClickingTogglesState (true);
+            button->getProperties().set ("guitarMode", true);
+            button->setColour (juce::TextButton::buttonColourId, juce::Colour (0xff2a1f17));
+            button->setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff6fbf5a));
+            button->setColour (juce::TextButton::textColourOffId, juce::Colour (0xffb8ab90));
+            button->setColour (juce::TextButton::textColourOnId, juce::Colour (0xff10180c));
+            button->onClick = [this] { showMode(); };
+            addAndMakeVisible (*button);
+        }
+        patternButton.setTooltip ("Pattern: the chord held in the Main zone plays the rhythm chosen below by itself, in time with Ableton");
+        directButton.setTooltip ("Direct: a plain sampler, every note as it comes (the SoundFont as it is). A mode button turns it off");
+        holdButton.setTooltip ("Hold: chords keep sounding after the keys are let go, until the next chord");
         guitarModeBox.onChange = [this, previous = guitarModeBox.onChange]
         {
             if (previous) previous();
@@ -411,29 +474,18 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     keysButton.setColour (juce::TextButton::textColourOffId, SF2Look::dim);
     keysButton.onClick = [this] { toggleSection (keyboardSection); };
     addAndMakeVisible (keysButton);
-    neck.setTooltip ("Click a string at a fret to draw a chord (Shape mode plays it on every key); click the name to hear it");
-    neck.onShapeChanged = [this] (const std::array<int, 6>& frets)
-    {
-        player.setGuitarShape (frets);
-        // Drawing means playing the drawing: switch to Shape mode.
-        if (guitarModeBox.getSelectedItemIndex() != GuitarEngine::shape)
-            guitarModeBox.setSelectedItemIndex (GuitarEngine::shape, juce::sendNotificationSync);
-    };
+    neck.setTooltip ("Click a string at a fret to draw a chord and see its name; click the name to hear it");
+    neck.onShapeChanged = [this] (const std::array<int, 6>& frets) { player.setGuitarShape (frets); };
     neck.onAudition = [this]
     {
         std::array<int, 6> notes {};
-        const auto& tuning = GuitarEngine::tuningOf (player.guitarTuning());
-        if (GuitarEngine::shapeNotes (player.guitarShapeFrets(), 0, notes.data(), tuning) == 0) return;
-        if (guitarModeBox.getSelectedItemIndex() != GuitarEngine::shape)
-            guitarModeBox.setSelectedItemIndex (GuitarEngine::shape, juce::sendNotificationSync);
-        // The key that puts the shape where it was drawn: its own lowest note.
-        int lowest = 127;
-        const auto frets = player.guitarShapeFrets();
-        for (size_t s = 0; s < 6; ++s) if (frets[s] >= 0) lowest = juce::jmin (lowest, tuning[s] + frets[s]);
-        if (auditionKey >= 0) player.keyboardState.noteOff (1, auditionKey, 0.0f);
-        auditionKey = lowest;
+        const int count = GuitarEngine::shapeNotes (player.guitarShapeFrets(), notes.data(), GuitarEngine::tuningOf (player.guitarTuning()));
+        if (count == 0) return;
+        stopAudition();
+        auditionNotes = notes;
+        auditionCount = count;
         auditionTicks = 30;   // 1.5 s at 20 Hz
-        player.keyboardState.noteOn (1, auditionKey, 0.8f);
+        for (int i = 0; i < count; ++i) player.keyboardState.noteOn (1, notes[(size_t) i], 0.8f);
     };
     attack.slider.setTooltip ("How long notes take to start: x1 is the SoundFont's own");
     release.slider.setTooltip ("How long notes take to fade after the key is let go: x1 is the SoundFont's own");
@@ -517,7 +569,7 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     showSectionContents();
     refreshLayerControls();
     refreshGuitarPanel();
-    neck.setShape (player.guitarShapeFrets(), guitarModeBox.getSelectedItemIndex() == GuitarEngine::shape);
+    neck.setShape (player.guitarShapeFrets(), GuitarEngine::tuningOf (player.guitarTuning()));
     showGuitarPreset();
 }
 
@@ -525,8 +577,7 @@ SF2PlayerEditor::~SF2PlayerEditor()
 {
     if (previewNote >= 0)
         player.keyboardState.noteOff (1, previewNote, 0.0f);
-    if (auditionKey >= 0)   // a drawn chord still sounding from a click on its name
-        player.keyboardState.noteOff (1, auditionKey, 0.0f);
+    stopAudition();   // a drawn chord still sounding from a click on its name
     player.removeChangeListener (this);
     setLookAndFeel (nullptr);
 }
@@ -1043,9 +1094,10 @@ void SF2PlayerEditor::showSectionContents()
     playMode.setVisible (play);
     playModeLabel.setVisible (play);
     const bool guitar = guitarShown && ! collapsed[guitarSection];
-    for (auto* knob : { &strum, &fretPosition, &palmMute, &humanize, &doubleMix, &tremoloDepth, &tremoloRate })
+    for (auto* knob : { &strum, &palmMute, &humanize, &doubleMix, &tremoloDepth, &tremoloRate })
         knob->slider.setVisible (guitar), knob->label.setVisible (guitar);
     for (auto& button : modeButtons) button.setVisible (guitar);
+    for (auto* button : { &patternButton, &directButton, &holdButton }) button->setVisible (guitar);
     guitarModeBox.setVisible (false);
     guitarModeLabel.setVisible (false);
     for (juce::Component* c : { (juce::Component*) &strumDirectionBox,
@@ -1088,27 +1140,21 @@ void SF2PlayerEditor::timerCallback()
         std::array<int, 6> notes {};
         for (size_t i = 0; i < 6; ++i) notes[i] = view.notes[i].load (std::memory_order_relaxed);
         neck.show (notes.data(), view.count.load(), view.pitchClasses.load(), view.bass.load(), view.up.load(),
-                   view.strummed.load(), view.palm.load(), juce::roundToInt (player.parameters.getRawParameterValue ("fretPosition")->load()),
+                   view.strummed.load(), view.palm.load(), positionFret[juce::jlimit (0, 4, juce::roundToInt (player.parameters.getRawParameterValue ("chordPosition")->load()))],
                    GuitarEngine::tuningOf (player.guitarTuning()));
     }
     neck.tick (1.0f / 20.0f);
     if (guitarShown) showGuitarPreset();
-    neck.setShape (player.guitarShapeFrets(), guitarModeBox.getSelectedItemIndex() == GuitarEngine::shape,
-                   GuitarEngine::tuningOf (player.guitarTuning()));
+    neck.setShape (player.guitarShapeFrets(), GuitarEngine::tuningOf (player.guitarTuning()));
     {
-        // Pattern mode shows its rhythm menu; Strum Keys tints the chord hand's keys.
-        const int mode = guitarModeBox.getSelectedItemIndex();
-        if (! modeButtons[0].isVisible() || ! modeButtons[(size_t) std::distance (modeOrder.begin(), std::find (modeOrder.begin(), modeOrder.end(), mode))].getToggleState())
-            showMode();   // the host or a preset changed it
-        const int tint = guitarShown && mode == GuitarEngine::strumKeys ? GuitarEngine::strumKeysFrom
-                       : layerModeBox.getSelectedItemIndex() == 2 ? juce::roundToInt (splitSlider.getValue()) : -1;
-        if (keyboard.splitKey != tint) { keyboard.splitKey = tint; keyboard.repaint(); }
+        // The host or a preset may have changed the mode, Pattern, Direct or the position.
+        showMode();
+        const int tint = layerModeBox.getSelectedItemIndex() == 2 ? juce::roundToInt (splitSlider.getValue()) : -1;
+        const bool zones = guitarShown && ! directButton.getToggleState();
+        if (keyboard.splitKey != tint || keyboard.repeatZones != zones) { keyboard.splitKey = tint; keyboard.repeatZones = zones; keyboard.repaint(); }
     }
-    if (auditionKey >= 0 && --auditionTicks <= 0)
-    {
-        player.keyboardState.noteOff (1, auditionKey, 0.0f);
-        auditionKey = -1;
-    }
+    if (auditionCount > 0 && --auditionTicks <= 0)
+        stopAudition();
     const float peak = player.outputPeak.exchange (0.0f);
     shownPeak = juce::jmax (peak, shownPeak * 0.85f);
 
@@ -1280,20 +1326,25 @@ void SF2PlayerEditor::resized()
         tremoloSyncBox.setBounds (guitarPanel.getRight() - 6 - 70, guitarPanel.getY() + 5, 70, 18);
         auto inner = guitarPanel.reduced (6).withTrimmedTop (18);
         auto strip = inner.removeFromBottom (neckHeight - 6);
-        optionsArea = strip.removeFromBottom (24).reduced (8, 0);
+        optionsArea = strip.removeFromBottom (24 * 3 + 8).reduced (8, 0);   // three rows of options
         strip.removeFromBottom (6);
-        auto modes = strip.removeFromBottom (24 * 2 + 4).reduced (8, 0);   // two rows of five
-        const int gap = 4, perRow = 5, buttonWidth = (modes.getWidth() - gap * (perRow - 1)) / perRow;
-        for (int i = 0; i < (int) modeButtons.size(); ++i)
-            modeButtons[(size_t) i].setBounds (modes.getX() + (i % perRow) * (buttonWidth + gap), modes.getY() + (i / perRow) * (24 + gap),
-                                               buttonWidth, 24);
+        auto modes = strip.removeFromBottom (26).reduced (8, 0);   // Pattern, the five modes, Direct
+        patternButton.setBounds (modes.removeFromLeft (68).reduced (0, 2));
+        directButton.setBounds (modes.removeFromRight (64).reduced (0, 2));
+        modes.reduce (8, 0);
+        const int gap = 4, buttonWidth = (modes.getWidth() - gap * (GuitarEngine::modeCount - 1)) / GuitarEngine::modeCount;
+        for (auto& button : modeButtons)
+        {
+            button.setBounds (modes.removeFromLeft (buttonWidth));
+            modes.removeFromLeft (gap);
+        }
         strip.removeFromBottom (6);
         neck.setBounds (strip.reduced (8, 0));
         refreshModeOptions();
-        const int width = inner.getWidth() / 9;
-        // Two rows on the left: which way chords are strummed, and the tuning.
+        const int width = inner.getWidth() / 8;
+        // On the left: which way chords are strummed, the tuning, and Hold.
         auto combos = inner.removeFromLeft (width * 2).reduced (2, 2);
-        const int rowHeight = combos.getHeight() / 2;
+        const int rowHeight = combos.getHeight() / 3;
         for (auto [label, box] : { std::pair { &strumDirectionLabel, &strumDirectionBox }, std::pair { &tuningLabel, &tuningBox } })
         {
             auto row = combos.removeFromTop (rowHeight).withSizeKeepingCentre (combos.getWidth(), 22);
@@ -1301,9 +1352,10 @@ void SF2PlayerEditor::resized()
             label->setBounds (row.removeFromLeft (40));
             box->setBounds (row);
         }
+        holdButton.setBounds (combos.removeFromTop (rowHeight).withSizeKeepingCentre (combos.getWidth(), 22).withTrimmedLeft (40));
         velocityStringsToggle.setBounds (tremoloSyncBox.getX() - 8 - 130, guitarPanel.getY() + 4, 130, 20);
         guitarPresets.setBounds (guitarPanel.getX() + 82, guitarPanel.getY() + 5, 150, 18);
-        for (auto* knob : { &strum, &fretPosition, &palmMute, &humanize, &doubleMix, &tremoloDepth, &tremoloRate })
+        for (auto* knob : { &strum, &palmMute, &humanize, &doubleMix, &tremoloDepth, &tremoloRate })
             knob->setBounds (inner.removeFromLeft (width));
     }
     else
@@ -1356,57 +1408,104 @@ void SF2PlayerEditor::resized()
     keyboard.setLowestVisibleKey (21);
 }
 
-// The mode's button lit, the others not.
+// The mode's button lit, the others not; dimmed while Direct plays the SoundFont as it is.
 void SF2PlayerEditor::showMode()
 {
     const int mode = guitarModeBox.getSelectedItemIndex();
-    for (size_t i = 0; i < modeButtons.size(); ++i)
-        modeButtons[i].setToggleState (modeOrder[i] == mode, juce::dontSendNotification);
+    const bool direct = directButton.getToggleState();
+    for (int i = 0; i < GuitarEngine::modeCount; ++i)
+    {
+        auto& button = modeButtons[(size_t) i];
+        if (button.getToggleState() != (i == mode)) button.setToggleState (i == mode, juce::dontSendNotification);
+        if (button.getAlpha() != (direct ? 0.45f : 1.0f)) button.setAlpha (direct ? 0.45f : 1.0f);
+    }
+    const int position = juce::roundToInt (player.parameters.getRawParameterValue ("chordPosition")->load());
+    for (int i = 0; i < (int) positionButtons.size(); ++i)
+        if (positionButtons[(size_t) i].getToggleState() != (i == position))
+            positionButtons[(size_t) i].setToggleState (i == position, juce::dontSendNotification);
     refreshModeOptions();
 }
 
-// The options row: only what the chosen mode uses, left to right.
+void SF2PlayerEditor::stopAudition()
+{
+    for (int i = 0; i < auditionCount; ++i) player.keyboardState.noteOff (1, auditionNotes[(size_t) i], 0.0f);
+    auditionCount = 0;
+}
+
+// The options box: only what the chosen mode uses. The first row: the Velocity Switch FX (and
+// Pattern's rhythm); the second, the mode's own.
 void SF2PlayerEditor::refreshModeOptions()
 {
     const int mode = guitarModeBox.getSelectedItemIndex();
     const bool open = guitarShown && ! collapsed[guitarSection];
-    std::vector<std::pair<juce::Component*, int>> row;   // a control and its width
-    auto add = [&row] (juce::Component& c, int width) { row.push_back ({ &c, width }); };
-    juce::String note;
+    const bool chordMode = mode == GuitarEngine::chords || mode == GuitarEngine::bassAndChord || mode == GuitarEngine::bassAndPick;
+    std::vector<std::pair<juce::Component*, int>> first, second, third;   // a control and its width, per row
+    auto add = [] (auto& row, juce::Component& c, int width) { row.push_back ({ &c, width }); };
+    const bool rhythm = patternButton.getToggleState() && chordMode;
+    if (rhythm) { add (first, rhythmLabel, 46); add (first, patternBox, 112); }
+    else add (first, fxLabel, 72);
+    add (first, velocityFxBox, rhythm ? 128 : 160);
+    if (velocityFxBox.getSelectedItemIndex() > 0)
+    {
+        add (first, fxVelocityLabel, 30);
+        add (first, fxVelocitySlider, 84);
+        if (velocityFxBox.getSelectedItemIndex() != GuitarEngine::veloMute) { add (first, fxTimeLabel, 30); add (first, fxTimeSlider, 112); }
+    }
     if (mode == GuitarEngine::solo)
-        note = "Solo: single notes as you play them. Palm, Humanize and Double still apply.";
+    {
+        add (second, optionsNote, optionsArea.getWidth());
+        optionsNote.setText ("C5-C6 repeat the notes held (black keys muted). Velo Mute mutes soft notes.", juce::dontSendNotification);
+    }
     else if (mode == GuitarEngine::harmony)
-        note = "Hold a chord below C4 (silent); each melody note from C4 gets a second voice from it.";
+    {
+        add (second, harmonyLabel, 52);
+        add (second, harmonyBox, 140);
+        add (third, optionsNote, optionsArea.getWidth());
+        optionsNote.setText ("One note at a time with its interval; C5-C6 repeat it (black keys muted).", juce::dontSendNotification);
+    }
     else
     {
-        if (mode == GuitarEngine::pattern) { add (rhythmLabel, 48); add (patternBox, 130); }
-        if (mode == GuitarEngine::keyChords) { add (keyLabel, 30); add (chordKeyBox, 52); add (chordScaleBox, 84); }
-        add (stringsLabel, 48);
-        add (guitarStringsBox, 104);
-        if (mode != GuitarEngine::pattern)
+        add (second, positionLabel, 88);
+        for (auto& button : positionButtons) add (second, button, button.getButtonText() == "Kbd" ? 40 : 30);
+        if (mode == GuitarEngine::chords)
         {
-            add (slowBelowLabel, 76);
-            add (slowBelowSlider, mode == GuitarEngine::keyChords ? 120 : 140);
-            if (mode != GuitarEngine::keyChords) { add (slowTimeLabel, 34); add (slowTimeSlider, 120); }
+            add (second, stringsLabel, 50);
+            add (second, stringsTopSlider, 70);
+            add (second, stringsDash, 8);
+            add (second, stringsBottomSlider, 70);
         }
+        if (mode == GuitarEngine::bassAndChord) { add (second, repeatStringsLabel, 58); add (second, repeatStringsSlider, 70); }
+        if (mode == GuitarEngine::bassAndPick) { add (second, addOnLabel, 72); add (second, addOnBox, 100); }
+        add (third, chordBassToggle, 100);
+        if (mode != GuitarEngine::chords) { add (third, alterBassToggle, 100); add (third, bassMonoToggle, 100); }
     }
-    if (note.isNotEmpty()) add (optionsNote, optionsArea.getWidth());
-    optionsNote.setText (note, juce::dontSendNotification);
 
-    for (juce::Component* c : { (juce::Component*) &guitarStringsBox, (juce::Component*) &slowBelowSlider, (juce::Component*) &slowTimeSlider,
-                                (juce::Component*) &stringsLabel, (juce::Component*) &slowBelowLabel, (juce::Component*) &slowTimeLabel,
-                                (juce::Component*) &rhythmLabel, (juce::Component*) &keyLabel, (juce::Component*) &optionsNote,
-                                (juce::Component*) &patternBox, (juce::Component*) &chordKeyBox, (juce::Component*) &chordScaleBox })
+    std::vector<juce::Component*> all { &fxLabel, &velocityFxBox, &fxVelocityLabel, &fxVelocitySlider, &fxTimeLabel, &fxTimeSlider, &rhythmLabel,
+                                        &patternBox, &optionsNote, &harmonyLabel, &harmonyBox, &positionLabel, &stringsLabel, &stringsTopSlider,
+                                        &stringsDash, &stringsBottomSlider, &repeatStringsLabel, &repeatStringsSlider, &addOnLabel, &addOnBox,
+                                        &chordBassToggle, &alterBassToggle, &bassMonoToggle };
+    for (auto& button : positionButtons) all.push_back (&button);
+    for (auto* c : all)
     {
-        const bool shown = open && std::any_of (row.begin(), row.end(), [c] (auto& item) { return item.first == c; });
+        const auto inRow = [c] (const auto& row) { return std::any_of (row.begin(), row.end(), [c] (auto& item) { return item.first == c; }); };
+        const bool shown = open && (inRow (first) || inRow (second) || inRow (third));
         if (c->isVisible() != shown) c->setVisible (shown);
     }
-    auto area = optionsArea;
-    for (auto [component, width] : row)
+    auto place = [] (const auto& row, juce::Rectangle<int> area)
     {
-        component->setBounds (area.removeFromLeft (juce::jmin (width, area.getWidth())).reduced (0, 1));
-        area.removeFromLeft (6);
-    }
+        for (auto [component, width] : row)
+        {
+            const auto bounds = area.removeFromLeft (juce::jmin (width, area.getWidth())).reduced (0, 1);
+            if (component->getBounds() != bounds) component->setBounds (bounds);
+            area.removeFromLeft (dynamic_cast<juce::TextButton*> (component) != nullptr ? 3 : 6);
+        }
+    };
+    auto rows = optionsArea;
+    place (first, rows.removeFromTop (24));
+    rows.removeFromTop (4);
+    place (second, rows.removeFromTop (24));
+    rows.removeFromTop (4);
+    place (third, rows.removeFromTop (24));
 }
 
 void SF2PlayerEditor::showHelpMenu()

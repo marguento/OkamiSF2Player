@@ -19,17 +19,17 @@ public:
 
     // Drawing chords: a click on a string at a fret puts a finger there (again: lifts it); left
     // of the nut, a string toggles open and not played. The drawn chord is shown (and named)
-    // while `shapeMode` is on, and every change goes to `onShapeChanged`. A click on the name
-    // plays the chord (`onAudition`).
+    // until something is played, and every change goes to `onShapeChanged`. A click on the name
+    // plays it (`onAudition`).
     std::function<void (const std::array<int, 6>&)> onShapeChanged;
     std::function<void()> onAudition;
 
-    void setShape (const std::array<int, 6>& frets, bool shapeModeOn, const GuitarEngine::Tuning& strings = GuitarEngine::tunings[0])
+    // The drawn chord (shown while drawing, until something is played) and the strings' tuning.
+    void setShape (const std::array<int, 6>& frets, const GuitarEngine::Tuning& strings = GuitarEngine::tunings[0])
     {
-        if (frets == shapeFrets && shapeModeOn == shapeMode && strings == tuning) return;
+        if (frets == shapeFrets && strings == tuning) return;
         tuning = strings;
         shapeFrets = frets;
-        shapeMode = shapeModeOn;
         repaint();
     }
 
@@ -65,6 +65,7 @@ public:
         noteCount = juce::jlimit (0, 6, count);
         for (int i = 0; i < noteCount; ++i) shown[(size_t) i] = notes[i];
         name = chordName (pitchClasses, bass);
+        shapeMode = false;   // what's played replaces the drawing
         int around = fretPosition;
         if (around == 0)   // as played: centre on the notes' own frets
             around = 3;

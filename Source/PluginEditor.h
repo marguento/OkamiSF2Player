@@ -47,6 +47,7 @@ struct RangeKeyboard : juce::MidiKeyboardComponent
     using MidiKeyboardComponent::MidiKeyboardComponent;
     int lowKey = 0, highKey = 127;
     int splitKey = -1;   // Split: the keys below it play the second instrument (tinted)
+    bool repeatZones = false;   // the Guitar panel's Repeat zones (C1-D#1, C5-C6), tinted
 
     void drawWhiteNote (int note, juce::Graphics&, juce::Rectangle<float> area, bool isDown, bool isOver,
                         juce::Colour lineColour, juce::Colour textColour) override;
@@ -178,13 +179,12 @@ private:
     std::unique_ptr<juce::FileChooser> chooser;
     // The Guitar panel: shown for a guitar (Auto) or when forced on (the Guitar menu in PLAY's header).
     Knob strum { *this, "strum", "Strum" };
-    Knob fretPosition { *this, "fretPosition", "Fret" };
     Knob palmMute { *this, "palmMute", "Palm" };
     Knob humanize { *this, "humanize", "Humanize" };
     Knob doubleMix { *this, "doubleMix", "Double" };
     Knob tremoloDepth { *this, "tremoloDepth", "Tremolo" };
     Knob tremoloRate { *this, "tremoloRate", "Rate" };
-    juce::ComboBox guitarPanelBox, guitarModeBox, strumDirectionBox, tremoloSyncBox, patternBox, tuningBox, chordKeyBox, chordScaleBox;
+    juce::ComboBox guitarPanelBox, guitarModeBox, strumDirectionBox, tremoloSyncBox, patternBox, tuningBox;
     juce::ToggleButton velocityStringsToggle { "Velocity strings" };
     // Starting points for the Guitar panel: they set its controls (Off: all neutral).
     juce::ComboBox guitarPresets;
@@ -192,24 +192,41 @@ private:
     void showGuitarPreset();
     juce::Label guitarModeLabel { {}, "Mode" }, strumDirectionLabel { {}, "Way" };
     juce::AudioProcessorValueTreeState::ComboBoxAttachment guitarPanelAttachment, guitarModeAttachment,
-        strumDirectionAttachment, tremoloSyncAttachment, patternAttachment, tuningAttachment, chordKeyAttachment, chordScaleAttachment;
+        strumDirectionAttachment, tremoloSyncAttachment, patternAttachment, tuningAttachment;
     juce::AudioProcessorValueTreeState::ButtonAttachment velocityStringsAttachment;
     juce::Label tuningLabel { {}, "Tune" };
-    // The mode as a row of buttons under the neck (the hidden Mode menu holds the parameter).
-    static constexpr std::array<int, 10> modeOrder { GuitarEngine::solo, GuitarEngine::harmony, GuitarEngine::chords,
-        GuitarEngine::autoChords, GuitarEngine::bassAndChord, GuitarEngine::bassAndPick, GuitarEngine::shape,
-        GuitarEngine::keyChords, GuitarEngine::strumKeys, GuitarEngine::pattern };
-    std::array<juce::TextButton, 10> modeButtons;
+    // The five modes as buttons under the neck, Pattern and Direct beside them (the hidden Mode
+    // menu holds the parameter); Hold by the display.
+    std::array<juce::TextButton, GuitarEngine::modeCount> modeButtons;
+    juce::TextButton patternButton { "Pattern" }, directButton { "Direct" }, holdButton { "Hold" };
+    juce::AudioProcessorValueTreeState::ButtonAttachment guitarPatternAttachment { player.parameters, "guitarPattern", patternButton },
+                                                         directAttachment { player.parameters, "guitarDirect", directButton },
+                                                         holdAttachment { player.parameters, "guitarHold", holdButton };
     void showMode();
-    // Each mode's own options, in a row under the mode buttons (only the ones that apply).
-    juce::ComboBox guitarStringsBox;
-    juce::Slider slowBelowSlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight },
-                 slowTimeSlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
-    juce::Label stringsLabel { {}, "Strings" }, slowBelowLabel { {}, "Slow if soft" }, slowTimeLabel { {}, "over" },
-                rhythmLabel { {}, "Rhythm" }, keyLabel { {}, "Key" }, optionsNote;
-    juce::AudioProcessorValueTreeState::ComboBoxAttachment guitarStringsAttachment { player.parameters, "guitarStrings", guitarStringsBox };
-    juce::AudioProcessorValueTreeState::SliderAttachment slowBelowAttachment { player.parameters, "slowStrumBelow", slowBelowSlider },
-                                                         slowTimeAttachment { player.parameters, "slowStrumTime", slowTimeSlider };
+    // Each mode's options, in the box under the mode buttons (only the ones it uses).
+    juce::ComboBox velocityFxBox, harmonyBox, addOnBox;
+    juce::Slider fxVelocitySlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight },
+                 fxTimeSlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight },
+                 stringsTopSlider { juce::Slider::IncDecButtons, juce::Slider::TextBoxLeft },
+                 stringsBottomSlider { juce::Slider::IncDecButtons, juce::Slider::TextBoxLeft },
+                 repeatStringsSlider { juce::Slider::IncDecButtons, juce::Slider::TextBoxLeft };
+    std::array<juce::TextButton, 5> positionButtons;
+    juce::ToggleButton chordBassToggle { "Chord/Bass" }, alterBassToggle { "Alter Bass" }, bassMonoToggle { "Bass Mono" };
+    juce::Label fxLabel { {}, "Velocity FX" }, fxVelocityLabel { {}, "Velo" }, fxTimeLabel { {}, "Time" },
+                positionLabel { {}, "Chord Position" }, stringsLabel { {}, "Strings" }, stringsDash { {}, "-" },
+                repeatStringsLabel { {}, "Strings #" }, harmonyLabel { {}, "Interval" }, addOnLabel { {}, "Add-on keys" },
+                rhythmLabel { {}, "Rhythm" }, optionsNote;
+    juce::AudioProcessorValueTreeState::ComboBoxAttachment velocityFxAttachment { player.parameters, "velocityFx", velocityFxBox },
+                                                           harmonyAttachment { player.parameters, "harmonyInterval", harmonyBox },
+                                                           addOnAttachment { player.parameters, "addOnKeys", addOnBox };
+    juce::AudioProcessorValueTreeState::SliderAttachment fxVelocityAttachment { player.parameters, "fxVelocity", fxVelocitySlider },
+                                                         fxTimeAttachment { player.parameters, "fxTime", fxTimeSlider },
+                                                         stringsTopAttachment { player.parameters, "stringsTop", stringsTopSlider },
+                                                         stringsBottomAttachment { player.parameters, "stringsBottom", stringsBottomSlider },
+                                                         repeatStringsAttachment { player.parameters, "repeatStrings", repeatStringsSlider };
+    juce::AudioProcessorValueTreeState::ButtonAttachment chordBassAttachment { player.parameters, "chordBass", chordBassToggle },
+                                                         alterBassAttachment { player.parameters, "alterBass", alterBassToggle },
+                                                         bassMonoAttachment { player.parameters, "bassMono", bassMonoToggle };
     juce::Rectangle<int> optionsArea;
     void refreshModeOptions();
     bool guitarShown = false;
@@ -222,14 +239,16 @@ private:
     juce::TextButton keysButton;   // folds the keyboard
     int keyboardHeight = 120;      // the keyboard's height when it was last shown
     static constexpr int panelHeight = 118, collapsedHeight = 26, panelGap = 12;
-    static constexpr int neckHeight = 214;   // the Guitar panel's neck strip and its mode buttons, under the knobs
+    static constexpr int neckHeight = 242;   // the neck, the mode buttons and the options box, under the knobs
     int heightOf (Section s) const
     {
         return collapsed[(size_t) s] ? collapsedHeight : panelHeight + (s == guitarSection ? neckHeight : 0);
     }
     GuitarNeck neck { { SF2Look::text, SF2Look::dim, SF2Look::accent, SF2Look::panel, SF2Look::line.brighter (0.35f) } };
     int shownGuitarSequence = 0;
-    int auditionKey = -1, auditionTicks = 0;   // the drawn chord, played by a click on its name
+    std::array<int, 6> auditionNotes {};   // the drawn chord, played by a click on its name
+    int auditionCount = 0, auditionTicks = 0;
+    void stopAudition();
     int guitarExtra() const { return guitarShown ? panelGap + heightOf (guitarSection) : 0; }
     int minimumHeight() const;
     void toggleSection (Section);

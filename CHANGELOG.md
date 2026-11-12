@@ -5,60 +5,38 @@ release bumps it and adds an entry here: one line per change a player would noti
 
 ## 1.3.0 — Nov 11, 2026
 
-- **Guitar panel.** It appears by itself for a guitar (General MIDI 24-31, or an instrument named
-  one), or for any instrument from the Guitar menu in PLAY's header. Everything in it starts off.
-  - **Strum:** notes played together are strummed, 0 to 80 ms from the first string to the last,
-    down, up or alternating.
-  - **Mode:** Solo (notes as played), Chords (strummed), Bass & Pick (the lowest note first, then
-    the rest picked).
-  - **Fret:** chords voiced on six strings at a fret position, as a guitarist would play them.
-  - **Palm:** soft notes (velocity under 45) are stopped by the hand, shorter and darker.
-  - **Humanize:** small random changes of velocity, timing and tuning on every note.
-  - **Double:** a second take, 18 ms later and a little sharp, on the right; the original on the left.
-  - **Tremolo:** stereo, at a rate or locked to Ableton's tempo.
-- Reverb preset "Short Room" and chorus preset "Bright", for acoustic guitar.
-- The Guitar panel shows what it plays: the chord's name (C, Am7, G/B...), a six-string neck with
-  where its notes lie, an arrow lit by each strum (down or up) and a light for palm-muted notes.
-- **Mode options** under the mode buttons, only what each mode uses: which strings chords use,
-  slow strums for soft notes, Pattern's rhythm, Key Chords' key and scale.
+- **Guitar panel**, to play guitar SoundFonts the way the classic keyboard guitar instruments do.
+  It appears by itself for a guitar (General MIDI 24-31, or an instrument named one), or for any
+  instrument from the Guitar menu in PLAY's header. It starts in **Direct**: the SoundFont as it is.
+  - **Zones:** the Main zone (E1-B4) plays notes or takes chords; the Repeat zones (C1-D#1, C5-C6,
+    tinted on the keyboard) repeat them: strums up and down, muted strums, basses, single strings.
+  - **Modes:** Solo; Harmony (each note with an interval: a fourth down, a fifth or an octave up,
+    power chords, two octaves); Chords (the chord is recognized from the keys, even one key or two,
+    voiced like a guitarist holds it and strummed); Bass & Chord (the bass, a second bass, the
+    upper strings); Bass & Pick (the basses and each string on its own key). Plus **Pattern** (the
+    held chord plays a rhythm by itself, on Ableton's grid: twelve rhythms) and **Hold**.
+  - **Options for each mode:** Velocity Switch FX (a slow strum above or below a velocity, or soft
+    notes muted), Chord Position (I to IV, or Kbd), Strings, Chord/Bass (Am/G), Alter Bass, Bass
+    Mono, Bass & Pick's add-on keys (Unison, Chromatic), Harmony's interval.
+  - Every note lies on a string: a new note on a string stops the one ringing there.
+  - **Strum time** (up to 250 ms), **Way** (down, up, alternate), **Tunings** (Standard, Drop D,
+    Drop C, Open G, DADGAD), **Velocity strings** (a soft strum catches only the high strings).
+  - **Palm:** soft notes are stopped by the hand, shorter and darker. **Humanize:** small random
+    changes of velocity, timing and tuning. **Double:** a second take, 18 ms later and a little
+    sharp, on the right. **Tremolo:** stereo, at a rate or locked to Ableton's tempo.
+  - **Presets:** Acoustic Strum, Campfire, Double-Tracked, Slow Ballad, Muted Rock, Folk Pattern,
+    Fingerpicking, Bass & Pick, and Off (Direct).
+  - **The neck** shows what's played (a rosewood neck, frets, inlays, strings) and the chord's
+    name in a display (about 45 chord types, slash chords, partial chords, intervals), with lights
+    for the strum's direction and palm-muted notes. **Draw chords on it** to see their name, and
+    click the name to hear them; saved with the project.
 - **Help built in:** the ? button opens a guide (Start, Guitar, Controls) and About; the header
   explains whatever control the mouse is over (turn it off in the ? menu).
-- The Guitar panel looks the part: a rosewood neck with nickel frets, a bone nut, pearl inlays and
-  bronze and steel strings; the chord in a dark display; the modes as buttons under the neck.
-- **Auto Chords** mode: one key plays its major chord, and added keys change it (C + Eb: C minor,
-  C + Bb: C7, C + F: Csus4), even while the chord is held.
-- **Key Chords** mode: one key, one chord in the chosen key and scale (major, minor, with or
-  without sevenths): in C major, D plays Dm and G plays G; a key outside the scale plays its major
-  chord (Bb in C).
-- **Guitar presets:** Acoustic Strum, Campfire, Double-Tracked, Slow Ballad, Muted Rock, Folk
-  Pattern, Fingerpicking, Strum Keys, and Off (the SoundFont as it is). The menu says Custom once
-  a control moves.
-- Chord names know about 45 chord types (sus, add, 6/9, 7, 9, 11, 13, b5, #5, b9, #9, #11...),
-  chords without their fifth (C7, D(no5)), power chords (C5) and two-note intervals, so a chord
-  being drawn is named from its second note on.
-- With a guitar, its panel comes first, right under the instrument, with a bigger neck and chord name.
-- **Draw chords on the neck:** click a string at a fret (12 frets) to put a finger there, left of
-  the nut for open or not played; the chord is named as you draw. The new **Shape** mode strums
-  that chord on every key you play, moved so its bass is the key: one finger plays a whole
-  progression. A click on the chord's name plays it. Saved with the project.
-- **Strum Keys** mode: hold a chord below C4 (silent), and play the pick with the white keys from
-  C4: C down, D up, E and F muted down and up, G the bass alone, A and B the high strings down and
-  up; any black key damps the strings. Strings ring until the next stroke or until the chord is
-  let go. The chord hand's keys are tinted on the keyboard.
-- **Pattern** mode: hold a chord and it plays a rhythm by itself, on Ableton's grid while it plays:
-  Down Eighths, Down Up, Folk, Pop, Ballad, Country, Rock Muted, Reggae, Funk Sixteenths, Waltz,
-  Fingerpicking, Arpeggio.
-- **Bass & Chord** mode: below C4 single bass notes, from C4 strummed chords. **Harmony** mode: hold
-  a chord below C4 (silent); each melody note from C4 gets a second voice under it, the chord's
-  nearest tone a third to a sixth below.
-- **Tunings:** Standard, Drop D, Drop C, Open G, DADGAD, for voicing, drawing and the neck.
-- **Velocity strings:** a soft strum catches only the high strings, a hard one all six.
-- Strum reaches 250 ms, for slow strums.
-- In Strum Keys and Pattern, the held chord is voiced like a guitar's: in open position, or at the Fret knob's
-  position; with nothing held, the chord drawn on the neck is used.
+- Reverb preset "Short Room" and chorus preset "Bright", for acoustic guitar.
 - Sections fold: a click on REVERB / CHORUS, PLAY or GUITAR folds it to its title (its switch and
   presets stay), and the window shrinks. **▾ Keyboard** folds the keyboard. Remembered for every
   project.
+- The on-screen keyboard leaves the computer's keys to the host (Ableton's own computer keyboard).
 
 ## 1.2.6 — Nov 11, 2026
 
