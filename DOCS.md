@@ -62,7 +62,8 @@ the plugin says so in a red line.
 
 A click on a section's title (**▾ REVERB**, **CHORUS**, **PLAY**, **GUITAR**) folds it to a strip
 with its title, switch and presets, and the window shrinks; another click opens it. Reverb and
-chorus fold together. The plugin remembers which are folded, for every project.
+chorus fold together. **▾ Keyboard**, at the bottom left, folds the keyboard. The plugin remembers
+which are folded, for every project.
 
 ## Gain and Tone
 
