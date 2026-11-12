@@ -143,11 +143,23 @@ void RangeKeyboard::drawWhiteNote (int note, juce::Graphics& g, juce::Rectangle<
     if (repeatZones && GuitarEngine::inRepeat (note))   // the Guitar panel's Repeat keys
         fill = juce::Colour (0xffd8c39a);
     if (isOver) fill = fill.brighter (0.1f);
-    if (isDown) fill = SF2Look::accent;
-    g.setColour (fill);
-    g.fillRect (area.reduced (0.5f, 0.0f));
+    const auto key = area.reduced (0.5f, 0.0f);
+    if (isDown)   // played: lit from the top, like a key glowing under the finger
+        g.setGradientFill (juce::ColourGradient::vertical (SF2Look::accent.brighter (0.35f), key.getY(), SF2Look::accent, key.getBottom()));
+    else
+        g.setColour (fill);
+    g.fillRect (key);
     g.setColour (SF2Look::background);
     g.drawVerticalLine ((int) area.getRight(), area.getY(), area.getBottom());
+    // Its name at the bottom: every white key's letter, each C with its octave (C3 is middle C, as in Ableton).
+    if (area.getWidth() >= 9.0f)
+    {
+        const bool c = note % 12 == 0;
+        const auto name = c ? juce::MidiMessage::getMidiNoteName (note, true, true, 3) : juce::MidiMessage::getMidiNoteName (note, true, false, 3);
+        g.setColour (juce::Colours::black.withAlpha (isDown ? 0.75f : c ? 0.6f : 0.28f));
+        g.setFont (juce::FontOptions (c ? 9.5f : 8.5f, c ? juce::Font::bold : juce::Font::plain));
+        g.drawFittedText (name, key.withTop (key.getBottom() - 13.0f).toNearestInt(), juce::Justification::centred, 1, 0.7f);
+    }
 }
 
 void RangeKeyboard::drawBlackNote (int note, juce::Graphics& g, juce::Rectangle<float> area, bool isDown, bool isOver,
@@ -160,8 +172,10 @@ void RangeKeyboard::drawBlackNote (int note, juce::Graphics& g, juce::Rectangle<
     if (repeatZones && GuitarEngine::inRepeat (note))
         fill = juce::Colour (0xff4a3a22);
     if (isOver) fill = fill.brighter (0.2f);
-    if (isDown) fill = SF2Look::accent.darker (0.2f);
-    g.setColour (fill);
+    if (isDown)
+        g.setGradientFill (juce::ColourGradient::vertical (SF2Look::accent, area.getY(), SF2Look::accent.darker (0.35f), area.getBottom()));
+    else
+        g.setColour (fill);
     g.fillRoundedRectangle (area, 1.5f);
 }
 
@@ -1190,7 +1204,7 @@ int SF2PlayerEditor::minimumHeight() const
     int height = 46 + soundHeight();   // the title, then SOUNDFONT
     height += 12 + generalHeight();
     height += 12 + (guitarShown ? heightOf (guitarSection) : pianoHeight);
-    height += 12 + (collapsed[keyboardSection] ? collapsedHeight : 26 + keyboardHeight + 10);   // PIANO
+    height += 12 + (collapsed[keyboardSection] ? collapsedHeight : 26 + zoneBand + keyboardHeight + 10);   // PIANO
     return height + 14;
 }
 
@@ -1291,6 +1305,27 @@ void SF2PlayerEditor::timerCallback()
         neck.setPosition (chordMode && ! directButton.getToggleState() && position < 4 ? position : -1);
     }
     neck.tick (1.0f / 20.0f);
+    {
+        // The keys held now, for the PIANO title: "C E G · C".
+        juce::StringArray names;
+        int classes = 0, lowest = -1;
+        for (int n = 0; n < 128; ++n)
+            if (player.keyboardState.isNoteOnForChannels (0xffff, n))
+            {
+                names.add (juce::MidiMessage::getMidiNoteName (n, true, false, 3));
+                classes |= 1 << (n % 12);
+                if (lowest < 0) lowest = n;
+            }
+        juce::String text;
+        if (! names.isEmpty())
+        {
+            text = names.joinIntoString (" ");
+            if (names.size() > 1)
+                if (const auto chord = ChordName::name (classes, lowest % 12); chord.isNotEmpty())
+                    text << juce::String::fromUTF8 ("  \xc2\xb7  ") << chord;
+        }
+        if (text != heldText) { heldText = text; repaint (keysPanel.withHeight (26)); }
+    }
     if (guitarShown) showGuitarPreset();
     neck.setShape (player.guitarShapeFrets(), GuitarEngine::tuningOf (player.guitarTuning()));
     {
@@ -1404,6 +1439,37 @@ void SF2PlayerEditor::paint (juce::Graphics& g)
         g.setColour (juce::Colours::white.withAlpha (0.06f));
         g.drawRoundedRectangle (area.reduced (0.5f), 6.0f, 1.0f);
         drawSectionTitle (g, keysPanel, "PIANO", keyboardSection);
+        // What's held now: its notes, and the chord they make.
+        if (heldText.isNotEmpty())
+        {
+            g.setColour (SF2Look::text.withAlpha (0.85f));
+            g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
+            g.drawText (heldText, keysPanel.getX() + 76, keysPanel.getY() + 8, 260, 14, juce::Justification::centredLeft);
+        }
+        // With the Guitar panel: what its zones are, over them.
+        if (keyboard.repeatZones && keyboard.isVisible())
+        {
+            auto spanX = [this] (int from, int to)   // the keys' extent, in the editor
+            {
+                const float x0 = (float) keyboard.getX() + keyboard.getKeyStartPosition (from);
+                const float x1 = (float) keyboard.getX() + keyboard.getKeyStartPosition (to) + keyboard.getKeyWidth();
+                return std::pair { x0, x1 };
+            };
+            const float y = (float) keyboard.getY() - (float) zoneBand + 1.0f;
+            auto zone = [&] (int from, int to, const juce::String& label, juce::Colour colour)
+            {
+                const auto [x0, x1] = spanX (from, to);
+                g.setColour (colour);
+                g.fillRoundedRectangle (x0 + 1.0f, y + 11.0f, x1 - x0 - 2.0f, 2.5f, 1.0f);
+                g.setFont (juce::FontOptions (8.5f, juce::Font::bold));
+                g.drawText (label, juce::Rectangle<float> (x0 - 30.0f, y, x1 - x0 + 60.0f, 10.0f), juce::Justification::centred);
+            };
+            const auto beige = juce::Colour (0xffd8c39a), green = juce::Colour (0xff8fbf9a);
+            zone (GuitarEngine::leftRepeatLow, GuitarEngine::leftRepeatHigh,
+                  guitarModeBox.getSelectedItemIndex() == GuitarEngine::solo ? "KEY SWITCHES" : "REPEAT", beige);
+            zone (GuitarEngine::mainLow, GuitarEngine::mainHigh, "MAIN", green);
+            zone (GuitarEngine::rightRepeatLow, GuitarEngine::rightRepeatHigh, "REPEAT", beige);
+        }
     }
     g.setColour (juce::Colour (0xff2c313b));
     g.fillRoundedRectangle (playPanel.toFloat(), 6.0f);
@@ -1608,10 +1674,10 @@ void SF2PlayerEditor::resized()
         c->setVisible (! guitarShown);   // a guitar's keyboard belongs to its zones
     // PIANO: the keyboard, folding to its title (a click on it).
     area.removeFromTop (panelGap);
-    keysPanel = area.removeFromTop (collapsed[keyboardSection] ? collapsedHeight : 26 + keyboardHeight + 10);
+    keysPanel = area.removeFromTop (collapsed[keyboardSection] ? collapsedHeight : 26 + zoneBand + keyboardHeight + 10);
     keysButton.setBounds ({});
     warningLabel.setBounds (keysPanel.getX() + 80, keysPanel.getY() + 2, keysPanel.getWidth() - 90, 22);
-    auto keys = keysPanel.reduced (10, 0).withTrimmedTop (26).withHeight (keyboardHeight);
+    auto keys = keysPanel.reduced (10, 0).withTrimmedTop (26 + zoneBand).withHeight (keyboardHeight);
     keyboard.setBounds (keys);
     keyboard.setKeyWidth ((float) keys.getWidth() / 52.0f);   // 52 white keys in 88
     keyboard.setLowestVisibleKey (21);

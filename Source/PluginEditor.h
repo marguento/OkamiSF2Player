@@ -317,7 +317,8 @@ private:
     enum Section { effectsSection = 0, playSection = 1, guitarSection = 2, keyboardSection = 3 };
     std::array<bool, 4> collapsed {};
     juce::TextButton keysButton;   // folds the keyboard
-    static constexpr int keyboardHeight = 64;   // a small keyboard: it shows what's played, a MIDI keyboard plays
+    static constexpr int keyboardHeight = 64;
+    static constexpr int zoneBand = 16;   // over the keys: the Guitar panel's zones, named   // a small keyboard: it shows what's played, a MIDI keyboard plays
     void applyHeight();   // the window's height is its contents': it never stretches
     static constexpr int panelHeight = 118, collapsedHeight = 26, panelGap = 12;
     static constexpr int baseNeckHeight = 250, controllersHeight = 112, guitarHeader = 30;
@@ -360,6 +361,7 @@ private:
     void showHint();
     friend struct EditorTestAccess;   // TailTest's snapshots fold sections without touching the settings file
 
+    juce::String heldText;   // the keys held, for the PIANO title
     juce::Rectangle<int> meterArea, reverbPanel, chorusPanel, playPanel, guitarPanel, generalPanel, pianoPanel, soundPanel, keysPanel;
     static constexpr int pianoHeight = 64;   // the PIANO / INSTRUMENT panel: its title and the layer row
     float shownPeak = 0.0f;

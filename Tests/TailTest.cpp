@@ -20,6 +20,7 @@ struct EditorTestAccess
     }
 
     static void controllers (SF2PlayerEditor& editor, bool on) { if (editor.showControllers != on) editor.toggleControllers(); }
+    static void zones (SF2PlayerEditor& editor) { editor.keyboard.repeatZones = true; editor.player.keyboardState.noteOn (1, 60, 0.8f); editor.player.keyboardState.noteOn (1, 64, 0.8f); editor.player.keyboardState.noteOn (1, 67, 0.8f); editor.timerCallback(); editor.keyboard.repeatZones = true; }
     static void guide (SF2PlayerEditor& editor, int page) { editor.openGuide ((Guide::Page) page); }
     static void hint (SF2PlayerEditor& editor, const juce::String& text) { editor.hintLabel.setText (text, juce::dontSendNotification); }
 
@@ -160,6 +161,7 @@ int main (int argc, char** argv)
             p.setGuitarShape (frets);
         }
         std::unique_ptr<juce::AudioProcessorEditor> editor (p.createEditor());
+        if (std::getenv ("ZONES") != nullptr) { auto* e = dynamic_cast<SF2PlayerEditor*> (editor.get()); EditorTestAccess::zones (*e); }
         if (std::getenv ("CHORD") != nullptr)
             EditorTestAccess::showChord (*dynamic_cast<SF2PlayerEditor*> (editor.get()));
         if (const char* fold = std::getenv ("FOLD"))   // "effects,play,guitar": those sections folded
