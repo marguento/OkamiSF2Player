@@ -114,97 +114,152 @@ public:
             name = noteCount > 0 ? chordName (classes, notes[0] % 12) : juce::String();
         }
 
-        // Left: the chord's name, the strum arrow and the palm light.
-        auto left = area.removeFromLeft (nameWidth);
-        g.setColour (colours.text.withAlpha (noteCount > 0 ? fade : 0.25f));
+        // Left: a dark display with the chord's name, the strum arrow and the palm light.
+        auto left = area.removeFromLeft (nameWidth).reduced (0.0f, 6.0f);
+        g.setColour (juce::Colour (0xff0d0e0b));
+        g.fillRoundedRectangle (left, 6.0f);
+        g.setColour (juce::Colours::black);
+        g.drawRoundedRectangle (left, 6.0f, 1.5f);
+        g.setColour (juce::Colours::white.withAlpha (0.06f));
+        g.drawRoundedRectangle (left.reduced (1.5f), 5.0f, 1.0f);
+        auto screen = left.reduced (10.0f, 6.0f);
+        g.setColour (cream.withAlpha (noteCount > 0 ? fade : 0.25f));
         g.setFont (juce::FontOptions (30.0f, juce::Font::bold));
-        g.drawText (noteCount > 0 ? (name.isNotEmpty() ? name : juce::String ("?")) : juce::String::fromUTF8 ("\xe2\x80\x93"),
-                    left.removeFromTop (left.getHeight() * 0.6f), juce::Justification::centredLeft);
-        if (drawn && noteCount == 0)   // in the name's column, clear of the fret numbers
+        g.drawFittedText (noteCount > 0 ? (name.isNotEmpty() ? name : juce::String ("?")) : juce::String::fromUTF8 ("\xe2\x80\x93"),
+                          screen.removeFromTop (screen.getHeight() * 0.62f).toNearestInt(), juce::Justification::centredLeft, 1, 0.6f);
+        if (drawn && noteCount == 0)   // in the display, clear of the fret numbers
         {
-            g.setColour (colours.dim);
+            g.setColour (cream.withAlpha (0.55f));
             g.setFont (juce::FontOptions (11.0f));
-            g.drawFittedText ("Click the strings\nto draw a chord", left.toNearestInt(), juce::Justification::centredLeft, 2);
+            g.drawFittedText ("Click the strings\nto draw a chord", screen.toNearestInt(), juce::Justification::centredLeft, 2);
         }
         else
         {
-        g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
-        auto lights = left;
-        g.setColour (colours.dim.interpolatedWith (colours.accent, arrowGlow));
-        g.drawText (juce::String::fromUTF8 (arrowUp ? "\xe2\x86\x91 UP" : "\xe2\x86\x93 DOWN"), lights.removeFromLeft (48.0f),
-                    juce::Justification::centredLeft);
-        g.setColour (colours.dim.withAlpha (0.5f).interpolatedWith (colours.accent, palmGlow));
-        g.drawText ("PALM", lights, juce::Justification::centredLeft);
+            // Two small lights: the strum's direction, and a palm-muted note.
+            g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
+            auto lights = screen.withSizeKeepingCentre (screen.getWidth(), 14.0f);
+            auto light = [&g] (juce::Rectangle<float> r, const juce::String& text, juce::Colour on, float glow)
+            {
+                const auto led = r.removeFromLeft (8.0f).withSizeKeepingCentre (6.0f, 6.0f);
+                g.setColour (on.withAlpha (0.18f + 0.82f * glow));
+                g.fillEllipse (led);
+                if (glow > 0.05f) { g.setColour (on.withAlpha (0.35f * glow)); g.fillEllipse (led.expanded (3.0f)); }
+                r.removeFromLeft (3.0f);
+                g.setColour (cream.withAlpha (0.35f + 0.6f * glow));
+                g.drawText (text, r, juce::Justification::centredLeft);
+            };
+            light (lights.removeFromLeft (lights.getWidth() * 0.56f), juce::String::fromUTF8 (arrowUp ? "\xe2\x86\x91 UP" : "\xe2\x86\x93 DOWN"),
+                   juce::Colour (0xff6fe07a), arrowGlow);
+            light (lights, "PALM", colours.accent, palmGlow);
         }
 
-        // Right: the neck, high E on top as in tablature, frets 1 to 12.
+        // Right: a rosewood fingerboard, high E on top as in tablature, frets 1 to 12.
         const auto geometry = layout();
         auto numbers = geometry.numbers;
         auto neck = geometry.neck;
         auto board = geometry.board;
         const int first = 1, columns = fretCount;
         const float columnWidth = geometry.columnWidth, rowGap = geometry.rowGap, openRoom = board.getX() - neck.getX();
-        for (int c : { 3, 5, 7, 9, 12 })   // the inlay dots of a real neck
+        const float edge = rowGap * 0.5f;
+        const auto wood = board.withY (neck.getY() - edge).withBottom (neck.getBottom() + edge);
+        g.setGradientFill (juce::ColourGradient::vertical (juce::Colour (0xff4b2d1d), wood.getY(), juce::Colour (0xff2c180e), wood.getBottom()));
+        g.fillRect (wood);
+        for (int grain = 0; grain < 14; ++grain)   // a little grain along the board
         {
-            g.setColour (colours.line.withAlpha (0.6f));
-            const float x = board.getX() + (c - 0.5f) * columnWidth;
-            g.fillEllipse (x - 2.5f, neck.getCentreY() - 2.5f, 5.0f, 5.0f);
+            const float y = wood.getY() + wood.getHeight() * (0.04f + 0.068f * (float) grain);
+            g.setColour (juce::Colours::black.withAlpha (grain % 3 == 0 ? 0.16f : 0.08f));
+            g.drawHorizontalLine ((int) y, wood.getX(), wood.getRight());
         }
+        g.setColour (juce::Colour (0xffd9cba6).withAlpha (0.55f));   // the binding along both edges
+        g.fillRect (wood.withHeight (1.5f));
+        g.fillRect (wood.withY (wood.getBottom() - 1.5f).withHeight (1.5f));
 
-        g.setColour (colours.line);
-        for (int c = 0; c <= columns; ++c)   // fret wires; the nut thicker
+        auto inlay = [&g] (float x, float y)
+        {
+            g.setGradientFill (juce::ColourGradient (juce::Colour (0xfffbf7ee), x - 1.5f, y - 1.5f, juce::Colour (0xffbdb6a6), x + 3.5f, y + 3.5f, true));
+            g.fillEllipse (x - 3.5f, y - 3.5f, 7.0f, 7.0f);
+        };
+        for (int c : { 3, 5, 7, 9 })
+            inlay (board.getX() + (c - 0.5f) * columnWidth, neck.getCentreY());
+        inlay (board.getX() + 11.5f * columnWidth, neck.getY() + 1.5f * rowGap);
+        inlay (board.getX() + 11.5f * columnWidth, neck.getY() + 3.5f * rowGap);
+
+        for (int c = 1; c <= columns; ++c)   // nickel fret wires
         {
             const float x = board.getX() + c * columnWidth;
-            g.fillRect (x - (c == 0 && first == 1 ? 1.5f : 0.5f), neck.getY(), c == 0 && first == 1 ? 3.0f : 1.0f, neck.getHeight());
+            g.setColour (juce::Colour (0xff9a9a9e));
+            g.fillRect (x - 1.25f, wood.getY(), 2.5f, wood.getHeight());
+            g.setColour (juce::Colour (0xffeeeef0));
+            g.fillRect (x - 0.5f, wood.getY(), 0.8f, wood.getHeight());
         }
+        g.setColour (juce::Colour (0xffece2c6));   // the bone nut
+        g.fillRect (board.getX() - 4.0f, wood.getY() - 1.0f, 5.0f, wood.getHeight() + 2.0f);
+        g.setColour (juce::Colour (0xffb9ad8c));
+        g.fillRect (board.getX() + 0.0f, wood.getY() - 1.0f, 1.0f, wood.getHeight() + 2.0f);
+
         g.setColour (colours.dim);
         g.setFont (juce::FontOptions (10.0f));
         for (int c = 0; c < columns; ++c)
             g.drawText (juce::String (first + c), juce::Rectangle<float> (board.getX() + c * columnWidth, numbers.getY(), columnWidth, numbers.getHeight()),
                         juce::Justification::centred);
 
+        static constexpr float gauge[6] = { 2.6f, 2.2f, 1.8f, 1.4f, 1.1f, 0.9f };   // low E to high E
         for (int string = 0; string < 6; ++string)
         {
             const int row = 5 - string;   // the low E at the bottom
             const float y = neck.getY() + row * rowGap;
-            g.setColour (colours.line.brighter (0.2f));
-            g.fillRect (board.getX(), y - (string < 3 ? 0.75f : 0.5f), board.getWidth(), string < 3 ? 1.5f : 1.0f);
+            const float thick = gauge[string];
+            g.setColour (juce::Colours::black.withAlpha (0.35f));   // its shadow on the board
+            g.fillRect (neck.getX(), y - thick / 2.0f + 1.2f, wood.getRight() - neck.getX(), thick);
+            g.setColour (string < 3 ? juce::Colour (0xffc9a46b) : juce::Colour (0xffd9d9de));   // wound bronze, plain steel
+            g.fillRect (neck.getX(), y - thick / 2.0f, wood.getRight() - neck.getX(), thick);
+        }
+        for (int string = 0; string < 6; ++string)
+        {
+            if (noteCount == 0) break;
+            const float y = neck.getY() + (5 - string) * rowGap;
             const int fret = frets[(size_t) string];
-            const auto dot = (palmMuted ? colours.dim : colours.accent).withAlpha (fade);
-            if (noteCount == 0) continue;
+            const auto green = palmMuted ? juce::Colour (0xff9aa39b) : juce::Colour (0xff62d86e);
             if (fret < 0)
             {
-                g.setColour (colours.dim.withAlpha (0.6f * fade));
-                g.setFont (juce::FontOptions (10.0f));
-                g.drawText (juce::String::fromUTF8 ("\xc3\x97"), juce::Rectangle<float> (neck.getX(), y - 6.0f, openRoom - 2.0f, 12.0f),
+                g.setColour (cream.withAlpha (0.7f * fade));
+                g.setFont (juce::FontOptions (12.0f, juce::Font::bold));
+                g.drawText (juce::String::fromUTF8 ("\xc3\x97"), juce::Rectangle<float> (neck.getX(), y - 7.0f, openRoom - 4.0f, 14.0f),
                             juce::Justification::centred);
             }
             else if (fret == 0)
             {
-                g.setColour (dot);
-                g.drawEllipse (neck.getX() + 1.0f, y - 5.0f, 10.0f, 10.0f, 1.6f);
+                g.setColour (green.withAlpha (fade));
+                g.drawEllipse (neck.getX() + 1.0f, y - 5.5f, 11.0f, 11.0f, 2.0f);
             }
             else
             {
                 const float x = board.getX() + (fret - first + 0.5f) * columnWidth;
-                const float size = juce::jmin (16.0f, rowGap * 0.85f);
-                g.setColour (dot);
-                g.fillEllipse (x - size / 2.0f, y - size / 2.0f, size, size);
+                const float size = juce::jmin (17.0f, rowGap * 0.95f);
+                const auto dot = juce::Rectangle<float> (x - size / 2.0f, y - size / 2.0f, size, size);
+                g.setColour (green.withAlpha (0.3f * fade));   // a soft glow
+                g.fillEllipse (dot.expanded (3.0f));
+                g.setGradientFill (juce::ColourGradient (green.brighter (0.6f).withAlpha (fade), x - size * 0.2f, y - size * 0.25f,
+                                                         green.darker (0.5f).withAlpha (fade), x + size * 0.5f, y + size * 0.5f, true));
+                g.fillEllipse (dot);
+                g.setColour (juce::Colours::black.withAlpha (0.5f * fade));
+                g.drawEllipse (dot, 1.0f);
             }
         }
     }
 
 private:
     static constexpr float fadeAfter = 3.0f;   // seconds before a chord's dots dim
-    static constexpr float nameWidth = 110.0f;
+    static constexpr float nameWidth = 130.0f;
+    static inline const juce::Colour cream { 0xfff1e6c8 };   // the display's text
     static constexpr int fretCount = 12;
     struct Geometry { juce::Rectangle<float> neck, board, numbers; float columnWidth, rowGap; };
     Geometry layout() const
     {
-        auto area = getLocalBounds().toFloat().withTrimmedLeft (nameWidth + 8.0f);
+        auto area = getLocalBounds().toFloat().withTrimmedLeft (nameWidth + 10.0f);
         Geometry g;
         g.numbers = area.removeFromBottom (12.0f);
-        g.neck = area.withTrimmedTop (12.0f).withTrimmedBottom (4.0f);
+        g.neck = area.withTrimmedTop (12.0f).withTrimmedBottom (11.0f);   // room for the board's edge above the numbers
         g.board = g.neck.withTrimmedLeft (16.0f);
         g.columnWidth = g.board.getWidth() / (float) fretCount;
         g.rowGap = g.neck.getHeight() / 5.0f;

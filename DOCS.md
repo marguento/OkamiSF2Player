@@ -144,7 +144,7 @@ With every control at Off or 0 it changes nothing.
   Strum, Campfire (alternating, looser), Double-Tracked, Slow Ballad, Muted Rock, Folk Pattern,
   Fingerpicking, Strum Keys, or Off (everything neutral: the SoundFont as it is). Move a control
   and the menu says Custom.
-- **Mode:** **Solo** plays notes as you play them. **Chords** strums the notes you play together.
+- **Mode** (the buttons under the neck): **Solo** plays notes as you play them. **Chords** strums the notes you play together.
   **Bass & Pick** plays the lowest note first, then picks the rest. **Shape** strums the chord
   drawn on the neck on every key, moved so its bass is the key you play. **Bass & Chord** plays
   single bass notes below C4 and strummed chords from C4. **Harmony**: hold a chord below C4 (it

@@ -19,6 +19,8 @@ release bumps it and adds an entry here: one line per change a player would noti
 - Reverb preset "Short Room" and chorus preset "Bright", for acoustic guitar.
 - The Guitar panel shows what it plays: the chord's name (C, Am7, G/B...), a six-string neck with
   where its notes lie, an arrow lit by each strum (down or up) and a light for palm-muted notes.
+- The Guitar panel looks the part: a rosewood neck with nickel frets, a bone nut, pearl inlays and
+  bronze and steel strings; the chord in a dark display; the modes as buttons under the neck.
 - **Auto Chords** mode: one key plays its major chord, and added keys change it (C + Eb: C minor,
   C + Bb: C7, C + F: Csus4), even while the chord is held.
 - **Key Chords** mode: one key, one chord in the chosen key and scale (major, minor, with or

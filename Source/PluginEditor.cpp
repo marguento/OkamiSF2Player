@@ -356,6 +356,29 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     tremoloDepth.slider.setTooltip ("Stereo tremolo depth (0: off)");
     tremoloRate.slider.setTooltip ("Tremolo speed when Sync is Free");
     addAndMakeVisible (neck);
+    {
+        static const char* const modeNames[] = { "Solo", "Chords", "Bass & Pick", "Shape", "Strum Keys", "Pattern", "Bass & Chord", "Harmony", "Key Chords", "Auto Chords" };
+        for (size_t i = 0; i < modeButtons.size(); ++i)
+        {
+            auto& button = modeButtons[i];
+            const int mode = modeOrder[i];
+            button.setButtonText (modeNames[mode]);
+            button.getProperties().set ("guitarMode", true);
+            button.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff4a3526));
+            button.setColour (juce::TextButton::buttonOnColourId, SF2Look::accent);
+            button.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff1e6c8));
+            button.setColour (juce::TextButton::textColourOnId, juce::Colour (0xff1d140d));
+            button.setTooltip (guitarModeBox.getTooltip());
+            button.onClick = [this, mode] { guitarModeBox.setSelectedItemIndex (mode, juce::sendNotificationSync); showMode(); };
+            addAndMakeVisible (button);
+        }
+        guitarModeBox.onChange = [this, previous = guitarModeBox.onChange]
+        {
+            if (previous) previous();
+            showMode();
+        };
+        showMode();
+    }
     keysButton.setTooltip ("Show or hide the keyboard");
     keysButton.setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
     keysButton.setColour (juce::TextButton::textColourOffId, SF2Look::dim);
@@ -995,8 +1018,11 @@ void SF2PlayerEditor::showSectionContents()
     const bool guitar = guitarShown && ! collapsed[guitarSection];
     for (auto* knob : { &strum, &fretPosition, &palmMute, &humanize, &doubleMix, &tremoloDepth, &tremoloRate })
         knob->slider.setVisible (guitar), knob->label.setVisible (guitar);
-    for (juce::Component* c : { (juce::Component*) &guitarModeBox, (juce::Component*) &strumDirectionBox,
-                                (juce::Component*) &tremoloSyncBox, (juce::Component*) &guitarModeLabel,
+    for (auto& button : modeButtons) button.setVisible (guitar);
+    guitarModeBox.setVisible (false);
+    guitarModeLabel.setVisible (false);
+    for (juce::Component* c : { (juce::Component*) &strumDirectionBox,
+                                (juce::Component*) &tremoloSyncBox,
                                 (juce::Component*) &strumDirectionLabel, (juce::Component*) &neck,
                                 (juce::Component*) &tuningBox, (juce::Component*) &tuningLabel,
                                 (juce::Component*) &velocityStringsToggle, (juce::Component*) &guitarPresets })
@@ -1047,6 +1073,8 @@ void SF2PlayerEditor::timerCallback()
         // Pattern mode shows its rhythm menu; Strum Keys tints the chord hand's keys.
         const int mode = guitarModeBox.getSelectedItemIndex();
         const bool open = guitarShown && ! collapsed[guitarSection];
+        if (! modeButtons[0].isVisible() || ! modeButtons[(size_t) std::distance (modeOrder.begin(), std::find (modeOrder.begin(), modeOrder.end(), mode))].getToggleState())
+            showMode();   // the host or a preset changed it
         const bool showPattern = open && mode == GuitarEngine::pattern;
         if (patternBox.isVisible() != showPattern) patternBox.setVisible (showPattern);
         const bool showKey = open && mode == GuitarEngine::keyChords;
@@ -1128,8 +1156,12 @@ void SF2PlayerEditor::paint (juce::Graphics& g)
 
     if (guitarShown)
     {
-        g.setColour (SF2Look::panel);
-        g.fillRoundedRectangle (guitarPanel.toFloat(), 6.0f);
+        // Warm wood under the guitar's controls, darker towards the neck.
+        const auto wood = guitarPanel.toFloat();
+        g.setGradientFill (juce::ColourGradient::vertical (juce::Colour (0xff3d2b1e), wood.getY(), juce::Colour (0xff221912), wood.getBottom()));
+        g.fillRoundedRectangle (wood, 6.0f);
+        g.setColour (juce::Colours::white.withAlpha (0.07f));
+        g.drawRoundedRectangle (wood.reduced (0.5f), 6.0f, 1.0f);
         drawSectionTitle (g, guitarPanel, "GUITAR", guitarSection);
     }
 
@@ -1225,13 +1257,19 @@ void SF2PlayerEditor::resized()
         chordScaleBox.setBounds (tremoloSyncBox.getX() - 8 - 84, guitarPanel.getY() + 5, 84, 18);
         chordKeyBox.setBounds (chordScaleBox.getX() - 4 - 50, guitarPanel.getY() + 5, 50, 18);
         auto inner = guitarPanel.reduced (6).withTrimmedTop (18);
-        neck.setBounds (inner.removeFromBottom (neckHeight - 6).reduced (8, 0));
+        auto strip = inner.removeFromBottom (neckHeight - 6);
+        auto modes = strip.removeFromBottom (24 * 2 + 4).reduced (8, 0);   // two rows of five
+        const int gap = 4, perRow = 5, buttonWidth = (modes.getWidth() - gap * (perRow - 1)) / perRow;
+        for (int i = 0; i < (int) modeButtons.size(); ++i)
+            modeButtons[(size_t) i].setBounds (modes.getX() + (i % perRow) * (buttonWidth + gap), modes.getY() + (i / perRow) * (24 + gap),
+                                               buttonWidth, 24);
+        strip.removeFromBottom (6);
+        neck.setBounds (strip.reduced (8, 0));
         const int width = inner.getWidth() / 9;
-        // Two rows on the left: the mode, and which way chords are strummed.
+        // Two rows on the left: which way chords are strummed, and the tuning.
         auto combos = inner.removeFromLeft (width * 2).reduced (2, 2);
-        const int rowHeight = combos.getHeight() / 3;
-        for (auto [label, box] : { std::pair { &guitarModeLabel, &guitarModeBox }, std::pair { &strumDirectionLabel, &strumDirectionBox },
-                                   std::pair { &tuningLabel, &tuningBox } })
+        const int rowHeight = combos.getHeight() / 2;
+        for (auto [label, box] : { std::pair { &strumDirectionLabel, &strumDirectionBox }, std::pair { &tuningLabel, &tuningBox } })
         {
             auto row = combos.removeFromTop (rowHeight).withSizeKeepingCentre (combos.getWidth(), 22);
             label->setJustificationType (juce::Justification::centredLeft);
@@ -1291,4 +1329,12 @@ void SF2PlayerEditor::resized()
     keyboard.setBounds (keys);
     keyboard.setKeyWidth ((float) keys.getWidth() / 52.0f);   // 52 white keys in 88
     keyboard.setLowestVisibleKey (21);
+}
+
+// The mode's button lit, the others not.
+void SF2PlayerEditor::showMode()
+{
+    const int mode = guitarModeBox.getSelectedItemIndex();
+    for (size_t i = 0; i < modeButtons.size(); ++i)
+        modeButtons[i].setToggleState (modeOrder[i] == mode, juce::dontSendNotification);
 }

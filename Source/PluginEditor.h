@@ -32,6 +32,12 @@ struct SF2Look : juce::LookAndFeel_V4
         return juce::FontOptions (box.getHeight() < 24 ? (float) box.getHeight() * 0.68f : juce::jmin (16.0f, (float) box.getHeight() * 0.85f));
     }
     static int numberStart (const juce::String& s) { return s.lastIndexOf ("  ["); }
+    // The Guitar panel's mode buttons: one size for all, on one line.
+    juce::Font getTextButtonFont (juce::TextButton& button, int height) override
+    {
+        if (button.getProperties().contains ("guitarMode")) return juce::FontOptions (13.0f, juce::Font::bold);
+        return LookAndFeel_V4::getTextButtonFont (button, height);
+    }
 };
 
 // The on-screen keyboard, with the keys the preset doesn't play dimmed.
@@ -188,6 +194,12 @@ private:
         strumDirectionAttachment, tremoloSyncAttachment, patternAttachment, tuningAttachment, chordKeyAttachment, chordScaleAttachment;
     juce::AudioProcessorValueTreeState::ButtonAttachment velocityStringsAttachment;
     juce::Label tuningLabel { {}, "Tune" };
+    // The mode as a row of buttons under the neck (the hidden Mode menu holds the parameter).
+    static constexpr std::array<int, 10> modeOrder { GuitarEngine::solo, GuitarEngine::harmony, GuitarEngine::chords,
+        GuitarEngine::autoChords, GuitarEngine::bassAndChord, GuitarEngine::bassAndPick, GuitarEngine::shape,
+        GuitarEngine::keyChords, GuitarEngine::strumKeys, GuitarEngine::pattern };
+    std::array<juce::TextButton, 10> modeButtons;
+    void showMode();
     bool guitarShown = false;
     void refreshGuitarPanel();
 
@@ -198,7 +210,7 @@ private:
     juce::TextButton keysButton;   // folds the keyboard
     int keyboardHeight = 120;      // the keyboard's height when it was last shown
     static constexpr int panelHeight = 118, collapsedHeight = 26, panelGap = 12;
-    static constexpr int neckHeight = 118;   // the Guitar panel's neck strip, under its knobs
+    static constexpr int neckHeight = 182;   // the Guitar panel's neck strip and its mode buttons, under the knobs
     int heightOf (Section s) const
     {
         return collapsed[(size_t) s] ? collapsedHeight : panelHeight + (s == guitarSection ? neckHeight : 0);
