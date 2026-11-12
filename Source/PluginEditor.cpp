@@ -1167,10 +1167,10 @@ void SF2PlayerEditor::applyHeight()
     if (getHeight() != height) setSize (getWidth(), height);
 }
 
-// The window's height: 550 with every section open, no Guitar panel and no info row.
+// The window's height: 558 with every section open, no Guitar panel and no info row.
 int SF2PlayerEditor::minimumHeight() const
 {
-    int height = 550 + guitarExtra() + (infoLabel.isVisible() ? 22 : 0);
+    int height = 558 + guitarExtra() + (infoLabel.isVisible() ? 22 : 0);
     for (auto s : { effectsSection, playSection })
         height -= panelHeight - heightOf (s);
     if (collapsed[keyboardSection])
@@ -1510,7 +1510,7 @@ void SF2PlayerEditor::resized()
 
 
 
-    area.removeFromTop (4);
+    area.removeFromTop (panelGap);   // the same gap as between the panels
     auto notes = area.removeFromTop (22);
     sendsToggle.setBounds (notes.removeFromRight (210));
     keysButton.setBounds (notes.removeFromLeft (84));
