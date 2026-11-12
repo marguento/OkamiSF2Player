@@ -144,7 +144,7 @@ public:
         // Left: the chord's name, the strum arrow and the palm light.
         auto left = area.removeFromLeft (nameWidth);
         g.setColour (colours.text.withAlpha (noteCount > 0 ? fade : 0.25f));
-        g.setFont (juce::FontOptions (22.0f, juce::Font::bold));
+        g.setFont (juce::FontOptions (30.0f, juce::Font::bold));
         g.drawText (noteCount > 0 ? (name.isNotEmpty() ? name : juce::String ("?")) : juce::String::fromUTF8 ("\xe2\x80\x93"),
                     left.removeFromTop (left.getHeight() * 0.6f), juce::Justification::centredLeft);
         if (drawn && noteCount == 0)
@@ -207,12 +207,12 @@ public:
             else if (fret == 0)
             {
                 g.setColour (dot);
-                g.drawEllipse (neck.getX() + 2.0f, y - 4.0f, 8.0f, 8.0f, 1.5f);
+                g.drawEllipse (neck.getX() + 1.0f, y - 5.0f, 10.0f, 10.0f, 1.6f);
             }
             else
             {
                 const float x = board.getX() + (fret - first + 0.5f) * columnWidth;
-                const float size = juce::jmin (11.0f, rowGap * 0.9f);
+                const float size = juce::jmin (16.0f, rowGap * 0.85f);
                 g.setColour (dot);
                 g.fillEllipse (x - size / 2.0f, y - size / 2.0f, size, size);
             }
@@ -221,7 +221,7 @@ public:
 
 private:
     static constexpr float fadeAfter = 3.0f;   // seconds before a chord's dots dim
-    static constexpr float nameWidth = 96.0f;
+    static constexpr float nameWidth = 110.0f;
     static constexpr int fretCount = 12;
     struct Geometry { juce::Rectangle<float> neck, board, numbers; float columnWidth, rowGap; };
     Geometry layout() const

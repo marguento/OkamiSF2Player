@@ -191,7 +191,7 @@ private:
     juce::TextButton keysButton;   // folds the keyboard
     int keyboardHeight = 120;      // the keyboard's height when it was last shown
     static constexpr int panelHeight = 118, collapsedHeight = 26, panelGap = 12;
-    static constexpr int neckHeight = 74;   // the Guitar panel's neck strip, under its knobs
+    static constexpr int neckHeight = 118;   // the Guitar panel's neck strip, under its knobs
     int heightOf (Section s) const
     {
         return collapsed[(size_t) s] ? collapsedHeight : panelHeight + (s == guitarSection ? neckHeight : 0);

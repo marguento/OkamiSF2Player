@@ -135,7 +135,7 @@ At their defaults (x1, Linear, 0, Poly, Off) they change nothing.
 
 ## Guitar
 
-The **GUITAR** panel appears by itself when the instrument is a guitar (General MIDI programs
+The **GUITAR** panel appears by itself, first under the instrument, when it's a guitar (General MIDI programs
 24-31, or an instrument named "guitar"). The menu at the top right of PLAY says **Guitar: Auto**;
 choose **On** to use it with any instrument (a harp, a ukulele, a piano), or **Off** to hide it.
 With every control at Off or 0 it changes nothing.

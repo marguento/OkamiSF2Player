@@ -847,11 +847,13 @@ void SF2PlayerEditor::refreshGuitarPanel()
     tremoloRate.slider.setEnabled (tremoloSyncBox.getSelectedItemIndex() <= 0);
     if (show == guitarShown)
         return;
-    const int before = guitarExtra();
+    // The height first: setResizeLimits already moves the window to a new minimum, and the
+    // panel's height was then added on top of that (the window came out far too tall).
+    const int before = guitarExtra(), height = getHeight();
     guitarShown = show;
     showSectionContents();
     setResizeLimits (620, minimumHeight(), 1600, 1400);
-    setSize (getWidth(), juce::jmax (minimumHeight(), getHeight() + guitarExtra() - before));
+    setSize (getWidth(), juce::jmax (minimumHeight(), height + guitarExtra() - before));
     resized();
     repaint();
 }
@@ -881,10 +883,11 @@ void SF2PlayerEditor::toggleSection (Section s)
         if (collapsed[(size_t) section]) folded.add (name);
     settings->setValue ("collapsedSections", folded.joinIntoString (","));
     settings->saveIfNeeded();
+    const int height = getHeight();   // before setResizeLimits moves it
     showSectionContents();
     setResizeLimits (620, minimumHeight(), 1600, 1400);
     if (s != guitarSection || guitarShown)
-        setSize (getWidth(), juce::jmax (minimumHeight(), getHeight() + delta));
+        setSize (getWidth(), juce::jmax (minimumHeight(), height + delta));
     resized();
     repaint();
 }
@@ -1119,6 +1122,31 @@ void SF2PlayerEditor::resized()
     row.removeFromRight (6);
     layerPresetBox.setBounds (row);
 
+    // A guitar's panel comes first, right under the instrument: it's what's played with.
+    if (guitarShown)
+    {
+        area.removeFromTop (panelGap);
+        guitarPanel = area.removeFromTop (heightOf (guitarSection));
+        tremoloSyncBox.setBounds (guitarPanel.getRight() - 6 - 70, guitarPanel.getY() + 5, 70, 18);
+        patternBox.setBounds (tremoloSyncBox.getX() - 8 - 130, guitarPanel.getY() + 5, 130, 18);
+        auto inner = guitarPanel.reduced (6).withTrimmedTop (18);
+        neck.setBounds (inner.removeFromBottom (neckHeight - 6).reduced (8, 0));
+        const int width = inner.getWidth() / 9;
+        // Two rows on the left: the mode, and which way chords are strummed.
+        auto combos = inner.removeFromLeft (width * 2).reduced (2, 6);
+        for (auto [label, box] : { std::pair { &guitarModeLabel, &guitarModeBox }, std::pair { &strumDirectionLabel, &strumDirectionBox } })
+        {
+            auto row = combos.removeFromTop (combos.getHeight() / (label == &guitarModeLabel ? 2 : 1)).withSizeKeepingCentre (combos.getWidth(), 24);
+            label->setJustificationType (juce::Justification::centredLeft);
+            label->setBounds (row.removeFromLeft (40));
+            box->setBounds (row);
+        }
+        for (auto* knob : { &strum, &fretPosition, &palmMute, &humanize, &doubleMix, &tremoloDepth, &tremoloRate })
+            knob->setBounds (inner.removeFromLeft (width));
+    }
+    else
+        guitarPanel = {};
+
     area.removeFromTop (panelGap);
     auto panels = area.removeFromTop (heightOf (effectsSection));
     reverbPanel = panels.removeFromLeft ((panels.getWidth() - 12) / 2);
@@ -1151,29 +1179,7 @@ void SF2PlayerEditor::resized()
     }
     guitarPanelBox.setBounds (playPanel.getRight() - 6 - 112, playPanel.getY() + 5, 112, 18);
 
-    if (guitarShown)
-    {
-        area.removeFromTop (panelGap);
-        guitarPanel = area.removeFromTop (heightOf (guitarSection));
-        tremoloSyncBox.setBounds (guitarPanel.getRight() - 6 - 70, guitarPanel.getY() + 5, 70, 18);
-        patternBox.setBounds (tremoloSyncBox.getX() - 8 - 130, guitarPanel.getY() + 5, 130, 18);
-        auto inner = guitarPanel.reduced (6).withTrimmedTop (18);
-        neck.setBounds (inner.removeFromBottom (neckHeight - 6).reduced (8, 0));
-        const int width = inner.getWidth() / 9;
-        // Two rows on the left: the mode, and which way chords are strummed.
-        auto combos = inner.removeFromLeft (width * 2).reduced (2, 6);
-        for (auto [label, box] : { std::pair { &guitarModeLabel, &guitarModeBox }, std::pair { &strumDirectionLabel, &strumDirectionBox } })
-        {
-            auto row = combos.removeFromTop (combos.getHeight() / (label == &guitarModeLabel ? 2 : 1)).withSizeKeepingCentre (combos.getWidth(), 24);
-            label->setJustificationType (juce::Justification::centredLeft);
-            label->setBounds (row.removeFromLeft (40));
-            box->setBounds (row);
-        }
-        for (auto* knob : { &strum, &fretPosition, &palmMute, &humanize, &doubleMix, &tremoloDepth, &tremoloRate })
-            knob->setBounds (inner.removeFromLeft (width));
-    }
-    else
-        guitarPanel = {};
+
 
     area.removeFromTop (4);
     auto notes = area.removeFromTop (22);
