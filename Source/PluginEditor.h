@@ -321,9 +321,11 @@ private:
     static constexpr int zoneBand = 16;   // over the keys: the Guitar panel's zones, named   // a small keyboard: it shows what's played, a MIDI keyboard plays
     void applyHeight();   // the window's height is its contents': it never stretches
     static constexpr int panelHeight = 118, collapsedHeight = 26, panelGap = 12;
-    static constexpr int baseNeckHeight = 250, controllersHeight = 112, guitarHeader = 30;
+    static constexpr int baseNeckHeight = 140, guitarHeader = 30;   // the neck and the mode buttons
+    int optionRows = 3;   // the options box's rows, as laid out for the mode (and the controllers)
+    static int optionsHeight (int rows) { return 24 * rows + 4 * (rows - 1) + 30; }
     // The neck, the mode buttons and the options box, under the knobs (the controllers' rows too when shown).
-    int neckHeight() const { return baseNeckHeight + (showControllers ? controllersHeight : 0); }
+    int neckHeight() const { return baseNeckHeight + optionsHeight (optionRows); }
     int heightOf (Section s) const
     {
         if (collapsed[(size_t) s] || (s == effectsSection && ! showEffectControls)) return collapsedHeight;

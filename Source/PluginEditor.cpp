@@ -1637,8 +1637,7 @@ void SF2PlayerEditor::resized()
         strum.label.setBounds (strum.slider.getX() - 44, guitarPanel.getY() + 4, 42, 21);
         auto inner = guitarPanel.reduced (6).withTrimmedTop (guitarHeader - 6);
         auto strip = inner.removeFromBottom (neckHeight() - 6);
-        const int rows = showControllers ? 7 : 3;
-        optionsFrame = strip.removeFromBottom (24 * rows + 4 * (rows - 1) + 30).reduced (8, 0);
+        optionsFrame = strip.removeFromBottom (optionsHeight (optionRows)).reduced (8, 0);
         optionsArea = optionsFrame.reduced (8, 0).withTrimmedTop (22).withTrimmedBottom (8);
         strip.removeFromBottom (6);
         auto modes = strip.removeFromBottom (26).reduced (8, 0);   // Pattern, the five modes, Direct
@@ -1754,9 +1753,9 @@ void SF2PlayerEditor::refreshModeOptions()
         add (second, legatoTimeSlider, 96);
         add (second, bassZoneToggle, 92);
         add (second, bassZoneTopSlider, 48);
-        for (int i = 0; i < 4; ++i) { add (third, switchLabels[(size_t) i], i == 0 ? 20 : 28); add (third, switchBoxes[(size_t) i], 76); }
-        add (third, pedalLabel, 36);
-        add (third, pedalBox, 76);
+        for (int i = 0; i < 4; ++i) { add (third, switchLabels[(size_t) i], i == 0 ? 22 : 26); add (third, switchBoxes[(size_t) i], 72); }
+        add (third, pedalLabel, 34);
+        add (third, pedalBox, 66);
     }
     else if (mode == GuitarEngine::harmony)
     {
@@ -1808,6 +1807,35 @@ void SF2PlayerEditor::refreshModeOptions()
     }
     optionsNote.setColour (juce::Label::textColourId, SF2Look::dim);
 
+    // Use the room: a row that fits after another joins it (the on/off switches after the Velocity
+    // FX, say), and the box keeps only the rows it fills.
+    {
+        const int gap = 6, width = optionsArea.getWidth();
+        auto widthOf = [gap] (const auto& row) { int w = 0; for (auto& item : row) w += item.second + gap; return w; };
+        for (auto* later : { &third, &second })
+            if (! later->empty() && widthOf (first) + 12 + widthOf (*later) <= width)
+            {
+                first.insert (first.end(), later->begin(), later->end());
+                later->clear();
+            }
+        if (! third.empty() && ! second.empty() && widthOf (second) + 12 + widthOf (third) <= width)
+        {
+            second.insert (second.end(), third.begin(), third.end());
+            third.clear();
+        }
+    }
+    {
+        int rows = 0;
+        for (auto* row : { &first, &second, &third, &fourth, &fifth, &sixth, &seventh }) rows += row->empty() ? 0 : 1;
+        rows = juce::jmax (1, rows);
+        if (rows != optionRows && guitarShown)
+        {
+            optionRows = rows;
+            // The box changed size: the window follows, once this layout is over.
+            juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<SF2PlayerEditor> (this)]
+                                             { if (safe != nullptr) { safe->applyHeight(); safe->resized(); safe->repaint(); } });
+        }
+    }
     std::vector<juce::Component*> all { &fxLabel, &velocityFxBox, &fxVelocityLabel, &fxVelocitySlider, &fxTimeLabel, &fxTimeSlider, &rhythmLabel,
                                         &patternBox, &optionsNote, &harmonyLabel, &harmonyBox, &positionLabel, &stringsLabel, &stringsTopSlider,
                                         &stringsDash, &stringsBottomSlider, &repeatStringsLabel, &repeatStringsSlider, &addOnLabel, &addOnBox,
@@ -1840,19 +1868,12 @@ void SF2PlayerEditor::refreshModeOptions()
         }
     };
     auto rows = optionsArea;
-    place (first, rows.removeFromTop (24));
-    rows.removeFromTop (4);
-    place (second, rows.removeFromTop (24));
-    rows.removeFromTop (4);
-    place (third, rows.removeFromTop (24));
-    rows.removeFromTop (4);
-    place (fourth, rows.removeFromTop (24));
-    rows.removeFromTop (4);
-    place (fifth, rows.removeFromTop (24));
-    rows.removeFromTop (4);
-    place (sixth, rows.removeFromTop (24));
-    rows.removeFromTop (4);
-    place (seventh, rows.removeFromTop (24));
+    for (auto* row : { &first, &second, &third, &fourth, &fifth, &sixth, &seventh })
+    {
+        if (row->empty()) continue;
+        place (*row, rows.removeFromTop (24));
+        rows.removeFromTop (4);
+    }
     controllersButton.setButtonText (juce::String::fromUTF8 (showControllers ? "\xe2\x96\xbe Controllers" : "\xe2\x96\xb8 Controllers"));
     controllersButton.setVisible (open);
 }
