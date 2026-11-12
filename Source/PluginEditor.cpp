@@ -454,6 +454,20 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     controllersButton.setTooltip ("Show or hide the velocity curve, Accent, Release and the wheels' jobs");
     controllersButton.onClick = [this] { toggleControllers(); };
     addAndMakeVisible (controllersButton);
+    for (int i = 0; i < 6; ++i)
+    {
+        auto& button = stringButtons[(size_t) i];
+        static const char* const names[] = { "E", "A", "D", "G", "B", "e" };
+        button.setButtonText (names[i]);
+        button.getProperties().set ("guitarMode", true);
+        button.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff2a1f17));
+        button.setColour (juce::TextButton::buttonOnColourId, SF2Look::accent);
+        button.setColour (juce::TextButton::textColourOffId, juce::Colour (0xff8a7a62));
+        button.setColour (juce::TextButton::textColourOnId, juce::Colour (0xff1d140d));
+        button.setTooltip ("Strings: the ones lit are strummed (low E to high E). Click one to leave it out or bring it back");
+        button.onClick = [this, i] { clickString (i); };
+        addAndMakeVisible (button);
+    }
     for (auto* label : { &fxLabel, &fxVelocityLabel, &fxTimeLabel, &positionLabel, &stringsLabel, &stringsDash, &repeatStringsLabel,
                          &harmonyLabel, &addOnLabel, &rhythmLabel, &optionsNote, &fxStepsLabel, &permanentLabel, &legatoStepsLabel,
                          &legatoTimeLabel, &pedalLabel, &switchLabels[0], &switchLabels[1], &switchLabels[2], &switchLabels[3],
@@ -1524,6 +1538,17 @@ void SF2PlayerEditor::showMode()
     for (int i = 0; i < (int) curveButtons.size(); ++i)
         if (curveButtons[(size_t) i].getToggleState() != (i == curve))
             curveButtons[(size_t) i].setToggleState (i == curve, juce::dontSendNotification);
+    {
+        // Strings are numbered from the high E (1) to the low E (6); the buttons go low to high.
+        const int top = juce::roundToInt (player.parameters.getRawParameterValue ("stringsTop")->load());
+        const int bottom = juce::roundToInt (player.parameters.getRawParameterValue ("stringsBottom")->load());
+        for (int i = 0; i < 6; ++i)
+        {
+            const int number = 6 - i;
+            const bool on = number >= top && number <= bottom;
+            if (stringButtons[(size_t) i].getToggleState() != on) stringButtons[(size_t) i].setToggleState (on, juce::dontSendNotification);
+        }
+    }
     const int position = juce::roundToInt (player.parameters.getRawParameterValue ("chordPosition")->load());
     for (int i = 0; i < (int) positionButtons.size(); ++i)
         if (positionButtons[(size_t) i].getToggleState() != (i == position))
@@ -1586,9 +1611,7 @@ void SF2PlayerEditor::refreshModeOptions()
         if (mode == GuitarEngine::chords)
         {
             add (second, stringsLabel, 50);
-            add (second, stringsTopSlider, 40);
-            add (second, stringsDash, 8);
-            add (second, stringsBottomSlider, 40);
+            for (auto& button : stringButtons) add (second, button, 26);
         }
         if (mode == GuitarEngine::bassAndChord) { add (second, repeatStringsLabel, 58); add (second, repeatStringsSlider, 40); }
         if (mode == GuitarEngine::bassAndPick) { add (second, addOnLabel, 72); add (second, addOnBox, 100); }
@@ -1637,6 +1660,7 @@ void SF2PlayerEditor::refreshModeOptions()
     for (auto& box : switchBoxes) all.push_back (&box);
     for (auto& label : switchLabels) all.push_back (&label);
     for (auto& button : curveButtons) all.push_back (&button);
+    for (auto& button : stringButtons) all.push_back (&button);
     for (auto& button : positionButtons) all.push_back (&button);
     for (auto* c : all)
     {
@@ -1804,4 +1828,24 @@ void SF2PlayerEditor::refreshPanelButton()
         panelButton.setButtonText (text);
         panelButton.setColour (juce::TextButton::textColourOffId, guitar ? SF2Look::accent : SF2Look::dim);
     }
+}
+
+// A string clicked: a lit one at either end goes out, an unlit one comes in (with the ones between),
+// a lit one inside moves the nearer end to it. At least one string stays.
+void SF2PlayerEditor::clickString (int index)
+{
+    int top = juce::roundToInt (player.parameters.getRawParameterValue ("stringsTop")->load());
+    int bottom = juce::roundToInt (player.parameters.getRawParameterValue ("stringsBottom")->load());
+    const int number = 6 - index;
+    if (number < top) top = number;
+    else if (number > bottom) bottom = number;
+    else if (top == bottom) return;
+    else if (number == top) top = number + 1;
+    else if (number == bottom) bottom = number - 1;
+    else if (number - top < bottom - number) top = number;
+    else bottom = number;
+    for (auto [id, value] : { std::pair { "stringsTop", top }, std::pair { "stringsBottom", bottom } })
+        if (auto* parameter = player.parameters.getParameter (id))
+            parameter->setValueNotifyingHost (parameter->convertTo0to1 ((float) value));
+    showMode();
 }

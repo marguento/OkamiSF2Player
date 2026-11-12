@@ -211,6 +211,9 @@ private:
                  stringsBottomSlider { juce::Slider::LinearBar, juce::Slider::TextBoxLeft },
                  repeatStringsSlider { juce::Slider::LinearBar, juce::Slider::TextBoxLeft };
     std::array<juce::TextButton, 5> positionButtons;
+    // Chords' Strings: the six strings, low E to high E, lit when the strum plays them (a range).
+    std::array<juce::TextButton, 6> stringButtons;
+    void clickString (int index);
     juce::ToggleButton chordBassToggle { "Chord/Bass" }, alterBassToggle { "Alter Bass" }, bassMonoToggle { "Bass Mono" };
     juce::Label fxLabel { {}, "Velocity FX" }, fxVelocityLabel { {}, "Velo" }, fxTimeLabel { {}, "Time" },
                 positionLabel { {}, "Chord Position" }, stringsLabel { {}, "Strings" }, stringsDash { {}, "-" },

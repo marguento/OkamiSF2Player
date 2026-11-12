@@ -181,7 +181,8 @@ letting the chord go stops them all (unless Hold).
   **Velo** is strummed over **Time**), Velo Mute (notes under Velo are muted).
 - **Chord Position:** where chords lie on the neck, by their highest note: I (E3-G#3, the open
   position), II (G3-B3), III (A#3-D4), IV (C#4-F4), or Kbd (the octave you play in).
-- **Strings** (Chords): the highest and lowest strings strummed (1 is the high E, 6 the low E).
+- **Strings** (Chords): the six strings, low E to high E; the lit ones are strummed. A click on one
+  at either end leaves it out, on an unlit one brings it back (they stay a range).
 - **Strings #** (Bass & Chord): how many upper strings the Repeat keys strum.
 - **Chord/Bass:** a major or minor chord over another bass key is played as such (G A C E: Am/G).
 - **Alter Bass:** the same chord again plays its second bass. **Bass Mono:** the second bass stops
