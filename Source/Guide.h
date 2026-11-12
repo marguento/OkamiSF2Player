@@ -205,7 +205,7 @@ private:
                 { "Tone", "A gentle low-pass filter: darker towards the left. Off at the right." },
                 { "Layer", "A second instrument from the same SoundFont: Layer plays both together, Split plays it below the split key." },
                 { "Effects", "" },
-                { "Reverb and Chorus", "The SoundFont's own effects, with presets. Effects to separate outputs sends them raw to Ableton instead, for your own effects." },
+                { "Reverb and Chorus", "The SoundFont's own effects, on or off, as the SoundFont sets them. Their knobs and presets are an advanced setting in the ? menu. Effects to separate outputs sends them raw to Ableton instead, for your own effects." },
                 { "Play", "" },
                 { "Attack, Release", "How fast notes start and fade, x1 is the SoundFont's own." },
                 { "Velocity", "Linear plays velocities as they come; + makes soft playing louder, - softer." },

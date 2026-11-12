@@ -221,6 +221,7 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     recentFiles.restoreFromString (settings->getValue ("recentFiles"));
     showHints = settings->getBoolValue ("showHints", true);
     showControllers = settings->getBoolValue ("guitarControllers", false);
+    showEffectControls = settings->getBoolValue ("showEffectControls", false);
 
     fileBox.setTextWhenNothingSelected ("Choose a SoundFont...");
     fileBox.onChange = [this]
@@ -638,8 +639,8 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     setResizeLimits (620, minimumHeight(), 1600, 1400);
     // refresh() above has already given the window its full height: take the folded sections off.
     setSize (620, juce::jmax (minimumHeight(), (infoLabel.isVisible() ? 628 : 606)
-                                               - (collapsed[effectsSection] ? panelHeight - collapsedHeight : 0)
-                                               - (collapsed[playSection] ? panelHeight - collapsedHeight : 0)
+                                               - (panelHeight - heightOf (effectsSection))
+                                               - (panelHeight - heightOf (playSection))
                                                - (collapsed[keyboardSection] ? keyboardHeight : 0)));
     showSectionContents();
     refreshLayerControls();
@@ -1153,8 +1154,7 @@ int SF2PlayerEditor::minimumHeight() const
 {
     int height = 606 + guitarExtra();
     for (auto s : { effectsSection, playSection })
-        if (collapsed[(size_t) s])
-            height -= panelHeight - collapsedHeight;
+        height -= panelHeight - heightOf (s);
     if (collapsed[keyboardSection])
         height -= 120;   // the keyboard's smallest height
     return height;
@@ -1191,7 +1191,9 @@ void SF2PlayerEditor::showSectionContents()
 {
     keyboard.setVisible (! collapsed[keyboardSection]);
     keysButton.setButtonText (juce::String::fromUTF8 (collapsed[keyboardSection] ? "\xe2\x96\xb8 Keyboard" : "\xe2\x96\xbe Keyboard"));
-    const bool effects = ! collapsed[effectsSection];
+    const bool effects = ! collapsed[effectsSection] && showEffectControls;
+    reverbPresets.setVisible (showEffectControls);
+    chorusPresets.setVisible (showEffectControls);
     for (auto* knob : { &reverbLevel, &reverbRoom, &reverbDamping, &reverbWidth, &chorusLevel, &chorusRate, &chorusDepth, &chorusVoices })
         knob->slider.setVisible (effects), knob->label.setVisible (effects);
     const bool play = ! collapsed[playSection];
@@ -1219,7 +1221,7 @@ void SF2PlayerEditor::mouseUp (const juce::MouseEvent& e)
 {
     const auto at = e.getPosition();
     auto title = [] (juce::Rectangle<int> panel) { return panel.withHeight (collapsedHeight); };
-    if (title (reverbPanel).contains (at) || title (chorusPanel).contains (at)) toggleSection (effectsSection);
+    if (title (reverbPanel).contains (at) || title (chorusPanel).contains (at)) { if (showEffectControls) toggleSection (effectsSection); }
     else if (title (playPanel).contains (at)) toggleSection (playSection);
     else if (guitarShown && title (guitarPanel).contains (at)) toggleSection (guitarSection);
 }
@@ -1229,8 +1231,9 @@ void SF2PlayerEditor::drawSectionTitle (juce::Graphics& g, juce::Rectangle<int> 
 {
     g.setColour (SF2Look::dim);
     g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
-    g.drawText (juce::String::fromUTF8 (collapsed[(size_t) s] ? "\xe2\x96\xb8" : "\xe2\x96\xbe"), panel.getX() + 8, panel.getY() + 7, 12, 14,
-                juce::Justification::centred);
+    if (s != effectsSection || showEffectControls)   // the effects fold only with their controls shown
+        g.drawText (juce::String::fromUTF8 (collapsed[(size_t) s] ? "\xe2\x96\xb8" : "\xe2\x96\xbe"), panel.getX() + 8, panel.getY() + 7, 12, 14,
+                    juce::Justification::centred);
     g.drawText (title, panel.getX() + 22, panel.getY() + 8, 100, 14, juce::Justification::centredLeft);
 }
 
@@ -1467,7 +1470,7 @@ void SF2PlayerEditor::resized()
     {
         toggle->setBounds (panel.getRight() - 32, panel.getY() + 4, 26, 22);
         (toggle == &reverbToggle ? reverbPresets : chorusPresets).setBounds (panel.getRight() - 32 - 92, panel.getY() + 6, 88, 18);
-        if (collapsed[effectsSection])
+        if (collapsed[effectsSection] || ! showEffectControls)
             continue;
         auto inner = panel.reduced (6).withTrimmedTop (18);
         const int width = inner.getWidth() / 4;
@@ -1690,10 +1693,13 @@ void SF2PlayerEditor::showHelpMenu()
     menu.addItem (2, "About Okami SF2 Player");
     menu.addSeparator();
     menu.addItem (3, "Show hints at the top", true, showHints);
+    menu.addItem (4, "Show reverb and chorus controls (advanced)", true, showEffectControls);
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (helpButton), [this] (int chosen)
     {
         if (chosen == 1) openGuide (Guide::start);
         else if (chosen == 2) openGuide (Guide::about);
+        else if (chosen == 4)
+            toggleEffectControls();
         else if (chosen == 3)
         {
             showHints = ! showHints;
@@ -1730,4 +1736,22 @@ void SF2PlayerEditor::showHint()
             if (auto* client = dynamic_cast<juce::TooltipClient*> (c))
                 if (hint = client->getTooltip(); hint.isNotEmpty()) break;
     if (hintLabel.getText() != hint) hintLabel.setText (hint, juce::dontSendNotification);
+}
+
+// The reverb's and chorus's knobs and presets, shown or not; the window grows or shrinks by them.
+void SF2PlayerEditor::toggleEffectControls()
+{
+    const int before = heightOf (effectsSection);
+    showEffectControls = ! showEffectControls;
+    settings->setValue ("showEffectControls", showEffectControls);
+    settings->saveIfNeeded();
+    if (showEffectControls) collapsed[effectsSection] = false;   // asked for: open
+    const int delta = heightOf (effectsSection) - before;
+    const int height = getHeight();   // before setResizeLimits moves it
+    showSectionContents();
+    setResizeLimits (620, minimumHeight(), 1600, 1400);
+    setSize (getWidth(), juce::jmax (minimumHeight(), height + delta));
+    resized();
+    repaint();
+    if (delta > 0) fitToScreen (effectsSection);
 }

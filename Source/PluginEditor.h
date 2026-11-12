@@ -288,7 +288,7 @@ private:
     int neckHeight() const { return baseNeckHeight + (showControllers ? controllersHeight : 0); }
     int heightOf (Section s) const
     {
-        if (collapsed[(size_t) s]) return collapsedHeight;
+        if (collapsed[(size_t) s] || (s == effectsSection && ! showEffectControls)) return collapsedHeight;
         return s == guitarSection ? guitarHeader + neckHeight() : panelHeight;
     }
     GuitarNeck neck { { SF2Look::text, SF2Look::dim, SF2Look::accent, SF2Look::panel, SF2Look::line.brighter (0.35f) } };
@@ -309,6 +309,10 @@ private:
     juce::TextButton helpButton { "?" };
     juce::Label hintLabel;
     bool showHints = true;
+    // Reverb and chorus show only their switches, as the plugin this one follows did; their knobs
+    // and presets are an advanced setting in the ? menu.
+    bool showEffectControls = false;
+    void toggleEffectControls();
     std::unique_ptr<Guide> guide;
     void showHelpMenu();
     void openGuide (Guide::Page);
