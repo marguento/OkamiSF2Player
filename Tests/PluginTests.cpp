@@ -828,6 +828,50 @@ int main()
                     "Guitar: a drawn shape is played from any key (and kept through packing)");
         }
 
+        // Strum Keys: the chord hand is silent; C strums down the open C, D up, a black key damps.
+        {
+            GuitarEngine keys;
+            keys.prepare (rate);
+            GuitarEngine::Settings ks;
+            ks.mode = GuitarEngine::strumKeys;
+            for (int key : { 48, 52, 55 }) keys.noteOn (ks, 0, key, 100, 0);
+            GuitarEngine::Event ev;
+            const bool silent = ! keys.pop ((juce::int64) rate, ev);
+            keys.noteOn (ks, 0, 60, 100, 1000);   // C: down
+            std::vector<int> down;
+            while (keys.pop ((juce::int64) rate, ev)) if (ev.velocity > 0) down.push_back (ev.note);
+            keys.noteOn (ks, 0, 62, 90, 30000);   // D: up
+            std::vector<std::pair<juce::int64, int>> up;
+            int ended = 0;
+            while (keys.pop ((juce::int64) rate * 2, ev)) { if (ev.velocity > 0) up.push_back ({ ev.time, ev.note }); else ++ended; }
+            std::sort (up.begin(), up.end());
+            keys.noteOn (ks, 0, 61, 90, 60000);   // a black key: damp
+            int damped = 0, started = 0;
+            while (keys.pop ((juce::int64) rate * 2, ev)) (ev.velocity > 0 ? started : damped)++;
+            const bool ok = silent && down == std::vector<int> { 48, 52, 55, 60, 64 } && up.size() == 5 && up.front().second == 64
+                         && ended == 5 && damped == 5 && started == 0;
+            expect (ok, "Strum Keys: the chord is held silently, C strums down the open chord, D up, a black key damps",
+                    juce::String ((int) down.size()) + " down, " + juce::String ((int) up.size()) + " up");
+        }
+
+        // Pattern: a held chord plays its rhythm by itself, and stops when it's let go.
+        {
+            Player patterned (testFont);
+            patterned.set ("guitarPanel", 1);
+            patterned.set ("guitarMode", 5);
+            patterned.set ("strumPattern", 0);   // Down Eighths
+            const auto out = patterned.render (2.0, [] (int b, juce::MidiBuffer& m)
+            {
+                if (b == 0) for (int key : { 48, 52, 55 }) m.addEvent (juce::MidiMessage::noteOn (1, key, (juce::uint8) 100), 0);
+                if (b == blockOf (1.0)) for (int key : { 48, 52, 55 }) m.addEvent (juce::MidiMessage::noteOff (1, key), 0);
+            });
+            // Eighths at 120 bpm: a stroke every 0.25 s; each one restarts the strings.
+            const bool plays = rms (out, 0.05, 0.2) > 0.01 && rms (out, 0.55, 0.7) > 0.01;
+            const bool stops = rms (out, 1.7, 2.0) < rms (out, 0.55, 0.7) * 0.1;
+            expect (plays && stops, "Pattern: a held chord strums its rhythm by itself and stops when let go",
+                    db (rms (out, 0.55, 0.7)) + " playing, " + db (rms (out, 1.7, 2.0)) + " after");
+        }
+
         // A C major chord voiced at the 3rd fret: C on the A string, then G, C, E, G.
         const int keys[] = { 60, 64, 67 };
         int voiced[16] = {};

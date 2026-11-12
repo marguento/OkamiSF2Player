@@ -174,7 +174,8 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
       guitarPanelAttachment (p.parameters, "guitarPanel", guitarPanelBox),
       guitarModeAttachment (p.parameters, "guitarMode", guitarModeBox),
       strumDirectionAttachment (p.parameters, "strumDirection", strumDirectionBox),
-      tremoloSyncAttachment (p.parameters, "tremoloSync", tremoloSyncBox)
+      tremoloSyncAttachment (p.parameters, "tremoloSync", tremoloSyncBox),
+      patternAttachment (p.parameters, "strumPattern", patternBox)
 {
     setLookAndFeel (&look);
 
@@ -281,8 +282,15 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     };
     setUpCombo (guitarPanelBox, { "Guitar: Auto", "Guitar: On", "Guitar: Off" }, "guitarPanel",
                 "The Guitar panel: Auto shows it for guitars (General MIDI 24-31, or named so); On or Off for any instrument");
-    setUpCombo (guitarModeBox, { "Solo", "Chords", "Bass & Pick", "Shape" }, "guitarMode",
-                "Solo: notes as played. Chords: notes played together are strummed. Bass & Pick: the lowest note first, then the rest picked. Shape: every key strums the chord drawn on the neck");
+    setUpCombo (guitarModeBox, { "Solo", "Chords", "Bass & Pick", "Shape", "Strum Keys", "Pattern" }, "guitarMode",
+                "Solo: notes as played. Chords: notes played together are strummed. Bass & Pick: the lowest note first, then the rest picked. "
+                "Shape: every key strums the chord drawn on the neck. Strum Keys: hold a chord below C4, play the pick with the white keys from C4 "
+                "(C down, D up, E/F muted, G bass, A/B high strings, black keys damp). Pattern: hold a chord and it plays the rhythm chosen at the top");
+    {
+        juce::StringArray rhythms;
+        for (const auto& rhythm : GuitarEngine::rhythms) rhythms.add (rhythm.name);
+        setUpCombo (patternBox, rhythms, "strumPattern", "Pattern mode's rhythm, in time with Ableton");
+    }
     setUpCombo (strumDirectionBox, { "Down", "Up", "Alternate" }, "strumDirection",
                 "Down: low string to high. Up: high to low. Alternate: down, up, down...");
     setUpCombo (tremoloSyncBox, { "Free", "1/2", "1/4", "1/8", "1/16", "1/4T", "1/8T" }, "tremoloSync",
@@ -902,6 +910,7 @@ void SF2PlayerEditor::showSectionContents()
                                 (juce::Component*) &tremoloSyncBox, (juce::Component*) &guitarModeLabel,
                                 (juce::Component*) &strumDirectionLabel, (juce::Component*) &neck })
         c->setVisible (guitar);
+    patternBox.setVisible (guitar && guitarModeBox.getSelectedItemIndex() == GuitarEngine::pattern);
 }
 
 void SF2PlayerEditor::mouseUp (const juce::MouseEvent& e)
@@ -938,6 +947,15 @@ void SF2PlayerEditor::timerCallback()
     }
     neck.tick (1.0f / 20.0f);
     neck.setShape (player.guitarShapeFrets(), guitarModeBox.getSelectedItemIndex() == GuitarEngine::shape);
+    {
+        // Pattern mode shows its rhythm menu; Strum Keys tints the chord hand's keys.
+        const int mode = guitarModeBox.getSelectedItemIndex();
+        const bool showPattern = guitarShown && ! collapsed[guitarSection] && mode == GuitarEngine::pattern;
+        if (patternBox.isVisible() != showPattern) patternBox.setVisible (showPattern);
+        const int tint = guitarShown && mode == GuitarEngine::strumKeys ? GuitarEngine::strumKeysFrom
+                       : layerModeBox.getSelectedItemIndex() == 2 ? juce::roundToInt (splitSlider.getValue()) : -1;
+        if (keyboard.splitKey != tint) { keyboard.splitKey = tint; keyboard.repaint(); }
+    }
     if (auditionKey >= 0 && --auditionTicks <= 0)
     {
         player.keyboardState.noteOff (1, auditionKey, 0.0f);
@@ -1138,6 +1156,7 @@ void SF2PlayerEditor::resized()
         area.removeFromTop (panelGap);
         guitarPanel = area.removeFromTop (heightOf (guitarSection));
         tremoloSyncBox.setBounds (guitarPanel.getRight() - 6 - 70, guitarPanel.getY() + 5, 70, 18);
+        patternBox.setBounds (tremoloSyncBox.getX() - 8 - 130, guitarPanel.getY() + 5, 130, 18);
         auto inner = guitarPanel.reduced (6).withTrimmedTop (18);
         neck.setBounds (inner.removeFromBottom (neckHeight - 6).reduced (8, 0));
         const int width = inner.getWidth() / 9;

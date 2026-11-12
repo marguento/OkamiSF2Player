@@ -190,6 +190,8 @@ private:
     static constexpr int doublePan = 350;   // Double: original and twin this far apart (of 500)
     juce::int64 newestVoiceId() const;
     double tremoloPhase = 0.0;
+    // Pattern mode: plays the rhythm's steps that fall in this block, on every channel holding a chord.
+    void runPattern (const GuitarEngine::Settings&, juce::int64 blockStart, int numSamples);
     void applyTremolo (int numSamples);
     int housekeepingTicks = 0;
 

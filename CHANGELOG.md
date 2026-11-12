@@ -23,6 +23,15 @@ release bumps it and adds an entry here: one line per change a player would noti
   the nut for open or not played; the chord is named as you draw. The new **Shape** mode strums
   that chord on every key you play, moved so its bass is the key: one finger plays a whole
   progression. A click on the chord's name plays it. Saved with the project.
+- **Strum Keys** mode: hold a chord below C4 (silent), and play the pick with the white keys from
+  C4: C down, D up, E and F muted down and up, G the bass alone, A and B the high strings down and
+  up; any black key damps the strings. Strings ring until the next stroke or until the chord is
+  let go. The chord hand's keys are tinted on the keyboard.
+- **Pattern** mode: hold a chord and it plays a rhythm by itself, on Ableton's grid while it plays:
+  Down Eighths, Down Up, Folk, Pop, Ballad, Country, Rock Muted, Reggae, Funk Sixteenths, Waltz,
+  Fingerpicking, Arpeggio.
+- In both, the held chord is voiced like a guitar's: in open position, or at the Fret knob's
+  position; with nothing held, the chord drawn on the neck is used.
 - Sections fold: a click on REVERB / CHORUS, PLAY or GUITAR folds it to its title (its switch and
   presets stay), and the window shrinks. **▾ Keyboard** folds the keyboard. Remembered for every
   project.

@@ -17,7 +17,32 @@
 class GuitarEngine
 {
 public:
-    enum Mode { solo = 0, chords = 1, bassAndPick = 2, shape = 3 };
+    enum Mode { solo = 0, chords = 1, bassAndPick = 2, shape = 3, strumKeys = 4, pattern = 5 };
+
+    // What one stroke of the pick does (Strum Keys' white keys, a pattern's steps).
+    enum Stroke { strokeDown, strokeUp, mutedDown, mutedUp, bassOnly, highDown, highUp, damp, pickString };
+
+    // Strum Keys: keys from this one up are the pick hand; below it, the chord.
+    static constexpr int strumKeysFrom = 60;
+
+    // The rhythms of Pattern mode, one character per sixteenth note, looped: D down, U up, d and
+    // u muted, B the bass alone, 1-6 one string of the chord (1 the lowest), . nothing.
+    struct Rhythm { const char* name; const char* steps; };
+    static constexpr Rhythm rhythms[] = {
+        { "Down Eighths",    "D.D.D.D.D.D.D.D." },
+        { "Down Up",         "D.U.D.U.D.U.D.U." },
+        { "Folk",            "D...D.U...U.D.U." },
+        { "Pop",             "D...D.U.D.U.D.U." },
+        { "Ballad",          "D.....D.D.U.D.U." },
+        { "Country",         "B...D...B...D.U." },
+        { "Rock Muted",      "d.d.d.d.D.d.d.d." },
+        { "Reggae",          "....d.......d..." },
+        { "Funk Sixteenths", "D.uUd.U.D.uUd.Uu" },
+        { "Waltz",           "B...D...D..." },
+        { "Fingerpicking",   "1.3.2.3.1.3.2.3." },
+        { "Arpeggio",        "1.2.3.4.5.6.5.4." },
+    };
+    static constexpr int rhythmCount = (int) (sizeof (rhythms) / sizeof (rhythms[0]));
     enum Direction { down = 0, up = 1, alternate = 2 };
 
     struct Settings
@@ -32,6 +57,7 @@ public:
         // Shape mode: the chord drawn on the neck, a fret per string from the low E (-1: not
         // played, 0: open). Each key played strums it, moved so its bass is that key.
         std::array<int, 6> shapeFrets { -1, -1, -1, -1, -1, -1 };
+        int rhythm = 0;         // Pattern mode: which of `rhythms`
         // True when nothing would change: the processor then plays notes directly.
         bool isNeutral() const
         {
@@ -74,6 +100,8 @@ public:
     void reset()
     {
         eventCount = 0;
+        for (auto& held : chordsHeld) held = {};
+        for (auto& ringing : ringingNotes) ringing = {};
         for (auto& pending : chordsPending) pending = {};
         for (auto& group : groups) group = {};
         nextUp = false;
@@ -83,6 +111,18 @@ public:
     void noteOn (const Settings& s, int channel, int note, int velocity, juce::int64 time)
     {
         auto& pending = chordsPending[(size_t) channel];
+        if (s.mode == pattern || (s.mode == strumKeys && note < strumKeysFrom))
+        {
+            hold (channel, note, velocity, time);   // the chord hand: silent until a stroke
+            return;
+        }
+        if (s.mode == strumKeys)
+        {
+            static constexpr int byPitchClass[12] = { strokeDown, damp, strokeUp, damp, mutedDown, mutedUp, damp,
+                                                      bassOnly, damp, highDown, damp, highUp };
+            stroke (s, channel, (Stroke) byPitchClass[note % 12], velocity, time);
+            return;
+        }
         if (s.mode == shape)
         {
             std::array<int, 6> notes {};
@@ -117,6 +157,15 @@ public:
 
     void noteOff (int channel, int note, juce::int64 time)
     {
+        // The chord hand lets go: when nothing is held any more, the strings are stopped.
+        auto& held = chordsHeld[(size_t) channel];
+        for (int i = 0; i < held.count; ++i)
+            if (held.keys[(size_t) i] == note)
+            {
+                held.keys[(size_t) i] = held.keys[(size_t) --held.count];
+                if (held.count == 0) endRinging (channel, time);
+                return;
+            }
         // Still gathering: remember it, so the chord's note ends right after it starts.
         auto& pending = chordsPending[(size_t) channel];
         for (int i = 0; i < pending.count; ++i)
@@ -185,6 +234,7 @@ public:
     {
         if (eventCount > 0) return true;
         for (auto& group : groups) if (group.used) return true;
+        for (auto& ringing : ringingNotes) if (ringing.count > 0) return true;
         for (auto& pending : chordsPending) if (pending.count > 0) return true;
         return false;
     }
@@ -232,6 +282,47 @@ public:
         bool up = false, strummed = false, palm = false;
     };
     const LastPlayed& lastPlayed() const { return last; }
+
+    // A chord is held on `channel` (Strum Keys, Pattern): since when (-1: none) and how hard.
+    juce::int64 heldSince (int channel) const { return chordsHeld[(size_t) channel].count > 0 ? chordsHeld[(size_t) channel].since : -1; }
+    int heldVelocity (int channel) const { return chordsHeld[(size_t) channel].velocity; }
+
+    // One stroke of the pick on the chord held on `channel` (or, with none held, the drawn shape).
+    // The strings it strikes ring until the next stroke, a damp, or the chord hand letting go.
+    void stroke (const Settings& s, int channel, Stroke kind, int velocity, juce::int64 time, int string = 0)
+    {
+        endRinging (channel, time);
+        if (kind == damp) return;
+        std::array<int, 16> chord {};
+        const int count = heldChord (s, channel, chord.data());
+        if (count == 0) return;
+        std::array<int, 16> notes {};
+        int n = 0;
+        switch (kind)
+        {
+            case bassOnly:   notes[0] = chord[0]; n = 1; break;
+            case pickString: notes[0] = chord[(size_t) juce::jlimit (0, count - 1, string)]; n = 1; break;
+            case highDown: case highUp:
+                for (int i = juce::jmax (0, count - 3); i < count; ++i) notes[(size_t) n++] = chord[(size_t) i];
+                break;
+            default:
+                for (int i = 0; i < count; ++i) notes[(size_t) n++] = chord[(size_t) i];
+        }
+        auto strokeSettings = s;
+        strokeSettings.direction = (kind == strokeUp || kind == mutedUp || kind == highUp) ? up : down;
+        if (strokeSettings.strumMs <= 0.0f) strokeSettings.strumMs = 18.0f;   // a pick takes time to cross the strings
+        const bool muted = kind == mutedDown || kind == mutedUp;
+        if (muted)
+        {
+            strokeSettings.palm = juce::jmax (0.85f, s.palm);
+            velocity = juce::jmin (velocity, palmVelocity - 1);   // muted strokes are palm-muted
+        }
+        auto& ringing = ringingNotes[(size_t) channel];
+        const auto* group = startGroupWith (strokeSettings, channel, nullptr, 0, notes.data(), n, velocity, time, n > 1);
+        ringing.count = n;
+        ringing.doubled = s.doubleMix > 0.0f;
+        for (int i = 0; i < n; ++i) ringing.notes[(size_t) i] = group->outputs[(size_t) i];
+    }
 
     // The drawn shape's notes, low to high, moved so the lowest is `bassKey` (none if nothing drawn).
     static int shapeNotes (const std::array<int, 6>& frets, int bassKey, int* out)
@@ -302,6 +393,67 @@ public:
     }
 
 private:
+    // The chord hand (Strum Keys, Pattern) and the strings the last stroke left ringing.
+    struct Held
+    {
+        std::array<int, 16> keys {};
+        int count = 0, velocity = 100;
+        juce::int64 since = 0;
+    };
+    struct Ringing
+    {
+        std::array<juce::uint8, 16> notes {};
+        int count = 0;
+        bool doubled = false;
+    };
+
+    void hold (int channel, int note, int velocity, juce::int64 time)
+    {
+        auto& held = chordsHeld[(size_t) channel];
+        if (held.count == 0) held.since = time;
+        if (held.count < (int) held.keys.size()) held.keys[(size_t) held.count++] = note;
+        held.velocity = velocity;
+    }
+
+    void endRinging (int channel, juce::int64 time)
+    {
+        auto& ringing = ringingNotes[(size_t) channel];
+        for (int i = 0; i < ringing.count; ++i)
+        {
+            schedule ({ time, (juce::uint8) channel, ringing.notes[(size_t) i], 0, 0, false, false });
+            if (ringing.doubled)
+                schedule ({ time + samples (doubleDelayMs), (juce::uint8) channel, ringing.notes[(size_t) i], 0, 0, false, true });
+        }
+        ringing = {};
+        // Strokes aren't tied to keys: their groups end with the ringing notes.
+        for (auto& group : groups)
+            if (group.used && group.channel == channel && group.inputCount == 0) group = {};
+    }
+
+    // The held chord as a guitarist would hold it: at the Fret knob's position, or the open
+    // position when it's off. With nothing held, the shape drawn on the neck where it was drawn.
+    int heldChord (const Settings& s, int channel, int* out) const
+    {
+        const auto& held = chordsHeld[(size_t) channel];
+        if (held.count == 0)
+        {
+            std::array<int, 16> notes {};
+            int lowest = 999;
+            for (size_t i = 0; i < 6; ++i) if (s.shapeFrets[i] >= 0) lowest = juce::jmin (lowest, strings[i] + s.shapeFrets[i]);
+            if (lowest == 999) return 0;
+            const int n = shapeNotes (s.shapeFrets, lowest, notes.data());
+            std::copy (notes.begin(), notes.begin() + n, out);
+            return n;
+        }
+        std::array<int, 16> keys {};
+        std::copy (held.keys.begin(), held.keys.begin() + held.count, keys.begin());
+        std::sort (keys.begin(), keys.begin() + held.count);
+        return voice (keys.data(), held.count, s.fret, out);
+    }
+
+    std::array<Held, 16> chordsHeld {};
+    std::array<Ringing, 16> ringingNotes {};
+
     struct Pending
     {
         std::array<juce::uint8, 16> keys {};
@@ -339,7 +491,7 @@ private:
         *group = {};
         group->used = true;
         group->channel = channel;
-        group->inputCount = juce::jmin (inputCount, 16);
+        group->inputCount = inputs == nullptr ? 0 : juce::jmin (inputCount, 16);
         for (int i = 0; i < group->inputCount; ++i)
         {
             group->inputs[(size_t) i] = (juce::uint8) inputs[i];

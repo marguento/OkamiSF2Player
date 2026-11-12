@@ -137,6 +137,9 @@ int main (int argc, char** argv)
             auto* parameter = p.parameters.getParameter ("layerMode");
             parameter->setValueNotifyingHost (parameter->convertTo0to1 ((float) std::atoi (layer)));
         }
+        if (const char* mode = std::getenv ("MODE"))   // the Guitar panel's mode, by index (5: Pattern)
+            p.parameters.getParameter ("guitarMode")->setValueNotifyingHost (
+                p.parameters.getParameter ("guitarMode")->convertTo0to1 ((float) std::atoi (mode)));
         if (const char* shape = std::getenv ("SHAPE"))   // "-1,3,2,0,1,0": that chord drawn, Shape mode
         {
             std::array<int, 6> frets {};

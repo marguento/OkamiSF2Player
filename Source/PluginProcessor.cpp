@@ -90,7 +90,12 @@ static juce::AudioProcessorValueTreeState::ParameterLayout makeLayout()
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "guitarPanel", 6 }, "Guitar Panel",
                                                               juce::StringArray { "Auto", "On", "Off" }, 0));
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "guitarMode", 6 }, "Guitar Mode",
-                                                              juce::StringArray { "Solo", "Chords", "Bass & Pick", "Shape" }, 1));
+                                                              juce::StringArray { "Solo", "Chords", "Bass & Pick", "Shape", "Strum Keys", "Pattern" }, 1));
+    {
+        juce::StringArray names;
+        for (const auto& rhythm : GuitarEngine::rhythms) names.add (rhythm.name);
+        layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "strumPattern", 6 }, "Strum Pattern", names, 2));
+    }
     layout.add (std::make_unique<Float> (juce::ParameterID { "strum", 6 }, "Strum", range (0.0f, 80.0f, 1.0f), 0.0f,
                                          Attributes().withStringFromValueFunction ([] (float v, int)
                                          { return v < 0.5f ? juce::String ("Off") : juce::String (juce::roundToInt (v)) + " ms"; })));
@@ -909,6 +914,7 @@ GuitarEngine::Settings SF2PlayerProcessor::currentGuitarSettings() const
     s.humanize = value ("humanize");
     s.doubleMix = value ("doubleMix");
     s.shapeFrets = GuitarEngine::unpackShape (guitarShape.load (std::memory_order_relaxed));
+    s.rhythm = juce::jlimit (0, GuitarEngine::rhythmCount - 1, juce::roundToInt (value ("strumPattern")));
     return s;
 }
 
@@ -955,6 +961,52 @@ void SF2PlayerProcessor::tweakNewVoices (int channel, int detuneCents, bool palm
         {
             fluid_voice_gen_set (voice, GEN_FILTERFC, 8700.0f);
             fluid_voice_update_param (voice, GEN_FILTERFC);
+        }
+    }
+}
+
+// Sixteenth-note steps: on the host's grid while it plays (so a pattern lines up with the clip),
+// else from the moment the chord was taken, at the host's tempo (120 without one).
+void SF2PlayerProcessor::runPattern (const GuitarEngine::Settings& s, juce::int64 blockStart, int numSamples)
+{
+    double bpm = 120.0;
+    std::optional<double> ppq;
+    if (auto* head = getPlayHead())
+        if (const auto position = head->getPosition())
+        {
+            if (const auto tempo = position->getBpm()) bpm = juce::jlimit (20.0, 400.0, *tempo);
+            if (const auto beat = position->getPpqPosition(); beat && position->getIsPlaying()) ppq = *beat;
+        }
+    const double samplesPerStep = sampleRate * 60.0 / bpm / 4.0;
+    const auto& rhythm = GuitarEngine::rhythms[(size_t) s.rhythm];
+    const int length = (int) std::strlen (rhythm.steps);
+    for (int channel = 0; channel < numMidiChannels; ++channel)
+    {
+        const auto since = guitar.heldSince (channel);
+        if (since < 0)
+            continue;
+        // The step at the block's start, as a fraction, and its count from the pattern's start.
+        const double startStep = ppq ? *ppq * 4.0 : (double) (blockStart - since) / samplesPerStep;
+        for (auto k = (juce::int64) std::ceil (startStep - 1e-9); ; ++k)
+        {
+            const auto offset = (juce::int64) std::llround ((double (k) - startStep) * samplesPerStep);
+            if (offset >= numSamples) break;
+            const auto time = blockStart + juce::jmax ((juce::int64) 0, offset);
+            if (time < since) continue;   // the grid's steps before the chord was taken
+            const char step = rhythm.steps[(size_t) (((k % length) + length) % length)];
+            const int velocity = juce::roundToInt (guitar.heldVelocity (channel) * (k % 4 == 0 ? 1.0f : 0.82f));
+            switch (step)
+            {
+                case 'D': guitar.stroke (s, channel, GuitarEngine::strokeDown, velocity, time); break;
+                case 'U': guitar.stroke (s, channel, GuitarEngine::strokeUp, velocity, time); break;
+                case 'd': guitar.stroke (s, channel, GuitarEngine::mutedDown, velocity, time); break;
+                case 'u': guitar.stroke (s, channel, GuitarEngine::mutedUp, velocity, time); break;
+                case 'B': guitar.stroke (s, channel, GuitarEngine::bassOnly, velocity, time); break;
+                default:
+                    if (step >= '1' && step <= '6')
+                        guitar.stroke (s, channel, GuitarEngine::pickString, velocity, time, step - '1');
+                    break;
+            }
         }
     }
 }
@@ -1119,6 +1171,8 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                 }
             }
             const auto blockEnd = blockStart + numSamples;
+            if (guitarSettings.mode == GuitarEngine::pattern)
+                runPattern (guitarSettings, blockStart, numSamples);
             guitar.advance (guitarSettings, blockEnd);
             GuitarEngine::Event due;
             while (count < maxItems && guitar.pop (blockEnd, due))

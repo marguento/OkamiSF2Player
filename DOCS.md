@@ -142,7 +142,29 @@ With every control at Off or 0 it changes nothing.
 
 - **Mode:** **Solo** plays notes as you play them. **Chords** strums the notes you play together.
   **Bass & Pick** plays the lowest note first, then picks the rest. **Shape** strums the chord
-  drawn on the neck on every key, moved so its bass is the key you play.
+  drawn on the neck on every key, moved so its bass is the key you play. **Strum Keys** and
+  **Pattern** are below.
+- **Strum Keys:** the keys below C4 hold the chord (they make no sound by themselves; they're
+  tinted on the keyboard), and the white keys from C4 up are the pick:
+
+  | Key | Stroke |
+  |---|---|
+  | C | down, all strings |
+  | D | up, all strings |
+  | E / F | down / up, muted (short, by the palm) |
+  | G | the bass string alone |
+  | A / B | down / up, the three high strings |
+  | any black key | damps the strings |
+
+  The strings ring until the next stroke, a damp, or letting go of the chord. The stroke key's
+  velocity is how hard it's played. With no chord held, the chord drawn on the neck is used.
+- **Pattern:** hold a chord (anywhere on the keyboard) and it plays the rhythm chosen in the menu
+  at the panel's top: Down Eighths, Down Up, Folk, Pop, Ballad, Country, Rock Muted, Reggae, Funk
+  Sixteenths, Waltz (3/4), Fingerpicking, Arpeggio. While Ableton plays, the steps fall on its
+  grid; stopped, the rhythm starts when you take the chord, at Ableton's tempo. Letting go of the
+  chord stops it. Beats are a little louder than the steps between them.
+- In Strum Keys and Pattern the held chord is voiced like a guitar's: in open position, or at the
+  **Fret** knob's position.
 - **Way:** strum **Down** (low string to high), **Up**, or **Alternate** (down, up, down...).
 - **Strum:** how long a chord takes from its first string to its last, 0 to 80 ms. Chords are
   gathered for 12 ms, so in Chords mode notes start that much later.
