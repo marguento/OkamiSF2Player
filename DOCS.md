@@ -151,7 +151,7 @@ With every control at Off or 0 it changes nothing.
   makes no sound) and each melody note from C4 gets a second voice under it, the chord's nearest
   tone a third to a sixth below (a major third without a chord). **Strum Keys** and **Pattern**
   are below.
-- **Key Chords:** one key, one chord. Choose the key and the scale at the top (Major, Minor,
+- **Key Chords:** one key, one chord. Choose the key and the scale in the mode options (Major, Minor,
   Major 7ths, Minor 7ths); each note of the scale plays the chord the scale builds on it (in C
   major: C → C, D → Dm, E → Em, F → F, G → G, A → Am, B → Bdim), and a note outside it plays its
   major chord (Bb → Bb, borrowed). Voiced and strummed like the other modes.
@@ -159,6 +159,12 @@ With every control at Off or 0 it changes nothing.
   root: C + Eb plays C minor, C + Bb C7, C + B Cmaj7, C + F Csus4, C + A C6, C + Eb + Bb Cm7. A key
   added while the chord is held changes it at once (hold C, add Eb: C becomes Cm). Voiced and
   strummed like the other modes, and the neck names the chord played.
+- **Mode options** (the row under the mode buttons) show only what the chosen mode uses:
+  **Strings** (chords on all six strings, or only from the A, D or G string up: lighter, brighter
+  chords), **Slow if soft** and **over** (notes softer than that velocity are strummed over that
+  time, a gentle stroke; Off by default), Pattern's **Rhythm**, Key Chords' **Key** and scale.
+- **Help:** the **?** button at the top opens a guide (Start, Guitar, Controls) and About; the
+  header explains whatever control the mouse is over (switch it off in the same menu).
 - **Tune:** Standard, Drop D, Drop C, Open G or DADGAD. Chords are voiced, drawn and shown on the
   neck for that tuning.
 - **Velocity strings** (at the top): a soft strum catches only the three high strings, a medium
@@ -177,8 +183,8 @@ With every control at Off or 0 it changes nothing.
 
   The strings ring until the next stroke, a damp, or letting go of the chord. The stroke key's
   velocity is how hard it's played. With no chord held, the chord drawn on the neck is used.
-- **Pattern:** hold a chord (anywhere on the keyboard) and it plays the rhythm chosen in the menu
-  at the panel's top: Down Eighths, Down Up, Folk, Pop, Ballad, Country, Rock Muted, Reggae, Funk
+- **Pattern:** hold a chord (anywhere on the keyboard) and it plays the rhythm chosen in the mode
+  options: Down Eighths, Down Up, Folk, Pop, Ballad, Country, Rock Muted, Reggae, Funk
   Sixteenths, Waltz (3/4), Fingerpicking, Arpeggio. While Ableton plays, the steps fall on its
   grid; stopped, the rhythm starts when you take the chord, at Ableton's tempo. Letting go of the
   chord stops it. Beats are a little louder than the steps between them.

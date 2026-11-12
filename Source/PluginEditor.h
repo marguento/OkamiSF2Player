@@ -201,6 +201,17 @@ private:
         GuitarEngine::keyChords, GuitarEngine::strumKeys, GuitarEngine::pattern };
     std::array<juce::TextButton, 10> modeButtons;
     void showMode();
+    // Each mode's own options, in a row under the mode buttons (only the ones that apply).
+    juce::ComboBox guitarStringsBox;
+    juce::Slider slowBelowSlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight },
+                 slowTimeSlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
+    juce::Label stringsLabel { {}, "Strings" }, slowBelowLabel { {}, "Slow if soft" }, slowTimeLabel { {}, "over" },
+                rhythmLabel { {}, "Rhythm" }, keyLabel { {}, "Key" }, optionsNote;
+    juce::AudioProcessorValueTreeState::ComboBoxAttachment guitarStringsAttachment { player.parameters, "guitarStrings", guitarStringsBox };
+    juce::AudioProcessorValueTreeState::SliderAttachment slowBelowAttachment { player.parameters, "slowStrumBelow", slowBelowSlider },
+                                                         slowTimeAttachment { player.parameters, "slowStrumTime", slowTimeSlider };
+    juce::Rectangle<int> optionsArea;
+    void refreshModeOptions();
     bool guitarShown = false;
     void refreshGuitarPanel();
 
@@ -211,7 +222,7 @@ private:
     juce::TextButton keysButton;   // folds the keyboard
     int keyboardHeight = 120;      // the keyboard's height when it was last shown
     static constexpr int panelHeight = 118, collapsedHeight = 26, panelGap = 12;
-    static constexpr int neckHeight = 182;   // the Guitar panel's neck strip and its mode buttons, under the knobs
+    static constexpr int neckHeight = 214;   // the Guitar panel's neck strip and its mode buttons, under the knobs
     int heightOf (Section s) const
     {
         return collapsed[(size_t) s] ? collapsedHeight : panelHeight + (s == guitarSection ? neckHeight : 0);

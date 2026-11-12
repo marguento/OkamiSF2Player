@@ -1007,6 +1007,34 @@ int main()
             expect (completes && changes, "Auto Chords: a key is its major chord, added keys change it (C + Eb: C minor)");
         }
 
+        // Mode options: chords on the high strings only, and soft notes strummed slowly.
+        {
+            const int c[] = { 48, 52, 55 };
+            int out[16] = {};
+            const int n = GuitarEngine::voice (c, 3, 0, out, GuitarEngine::tunings[0], 3);   // from the G string
+            bool high = n == 3;
+            for (int i = 0; i < n; ++i) high = high && out[i] >= 55;
+            GuitarEngine e;
+            e.prepare (rate);
+            GuitarEngine::Settings slow;
+            slow.mode = GuitarEngine::keyChords;
+            slow.slowBelow = 60;
+            slow.slowMs = 200.0f;
+            auto spread = [&] (int velocity)
+            {
+                e.reset();
+                e.noteOn (slow, 0, 60, velocity, 0);
+                GuitarEngine::Event ev;
+                juce::int64 first = -1, last = 0;
+                while (e.pop ((juce::int64) rate, ev))
+                    if (ev.velocity > 0) { if (first < 0) first = ev.time; last = ev.time; }
+                return (last - first) * 1000.0 / rate;
+            };
+            const double soft = spread (40), hard = spread (100);
+            expect (high && soft >= 190.0 && hard < 1.0, "Guitar options: chords on the high strings only; soft notes strummed slowly ("
+                    + juce::String (soft, 0) + " ms soft, " + juce::String (hard, 0) + " ms hard)");
+        }
+
         // A C major chord voiced at the 3rd fret: C on the A string, then G, C, E, G.
         const int keys[] = { 60, 64, 67 };
         int voiced[16] = {};

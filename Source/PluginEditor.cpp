@@ -338,6 +338,23 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
         for (const auto& rhythm : GuitarEngine::rhythms) rhythms.add (rhythm.name);
         setUpCombo (patternBox, rhythms, "strumPattern", "Pattern mode's rhythm, in time with Ableton");
     }
+    setUpCombo (guitarStringsBox, { "All 6", "From A (5)", "From D (4)", "From G (3)" }, "guitarStrings",
+                "Which strings chords use: all six, or only the higher ones (brighter, lighter chords)");
+    for (auto* slider : { &slowBelowSlider, &slowTimeSlider })
+    {
+        slider->setTextBoxStyle (juce::Slider::TextBoxRight, false, 52, 18);
+        addAndMakeVisible (*slider);
+    }
+    slowBelowSlider.setTooltip ("Notes softer than this are strummed slowly, a gentle stroke (Off: never)");
+    slowTimeSlider.setTooltip ("How long a soft, slow strum takes from the first string to the last");
+    for (auto* label : { &stringsLabel, &slowBelowLabel, &slowTimeLabel, &rhythmLabel, &keyLabel, &optionsNote })
+    {
+        label->setFont (juce::FontOptions (12.0f));
+        label->setColour (juce::Label::textColourId, SF2Look::dim);
+        label->setJustificationType (juce::Justification::centredRight);
+        addAndMakeVisible (*label);
+    }
+    optionsNote.setJustificationType (juce::Justification::centredLeft);
     setUpCombo (strumDirectionBox, { "Down", "Up", "Alternate" }, "strumDirection",
                 "Down: low string to high. Up: high to low. Alternate: down, up, down...");
     setUpCombo (tremoloSyncBox, { "Free", "1/2", "1/4", "1/8", "1/16", "1/4T", "1/8T" }, "tremoloSync",
@@ -1037,9 +1054,7 @@ void SF2PlayerEditor::showSectionContents()
                                 (juce::Component*) &tuningBox, (juce::Component*) &tuningLabel,
                                 (juce::Component*) &velocityStringsToggle, (juce::Component*) &guitarPresets })
         c->setVisible (guitar);
-    patternBox.setVisible (guitar && guitarModeBox.getSelectedItemIndex() == GuitarEngine::pattern);
-    chordKeyBox.setVisible (guitar && guitarModeBox.getSelectedItemIndex() == GuitarEngine::keyChords);
-    chordScaleBox.setVisible (chordKeyBox.isVisible());
+    refreshModeOptions();
 }
 
 void SF2PlayerEditor::mouseUp (const juce::MouseEvent& e)
@@ -1083,13 +1098,8 @@ void SF2PlayerEditor::timerCallback()
     {
         // Pattern mode shows its rhythm menu; Strum Keys tints the chord hand's keys.
         const int mode = guitarModeBox.getSelectedItemIndex();
-        const bool open = guitarShown && ! collapsed[guitarSection];
         if (! modeButtons[0].isVisible() || ! modeButtons[(size_t) std::distance (modeOrder.begin(), std::find (modeOrder.begin(), modeOrder.end(), mode))].getToggleState())
             showMode();   // the host or a preset changed it
-        const bool showPattern = open && mode == GuitarEngine::pattern;
-        if (patternBox.isVisible() != showPattern) patternBox.setVisible (showPattern);
-        const bool showKey = open && mode == GuitarEngine::keyChords;
-        if (chordKeyBox.isVisible() != showKey) { chordKeyBox.setVisible (showKey); chordScaleBox.setVisible (showKey); }
         const int tint = guitarShown && mode == GuitarEngine::strumKeys ? GuitarEngine::strumKeysFrom
                        : layerModeBox.getSelectedItemIndex() == 2 ? juce::roundToInt (splitSlider.getValue()) : -1;
         if (keyboard.splitKey != tint) { keyboard.splitKey = tint; keyboard.repaint(); }
@@ -1268,11 +1278,10 @@ void SF2PlayerEditor::resized()
         area.removeFromTop (panelGap);
         guitarPanel = area.removeFromTop (heightOf (guitarSection));
         tremoloSyncBox.setBounds (guitarPanel.getRight() - 6 - 70, guitarPanel.getY() + 5, 70, 18);
-        patternBox.setBounds (tremoloSyncBox.getX() - 8 - 130, guitarPanel.getY() + 5, 130, 18);
-        chordScaleBox.setBounds (tremoloSyncBox.getX() - 8 - 84, guitarPanel.getY() + 5, 84, 18);
-        chordKeyBox.setBounds (chordScaleBox.getX() - 4 - 50, guitarPanel.getY() + 5, 50, 18);
         auto inner = guitarPanel.reduced (6).withTrimmedTop (18);
         auto strip = inner.removeFromBottom (neckHeight - 6);
+        optionsArea = strip.removeFromBottom (24).reduced (8, 0);
+        strip.removeFromBottom (6);
         auto modes = strip.removeFromBottom (24 * 2 + 4).reduced (8, 0);   // two rows of five
         const int gap = 4, perRow = 5, buttonWidth = (modes.getWidth() - gap * (perRow - 1)) / perRow;
         for (int i = 0; i < (int) modeButtons.size(); ++i)
@@ -1280,6 +1289,7 @@ void SF2PlayerEditor::resized()
                                                buttonWidth, 24);
         strip.removeFromBottom (6);
         neck.setBounds (strip.reduced (8, 0));
+        refreshModeOptions();
         const int width = inner.getWidth() / 9;
         // Two rows on the left: which way chords are strummed, and the tuning.
         auto combos = inner.removeFromLeft (width * 2).reduced (2, 2);
@@ -1291,7 +1301,7 @@ void SF2PlayerEditor::resized()
             label->setBounds (row.removeFromLeft (40));
             box->setBounds (row);
         }
-        velocityStringsToggle.setBounds (patternBox.getX() - 8 - 130, guitarPanel.getY() + 4, 130, 20);
+        velocityStringsToggle.setBounds (tremoloSyncBox.getX() - 8 - 130, guitarPanel.getY() + 4, 130, 20);
         guitarPresets.setBounds (guitarPanel.getX() + 82, guitarPanel.getY() + 5, 150, 18);
         for (auto* knob : { &strum, &fretPosition, &palmMute, &humanize, &doubleMix, &tremoloDepth, &tremoloRate })
             knob->setBounds (inner.removeFromLeft (width));
@@ -1352,6 +1362,51 @@ void SF2PlayerEditor::showMode()
     const int mode = guitarModeBox.getSelectedItemIndex();
     for (size_t i = 0; i < modeButtons.size(); ++i)
         modeButtons[i].setToggleState (modeOrder[i] == mode, juce::dontSendNotification);
+    refreshModeOptions();
+}
+
+// The options row: only what the chosen mode uses, left to right.
+void SF2PlayerEditor::refreshModeOptions()
+{
+    const int mode = guitarModeBox.getSelectedItemIndex();
+    const bool open = guitarShown && ! collapsed[guitarSection];
+    std::vector<std::pair<juce::Component*, int>> row;   // a control and its width
+    auto add = [&row] (juce::Component& c, int width) { row.push_back ({ &c, width }); };
+    juce::String note;
+    if (mode == GuitarEngine::solo)
+        note = "Solo: single notes as you play them. Palm, Humanize and Double still apply.";
+    else if (mode == GuitarEngine::harmony)
+        note = "Hold a chord below C4 (silent); each melody note from C4 gets a second voice from it.";
+    else
+    {
+        if (mode == GuitarEngine::pattern) { add (rhythmLabel, 48); add (patternBox, 130); }
+        if (mode == GuitarEngine::keyChords) { add (keyLabel, 30); add (chordKeyBox, 52); add (chordScaleBox, 84); }
+        add (stringsLabel, 48);
+        add (guitarStringsBox, 104);
+        if (mode != GuitarEngine::pattern)
+        {
+            add (slowBelowLabel, 76);
+            add (slowBelowSlider, mode == GuitarEngine::keyChords ? 120 : 140);
+            if (mode != GuitarEngine::keyChords) { add (slowTimeLabel, 34); add (slowTimeSlider, 120); }
+        }
+    }
+    if (note.isNotEmpty()) add (optionsNote, optionsArea.getWidth());
+    optionsNote.setText (note, juce::dontSendNotification);
+
+    for (juce::Component* c : { (juce::Component*) &guitarStringsBox, (juce::Component*) &slowBelowSlider, (juce::Component*) &slowTimeSlider,
+                                (juce::Component*) &stringsLabel, (juce::Component*) &slowBelowLabel, (juce::Component*) &slowTimeLabel,
+                                (juce::Component*) &rhythmLabel, (juce::Component*) &keyLabel, (juce::Component*) &optionsNote,
+                                (juce::Component*) &patternBox, (juce::Component*) &chordKeyBox, (juce::Component*) &chordScaleBox })
+    {
+        const bool shown = open && std::any_of (row.begin(), row.end(), [c] (auto& item) { return item.first == c; });
+        if (c->isVisible() != shown) c->setVisible (shown);
+    }
+    auto area = optionsArea;
+    for (auto [component, width] : row)
+    {
+        component->setBounds (area.removeFromLeft (juce::jmin (width, area.getWidth())).reduced (0, 1));
+        area.removeFromLeft (6);
+    }
 }
 
 void SF2PlayerEditor::showHelpMenu()

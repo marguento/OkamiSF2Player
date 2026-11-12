@@ -65,10 +65,16 @@ public:
         // Key Chords: the key's tonic (0 C ... 11 B) and scale (0 major, 1 minor, 2 major with
         // sevenths, 3 minor with sevenths).
         int keyRoot = 0, keyScale = 0;
+        // Mode options. Strings: chords use the strings from this one up (0: all six, 1: from the
+        // A, 2: from the D, 3: from the G). Slow strum: notes softer than `slowBelow` (0: off) are
+        // strummed over at least `slowMs`, a gentle stroke.
+        int firstString = 0;
+        int slowBelow = 0;
+        float slowMs = 150.0f;
         // True when nothing would change: the processor then plays notes directly.
         bool isNeutral() const
         {
-            return strumMs <= 0.0f && fret == 0 && palm <= 0.0f && humanize <= 0.0f && doubleMix <= 0.0f && ! velocityStrings
+            return strumMs <= 0.0f && slowBelow <= 0 && fret == 0 && palm <= 0.0f && humanize <= 0.0f && doubleMix <= 0.0f && ! velocityStrings
                 && (mode == chords || mode == solo);   // Shape always plays the drawn chord
         }
     };
@@ -144,7 +150,7 @@ public:
             std::array<int, 4> chord {};
             const int size = keyChord (s, note, chord.data());
             std::array<int, 16> voiced {};
-            const int n = voice (chord.data(), size, s.fret, voiced.data(), tuningOf (s.tuning));
+            const int n = voice (chord.data(), size, s.fret, voiced.data(), tuningOf (s.tuning), s.firstString);
             const std::array<int, 1> key { note };
             startGroupWith (s, channel, key.data(), 1, voiced.data(), n, velocity, time, true);
             return;
@@ -187,7 +193,7 @@ public:
         if (s.mode == shape)
         {
             std::array<int, 6> notes {};
-            const int count = shapeNotes (s.shapeFrets, note, notes.data(), tuningOf (s.tuning));
+            const int count = shapeNotes (s.shapeFrets, note, notes.data(), tuningOf (s.tuning), s.firstString);
             if (count == 0)   // nothing drawn: the key as played
             {
                 const std::array<int, 1> one { note };
@@ -299,10 +305,10 @@ public:
             {
                 std::array<int, 16> full {};
                 const int size = completeChord (keys.data(), keyCount, full.data());
-                voicedCount = voice (full.data(), size, s.fret, voiced.data(), tuningOf (s.tuning));
+                voicedCount = voice (full.data(), size, s.fret, voiced.data(), tuningOf (s.tuning), s.firstString);
             }
             else if (s.fret > 0)
-                voicedCount = voice (keys.data(), keyCount, s.fret, voiced.data(), tuningOf (s.tuning));
+                voicedCount = voice (keys.data(), keyCount, s.fret, voiced.data(), tuningOf (s.tuning), s.firstString);
             else
                 std::copy (keys.begin(), keys.begin() + keyCount, voiced.begin());
             startGroupWith (s, channel, keys.data(), keyCount, voiced.data(), voicedCount, chord.velocity, at, true);
@@ -352,7 +358,7 @@ public:
     // A chord on six strings at `fret`: for each string from the low E, the first fret from
     // `fret` to `fret + 4` whose note is in the chord. The bass (the lowest key's note) is on
     // the lowest string that can play it; strings below it stay silent. Returns how many.
-    static int voice (const int* keys, int count, int fret, int* out, const Tuning& tuning = tunings[0])
+    static int voice (const int* keys, int count, int fret, int* out, const Tuning& tuning = tunings[0], int firstString = 0)
     {
         if (count <= 0) return 0;
         bool inChord[12] = {};
@@ -360,13 +366,16 @@ public:
         const int bass = keys[0] % 12;
         int played = 0;
         bool bassPlaced = false;
-        for (const int open : tuning)
+        firstString = juce::jlimit (0, 5, firstString);
+        for (size_t string = (size_t) firstString; string < tuning.size(); ++string)
         {
+            const int open = tuning[string];
             for (int f = fret; f <= fret + 4; ++f)
             {
                 const int note = open + f;
                 if (! inChord[note % 12]) continue;
-                if (! bassPlaced && note % 12 != bass) continue;   // wait for a string that has the bass
+                // Wait for a string that has the bass (on the high strings alone, any chord tone).
+                if (! bassPlaced && firstString == 0 && note % 12 != bass) continue;
                 out[played++] = note;
                 bassPlaced = true;
                 break;
@@ -493,14 +502,14 @@ public:
     }
 
     // The drawn shape's notes, low to high, moved so the lowest is `bassKey` (none if nothing drawn).
-    static int shapeNotes (const std::array<int, 6>& frets, int bassKey, int* out, const Tuning& strings = tunings[0])
+    static int shapeNotes (const std::array<int, 6>& frets, int bassKey, int* out, const Tuning& strings = tunings[0], int firstString = 0)
     {
         int count = 0, lowest = 999;
         for (size_t string = 0; string < 6; ++string)
             if (frets[string] >= 0)
                 lowest = juce::jmin (lowest, strings[string] + frets[string]);
         if (lowest == 999) return 0;
-        for (size_t string = 0; string < 6; ++string)
+        for (size_t string = (size_t) juce::jlimit (0, 5, firstString); string < 6; ++string)
             if (frets[string] >= 0)
             {
                 const int note = strings[string] + frets[string] + bassKey - lowest;
@@ -607,14 +616,14 @@ private:
             const auto& tuning = tuningOf (s.tuning);
             for (size_t i = 0; i < 6; ++i) if (s.shapeFrets[i] >= 0) lowest = juce::jmin (lowest, tuning[i] + s.shapeFrets[i]);
             if (lowest == 999) return 0;
-            const int n = shapeNotes (s.shapeFrets, lowest, notes.data(), tuning);
+            const int n = shapeNotes (s.shapeFrets, lowest, notes.data(), tuning, s.firstString);
             std::copy (notes.begin(), notes.begin() + n, out);
             return n;
         }
         std::array<int, 16> keys {};
         std::copy (held.keys.begin(), held.keys.begin() + held.count, keys.begin());
         std::sort (keys.begin(), keys.begin() + held.count);
-        return voice (keys.data(), held.count, s.fret, out, tuningOf (s.tuning));
+        return voice (keys.data(), held.count, s.fret, out, tuningOf (s.tuning), s.firstString);
     }
 
     std::array<Held, 16> chordsHeld {};
@@ -698,7 +707,9 @@ private:
         // Order: a down strum goes low to high, an up strum high to low.
         bool goingUp = s.direction == up || (s.direction == alternate && nextUp);
         if (s.direction == alternate && strum) nextUp = ! nextUp;
-        const auto strumTotal = strum ? samples (s.strumMs) : 0;
+        auto strumTotal = strum ? samples (s.strumMs) : 0;
+        if (strum && s.slowBelow > 0 && velocity < s.slowBelow)   // a soft stroke: slower
+            strumTotal = juce::jmax (strumTotal, samples (s.slowMs));
         const bool palm = s.palm > 0.0f && velocity < palmVelocity;
         last.up = goingUp;
         last.strummed = strum && strumTotal > 0 && group->outputCount > 1;

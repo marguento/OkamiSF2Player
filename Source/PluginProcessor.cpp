@@ -92,6 +92,14 @@ static juce::AudioProcessorValueTreeState::ParameterLayout makeLayout()
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "guitarMode", 6 }, "Guitar Mode",
                                                               juce::StringArray { "Solo", "Chords", "Bass & Pick", "Shape", "Strum Keys", "Pattern",
                                                                                  "Bass & Chord", "Harmony", "Key Chords", "Auto Chords" }, 1));
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "guitarStrings", 6 }, "Guitar Strings",
+                                                              juce::StringArray { "All 6", "From A (5)", "From D (4)", "From G (3)" }, 0));
+    layout.add (std::make_unique<juce::AudioParameterInt> (juce::ParameterID { "slowStrumBelow", 6 }, "Slow Strum Below", 0, 127, 0,
+                                                           juce::AudioParameterIntAttributes().withStringFromValueFunction (
+                                                               [] (int v, int) { return v == 0 ? juce::String ("Off") : "< " + juce::String (v); })));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "slowStrumTime", 6 }, "Slow Strum Time", range (40.0f, 400.0f, 1.0f), 150.0f,
+                                         juce::AudioParameterFloatAttributes().withStringFromValueFunction (
+                                             [] (float v, int) { return juce::String (juce::roundToInt (v)) + " ms"; })));
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "chordKey", 6 }, "Chord Key",
                                                               juce::StringArray { "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B" }, 0));
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "chordScale", 6 }, "Chord Scale",
@@ -960,6 +968,9 @@ GuitarEngine::Settings SF2PlayerProcessor::currentGuitarSettings() const
     s.velocityStrings = value ("strumByVelocity") > 0.5f;
     s.keyRoot = juce::roundToInt (value ("chordKey"));
     s.keyScale = juce::roundToInt (value ("chordScale"));
+    s.firstString = juce::roundToInt (value ("guitarStrings"));
+    s.slowBelow = juce::roundToInt (value ("slowStrumBelow"));
+    s.slowMs = value ("slowStrumTime");
     return s;
 }
 

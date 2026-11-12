@@ -171,11 +171,12 @@ private:
                 { "Bass & Chord", "Below middle C: single bass notes. From middle C: strummed chords. One hand each." },
                 { "Bass & Pick", "The lowest note first, then the other strings picked one by one." },
                 { "Shape", "Draw a chord on the neck; every key plays that shape moved to it, like a barre chord sliding up the neck." },
-                { "Key Chords", "Choose a key and a scale at the top; each key plays its chord in that key (in C major: C, Dm, Em, F, G, Am, Bdim). Notes outside the key play their major chord." },
+                { "Key Chords", "Choose a key and a scale in the options under the modes; each key plays its chord in that key (in C major: C, Dm, Em, F, G, Am, Bdim). Notes outside the key play their major chord." },
                 { "Strum Keys", "Left hand holds a chord below middle C (silent). The white keys from middle C are the pick: C down, D up, E / F muted down / up, G the bass string, A / B the high strings down / up. Black keys damp the strings." },
-                { "Pattern", "Hold a chord and the rhythm chosen at the top plays by itself, locked to Ableton's tempo: Folk, Pop, Reggae, Fingerpicking and more." },
+                { "Pattern", "Hold a chord and the rhythm chosen in the options plays by itself, locked to Ableton's tempo: Folk, Pop, Reggae, Fingerpicking and more." },
                 { "The neck", "" },
                 { "Drawing chords", "Click a string at a fret to place a finger (again to lift it). Left of the nut, a click switches a string between open and not played. The name appears as you draw; click it to hear the chord." },
+                { "Mode options", "The row under the mode buttons holds what the chosen mode uses. Strings: chords on all six strings or only the higher ones. Slow if soft: notes softer than that are strummed slowly (over the time next to it), a gentle stroke. Pattern adds its rhythm, Key Chords its key and scale." },
                 { "Reading it", "The display names the last chord played (G/B: B in the bass). The lights show the strum's direction and palm-muted notes." },
             };
             case controls: return {

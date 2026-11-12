@@ -19,6 +19,8 @@ release bumps it and adds an entry here: one line per change a player would noti
 - Reverb preset "Short Room" and chorus preset "Bright", for acoustic guitar.
 - The Guitar panel shows what it plays: the chord's name (C, Am7, G/B...), a six-string neck with
   where its notes lie, an arrow lit by each strum (down or up) and a light for palm-muted notes.
+- **Mode options** under the mode buttons, only what each mode uses: which strings chords use,
+  slow strums for soft notes, Pattern's rhythm, Key Chords' key and scale.
 - **Help built in:** the ? button opens a guide (Start, Guitar, Controls) and About; the header
   explains whatever control the mouse is over (turn it off in the ? menu).
 - The Guitar panel looks the part: a rosewood neck with nickel frets, a bone nut, pearl inlays and
