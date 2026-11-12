@@ -892,7 +892,11 @@ int main()
             const bool ok = open.notes == std::array<int, 6> { -1, 48, 52, 55, 60, 64 } && open.bassTwo == 43
                          && dropD.notes == std::array<int, 6> { 38, 45, 50, 57, 62, 66 }
                          && third.top() >= 70 && third.top() <= 74 && fourth.top() >= 73 && fourth.top() <= 77;
-            expect (ok, "Guitar: Chord Position places the voicing (I: open C, its second bass G; Drop D's low D; III and IV higher)",
+            // D: positions III and IV overlap at its top note, but each still gets its own shape.
+            std::array<std::array<int, 6>, 4> dShapes;
+            for (int p = 0; p < 4; ++p) dShapes[(size_t) p] = GuitarEngine::voiceChord (GuitarEngine::recognize (d, 3, false), p, 57, GuitarEngine::tunings[0]).notes;
+            const bool distinct = dShapes[0] != dShapes[1] && dShapes[1] != dShapes[2] && dShapes[2] != dShapes[3];
+            expect (ok && distinct, "Guitar: Chord Position places the voicing (I: open C, its second bass G; Drop D's low D; III and IV higher; each position its own shape)",
                     juce::String (third.top()) + ", " + juce::String (fourth.top()));
         }
 

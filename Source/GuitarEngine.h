@@ -539,24 +539,49 @@ public:
     static Voicing voiceChord (const Chord& chord, int position, int highestKey, const Tuning& tuning)
     {
         static constexpr int ranges[4][2] = { { 64, 68 }, { 67, 71 }, { 70, 74 }, { 73, 77 } };
-        int low, high;
-        if (position >= 0 && position < 4) { low = ranges[position][0]; high = ranges[position][1]; }
+        auto distanceTo = [] (int top, int low, int high) { return top < low ? low - top : top > high ? top - high : 0; };
+        // Every shape the neck offers, by the fret it starts at.
+        std::array<Voicing, 13> shapes;
+        for (int fret = 0; fret <= 12; ++fret) shapes[(size_t) fret] = place (chord, fret, tuning);
+        auto closest = [&] (int low, int high, int fromFret)   // the shape nearest the range, lowest fret first
+        {
+            int found = -1, foundDistance = std::numeric_limits<int>::max();
+            for (int fret = fromFret; fret <= 12; ++fret)
+            {
+                if (! shapes[(size_t) fret].valid()) continue;
+                const int distance = distanceTo (shapes[(size_t) fret].top(), low, high);
+                if (distance < foundDistance) { found = fret; foundDistance = distance; }
+            }
+            return found;
+        };
+        int chosen = -1;
+        if (position >= 0 && position < 4)
+        {
+            // Each position climbs the neck: when the shape it finds is the one the position below
+            // found (their ranges overlap), it takes the next different shape further up.
+            int below = -1;
+            for (int p = 0; p <= position; ++p)
+            {
+                int fret = closest (ranges[p][0], ranges[p][1], 0);
+                if (below >= 0 && fret >= 0 && shapes[(size_t) fret].notes == shapes[(size_t) below].notes)
+                {
+                    int next = -1;
+                    for (int f = below + 1; f <= 12 && next < 0; ++f)
+                        if (shapes[(size_t) f].valid() && shapes[(size_t) f].notes != shapes[(size_t) below].notes
+                            && shapes[(size_t) f].top() >= shapes[(size_t) below].top())
+                            next = f;
+                    if (next >= 0) fret = next;
+                }
+                below = fret;
+            }
+            chosen = below;
+        }
         else
         {
-            low = highestKey - ((highestKey - 4) % 12 + 12) % 12;
-            high = low + 11;
+            const int low = highestKey - ((highestKey - 4) % 12 + 12) % 12;
+            chosen = closest (low, low + 11, 0);
         }
-        Voicing best;
-        int bestDistance = std::numeric_limits<int>::max();
-        for (int fret = 0; fret <= 12; ++fret)
-        {
-            const auto v = place (chord, fret, tuning);
-            if (! v.valid()) continue;
-            const int top = v.top();
-            const int distance = top < low ? low - top : top > high ? top - high : 0;
-            if (distance < bestDistance) { best = v; bestDistance = distance; }
-            if (distance == 0) break;
-        }
+        Voicing best = chosen >= 0 ? shapes[(size_t) chosen] : Voicing {};
         if (! best.valid()) return best;
         // Bass II: the fifth, on the string below the bass when it can reach it, else on one above.
         const int fifth = (chord.bass + 7) % 12;
