@@ -90,13 +90,20 @@ static juce::AudioProcessorValueTreeState::ParameterLayout makeLayout()
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "guitarPanel", 6 }, "Guitar Panel",
                                                               juce::StringArray { "Auto", "On", "Off" }, 0));
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "guitarMode", 6 }, "Guitar Mode",
-                                                              juce::StringArray { "Solo", "Chords", "Bass & Pick", "Shape", "Strum Keys", "Pattern" }, 1));
+                                                              juce::StringArray { "Solo", "Chords", "Bass & Pick", "Shape", "Strum Keys", "Pattern",
+                                                                                 "Bass & Chord", "Harmony" }, 1));
+    {
+        juce::StringArray names;
+        for (const char* name : GuitarEngine::tuningNames) names.add (name);
+        layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "guitarTuning", 6 }, "Guitar Tuning", names, 0));
+    }
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "strumByVelocity", 6 }, "Velocity Strings", false));
     {
         juce::StringArray names;
         for (const auto& rhythm : GuitarEngine::rhythms) names.add (rhythm.name);
         layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "strumPattern", 6 }, "Strum Pattern", names, 2));
     }
-    layout.add (std::make_unique<Float> (juce::ParameterID { "strum", 6 }, "Strum", range (0.0f, 80.0f, 1.0f), 0.0f,
+    layout.add (std::make_unique<Float> (juce::ParameterID { "strum", 6 }, "Strum", juce::NormalisableRange<float> (0.0f, 250.0f, 1.0f, 0.5f), 0.0f,
                                          Attributes().withStringFromValueFunction ([] (float v, int)
                                          { return v < 0.5f ? juce::String ("Off") : juce::String (juce::roundToInt (v)) + " ms"; })));
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "strumDirection", 6 }, "Strum Direction",
@@ -915,6 +922,8 @@ GuitarEngine::Settings SF2PlayerProcessor::currentGuitarSettings() const
     s.doubleMix = value ("doubleMix");
     s.shapeFrets = GuitarEngine::unpackShape (guitarShape.load (std::memory_order_relaxed));
     s.rhythm = juce::jlimit (0, GuitarEngine::rhythmCount - 1, juce::roundToInt (value ("strumPattern")));
+    s.tuning = juce::roundToInt (value ("guitarTuning"));
+    s.velocityStrings = value ("strumByVelocity") > 0.5f;
     return s;
 }
 

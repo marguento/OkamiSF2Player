@@ -142,8 +142,15 @@ With every control at Off or 0 it changes nothing.
 
 - **Mode:** **Solo** plays notes as you play them. **Chords** strums the notes you play together.
   **Bass & Pick** plays the lowest note first, then picks the rest. **Shape** strums the chord
-  drawn on the neck on every key, moved so its bass is the key you play. **Strum Keys** and
-  **Pattern** are below.
+  drawn on the neck on every key, moved so its bass is the key you play. **Bass & Chord** plays
+  single bass notes below C4 and strummed chords from C4. **Harmony**: hold a chord below C4 (it
+  makes no sound) and each melody note from C4 gets a second voice under it, the chord's nearest
+  tone a third to a sixth below (a major third without a chord). **Strum Keys** and **Pattern**
+  are below.
+- **Tune:** Standard, Drop D, Drop C, Open G or DADGAD. Chords are voiced, drawn and shown on the
+  neck for that tuning.
+- **Velocity strings** (at the top): a soft strum catches only the three high strings, a medium
+  one all but the lowest, a hard one all six, as with a real pick.
 - **Strum Keys:** the keys below C4 hold the chord (they make no sound by themselves; they're
   tinted on the keyboard), and the white keys from C4 up are the pick:
 
@@ -166,7 +173,8 @@ With every control at Off or 0 it changes nothing.
 - In Strum Keys and Pattern the held chord is voiced like a guitar's: in open position, or at the
   **Fret** knob's position.
 - **Way:** strum **Down** (low string to high), **Up**, or **Alternate** (down, up, down...).
-- **Strum:** how long a chord takes from its first string to its last, 0 to 80 ms. Chords are
+- **Strum:** how long a chord takes from its first string to its last, 0 to 250 ms (slow strums
+  from about 100). Chords are
   gathered for 12 ms, so in Chords mode notes start that much later.
 - **Fret:** 1 to 12 voices each chord on six strings at that fret, the way a guitarist would hold
   it (which notes, in which octave). Off plays the notes you press.

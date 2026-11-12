@@ -177,10 +177,13 @@ private:
     Knob doubleMix { *this, "doubleMix", "Double" };
     Knob tremoloDepth { *this, "tremoloDepth", "Tremolo" };
     Knob tremoloRate { *this, "tremoloRate", "Rate" };
-    juce::ComboBox guitarPanelBox, guitarModeBox, strumDirectionBox, tremoloSyncBox, patternBox;
+    juce::ComboBox guitarPanelBox, guitarModeBox, strumDirectionBox, tremoloSyncBox, patternBox, tuningBox;
+    juce::ToggleButton velocityStringsToggle { "Velocity strings" };
     juce::Label guitarModeLabel { {}, "Mode" }, strumDirectionLabel { {}, "Way" };
     juce::AudioProcessorValueTreeState::ComboBoxAttachment guitarPanelAttachment, guitarModeAttachment,
-        strumDirectionAttachment, tremoloSyncAttachment, patternAttachment;
+        strumDirectionAttachment, tremoloSyncAttachment, patternAttachment, tuningAttachment;
+    juce::AudioProcessorValueTreeState::ButtonAttachment velocityStringsAttachment;
+    juce::Label tuningLabel { {}, "Tune" };
     bool guitarShown = false;
     void refreshGuitarPanel();
 

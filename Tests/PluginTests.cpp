@@ -872,6 +872,58 @@ int main()
                     db (rms (out, 0.55, 0.7)) + " playing, " + db (rms (out, 1.7, 2.0)) + " after");
         }
 
+        // Tunings: a D major in Drop D takes the low D string as its bass: D A D A D F#, open position.
+        {
+            const int dMajor[] = { 50, 54, 57 };
+            int voiced[16] = {};
+            const int n = GuitarEngine::voice (dMajor, 3, 0, voiced, GuitarEngine::tunings[1]);
+            expect (std::vector<int> (voiced, voiced + n) == std::vector<int> { 38, 45, 50, 57, 62, 66 },
+                    "Guitar: Drop D voices a D chord on all six strings, the low D as its bass", juce::String (n) + " notes");
+        }
+        // Velocity → strings: a soft strum keeps the three high strings, a hard one all of them.
+        {
+            GuitarEngine e;
+            e.prepare (rate);
+            GuitarEngine::Settings vs;
+            vs.velocityStrings = true;
+            vs.strumMs = 30;
+            auto strummed = [&] (int velocity)
+            {
+                e.reset();
+                for (int key : { 48, 52, 55, 60, 64 }) e.noteOn (vs, 0, key, velocity, 0);
+                e.advance (vs, (juce::int64) rate);
+                std::vector<int> notes;
+                GuitarEngine::Event ev;
+                while (e.pop ((juce::int64) rate, ev)) if (ev.velocity > 0) notes.push_back (ev.note);
+                std::sort (notes.begin(), notes.end());
+                return notes;
+            };
+            expect (strummed (30) == std::vector<int> { 55, 60, 64 } && strummed (120).size() == 5,
+                    "Guitar: with Velocity strings, a soft strum hits the high strings, a hard one all");
+        }
+        // Bass & Chord: below C4 one note, from C4 a strummed chord. Harmony: a chord tone under the melody.
+        {
+            GuitarEngine e;
+            e.prepare (rate);
+            GuitarEngine::Settings bc;
+            bc.mode = GuitarEngine::bassAndChord;
+            e.noteOn (bc, 0, 40, 100, 0);
+            GuitarEngine::Event ev;
+            std::vector<int> bass;
+            while (e.pop ((juce::int64) rate, ev)) if (ev.velocity > 0) bass.push_back (ev.note);
+            GuitarEngine::Settings hm;
+            hm.mode = GuitarEngine::harmony;
+            e.reset();
+            for (int key : { 48, 52, 55 }) e.noteOn (hm, 0, key, 100, 0);   // C major held: silent
+            const bool silent = ! e.pop ((juce::int64) rate, ev);
+            e.noteOn (hm, 0, 72, 100, 100);   // melody C5: the chord's G (a fourth below) under it
+            std::vector<int> pair;
+            while (e.pop ((juce::int64) rate, ev)) if (ev.velocity > 0) pair.push_back (ev.note);
+            std::sort (pair.begin(), pair.end());
+            expect (bass == std::vector<int> { 40 } && silent && pair == std::vector<int> { 67, 72 },
+                    "Guitar: Bass & Chord plays a single bass note; Harmony puts a chord tone under the melody");
+        }
+
         // A C major chord voiced at the 3rd fret: C on the A string, then G, C, E, G.
         const int keys[] = { 60, 64, 67 };
         int voiced[16] = {};

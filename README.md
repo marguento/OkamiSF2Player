@@ -219,7 +219,7 @@ Settings file `~/Library/Application Support/SF2 Player/SF2 Player.settings`: `r
 
 ## Tests
 
-`ctest` runs `PluginTests` (54 checks). Each renders through the real processor and fails on a
+`ctest` runs `PluginTests` (57 checks). Each renders through the real processor and fails on a
 wrong result:
 
 - **Fidelity:** bit-identical output to FluidSynth at the defaults.

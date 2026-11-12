@@ -105,6 +105,7 @@ public:
         std::atomic<int> bass { -1 };
         std::atomic<bool> up { false }, strummed { false }, palm { false };
     };
+    int guitarTuning() const { return juce::roundToInt (parameters.getRawParameterValue ("guitarTuning")->load()); }
     GuitarView guitarView;
 
     // The chord drawn on the neck (Shape mode): a fret per string from the low E, -1 not played.

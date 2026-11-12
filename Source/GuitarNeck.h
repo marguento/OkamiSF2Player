@@ -23,9 +23,10 @@ public:
     std::function<void (const std::array<int, 6>&)> onShapeChanged;
     std::function<void()> onAudition;
 
-    void setShape (const std::array<int, 6>& frets, bool shapeModeOn)
+    void setShape (const std::array<int, 6>& frets, bool shapeModeOn, const GuitarEngine::Tuning& strings = GuitarEngine::tunings[0])
     {
-        if (frets == shapeFrets && shapeModeOn == shapeMode) return;
+        if (frets == shapeFrets && shapeModeOn == shapeMode && strings == tuning) return;
+        tuning = strings;
         shapeFrets = frets;
         shapeMode = shapeModeOn;
         repaint();
@@ -56,15 +57,17 @@ public:
     }
 
     // A new chord or note (the processor's sequence moved on).
-    void show (const int* notes, int count, int pitchClasses, int bass, bool up, bool strummed, bool palm, int fretPosition)
+    void show (const int* notes, int count, int pitchClasses, int bass, bool up, bool strummed, bool palm, int fretPosition,
+               const GuitarEngine::Tuning& strings = GuitarEngine::tunings[0])
     {
+        tuning = strings;
         noteCount = juce::jlimit (0, 6, count);
         for (int i = 0; i < noteCount; ++i) shown[(size_t) i] = notes[i];
         name = chordName (pitchClasses, bass);
         int around = fretPosition;
         if (around == 0)   // as played: centre on the notes' own frets
             around = 3;
-        frets = GuitarEngine::placeOnStrings (shown.data(), noteCount, around);
+        frets = GuitarEngine::placeOnStrings (shown.data(), noteCount, around, tuning);
         arrowUp = up;
         if (strummed) arrowGlow = 1.0f;
         palmGlow = palm ? 1.0f : 0.0f;
@@ -136,7 +139,7 @@ public:
             noteCount = 0;
             int classes = 0;
             for (size_t s = 0; s < 6; ++s)
-                if (frets[s] >= 0) { notes[(size_t) noteCount++] = GuitarEngine::strings[s] + frets[s]; classes |= 1 << ((GuitarEngine::strings[s] + frets[s]) % 12); }
+                if (frets[s] >= 0) { notes[(size_t) noteCount++] = tuning[s] + frets[s]; classes |= 1 << ((tuning[s] + frets[s]) % 12); }
             std::sort (notes.begin(), notes.begin() + noteCount);
             name = noteCount > 0 ? chordName (classes, notes[0] % 12) : juce::String();
         }
@@ -237,6 +240,7 @@ private:
     }
     std::array<int, 6> shapeFrets { -1, -1, -1, -1, -1, -1 };
     bool shapeMode = false;
+    GuitarEngine::Tuning tuning = GuitarEngine::tunings[0];
     Colours colours;
     std::array<int, 6> shown {};
     std::array<int, 6> frets { -1, -1, -1, -1, -1, -1 };

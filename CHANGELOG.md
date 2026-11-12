@@ -31,7 +31,13 @@ release bumps it and adds an entry here: one line per change a player would noti
 - **Pattern** mode: hold a chord and it plays a rhythm by itself, on Ableton's grid while it plays:
   Down Eighths, Down Up, Folk, Pop, Ballad, Country, Rock Muted, Reggae, Funk Sixteenths, Waltz,
   Fingerpicking, Arpeggio.
-- In both, the held chord is voiced like a guitar's: in open position, or at the Fret knob's
+- **Bass & Chord** mode: below C4 single bass notes, from C4 strummed chords. **Harmony** mode: hold
+  a chord below C4 (silent); each melody note from C4 gets a second voice under it, the chord's
+  nearest tone a third to a sixth below.
+- **Tunings:** Standard, Drop D, Drop C, Open G, DADGAD, for voicing, drawing and the neck.
+- **Velocity strings:** a soft strum catches only the high strings, a hard one all six.
+- Strum reaches 250 ms, for slow strums.
+- In Strum Keys and Pattern, the held chord is voiced like a guitar's: in open position, or at the Fret knob's
   position; with nothing held, the chord drawn on the neck is used.
 - Sections fold: a click on REVERB / CHORUS, PLAY or GUITAR folds it to its title (its switch and
   presets stay), and the window shrinks. **▾ Keyboard** folds the keyboard. Remembered for every

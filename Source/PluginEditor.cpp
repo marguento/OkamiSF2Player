@@ -175,7 +175,9 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
       guitarModeAttachment (p.parameters, "guitarMode", guitarModeBox),
       strumDirectionAttachment (p.parameters, "strumDirection", strumDirectionBox),
       tremoloSyncAttachment (p.parameters, "tremoloSync", tremoloSyncBox),
-      patternAttachment (p.parameters, "strumPattern", patternBox)
+      patternAttachment (p.parameters, "strumPattern", patternBox),
+      tuningAttachment (p.parameters, "guitarTuning", tuningBox),
+      velocityStringsAttachment (p.parameters, "strumByVelocity", velocityStringsToggle)
 {
     setLookAndFeel (&look);
 
@@ -282,10 +284,18 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     };
     setUpCombo (guitarPanelBox, { "Guitar: Auto", "Guitar: On", "Guitar: Off" }, "guitarPanel",
                 "The Guitar panel: Auto shows it for guitars (General MIDI 24-31, or named so); On or Off for any instrument");
-    setUpCombo (guitarModeBox, { "Solo", "Chords", "Bass & Pick", "Shape", "Strum Keys", "Pattern" }, "guitarMode",
+    setUpCombo (guitarModeBox, { "Solo", "Chords", "Bass & Pick", "Shape", "Strum Keys", "Pattern", "Bass & Chord", "Harmony" }, "guitarMode",
                 "Solo: notes as played. Chords: notes played together are strummed. Bass & Pick: the lowest note first, then the rest picked. "
                 "Shape: every key strums the chord drawn on the neck. Strum Keys: hold a chord below C4, play the pick with the white keys from C4 "
-                "(C down, D up, E/F muted, G bass, A/B high strings, black keys damp). Pattern: hold a chord and it plays the rhythm chosen at the top");
+                "(C down, D up, E/F muted, G bass, A/B high strings, black keys damp). Pattern: hold a chord and it plays the rhythm chosen at the top. "
+                "Bass & Chord: below C4 single bass notes, from C4 strummed chords. Harmony: hold a chord below C4; each melody note from C4 gets a second voice under it");
+    {
+        juce::StringArray tunings;
+        for (const char* name : GuitarEngine::tuningNames) tunings.add (name);
+        setUpCombo (tuningBox, tunings, "guitarTuning", "The guitar's tuning: how chords are voiced, drawn and shown on the neck");
+    }
+    velocityStringsToggle.setTooltip ("Soft strums catch only the high strings, hard ones all six");
+    addAndMakeVisible (velocityStringsToggle);
     {
         juce::StringArray rhythms;
         for (const auto& rhythm : GuitarEngine::rhythms) rhythms.add (rhythm.name);
@@ -295,7 +305,7 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
                 "Down: low string to high. Up: high to low. Alternate: down, up, down...");
     setUpCombo (tremoloSyncBox, { "Free", "1/2", "1/4", "1/8", "1/16", "1/4T", "1/8T" }, "tremoloSync",
                 "Tremolo at Rate (Free) or locked to Ableton's tempo");
-    for (auto* label : { &guitarModeLabel, &strumDirectionLabel })
+    for (auto* label : { &guitarModeLabel, &strumDirectionLabel, &tuningLabel })
     {
         label->setJustificationType (juce::Justification::centred);
         label->setFont (juce::FontOptions (12.0f));
@@ -326,13 +336,14 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     neck.onAudition = [this]
     {
         std::array<int, 6> notes {};
-        if (GuitarEngine::shapeNotes (player.guitarShapeFrets(), 0, notes.data()) == 0) return;
+        const auto& tuning = GuitarEngine::tuningOf (player.guitarTuning());
+        if (GuitarEngine::shapeNotes (player.guitarShapeFrets(), 0, notes.data(), tuning) == 0) return;
         if (guitarModeBox.getSelectedItemIndex() != GuitarEngine::shape)
             guitarModeBox.setSelectedItemIndex (GuitarEngine::shape, juce::sendNotificationSync);
         // The key that puts the shape where it was drawn: its own lowest note.
         int lowest = 127;
         const auto frets = player.guitarShapeFrets();
-        for (size_t s = 0; s < 6; ++s) if (frets[s] >= 0) lowest = juce::jmin (lowest, GuitarEngine::strings[s] + frets[s]);
+        for (size_t s = 0; s < 6; ++s) if (frets[s] >= 0) lowest = juce::jmin (lowest, tuning[s] + frets[s]);
         if (auditionKey >= 0) player.keyboardState.noteOff (1, auditionKey, 0.0f);
         auditionKey = lowest;
         auditionTicks = 30;   // 1.5 s at 20 Hz
@@ -911,7 +922,9 @@ void SF2PlayerEditor::showSectionContents()
         knob->slider.setVisible (guitar), knob->label.setVisible (guitar);
     for (juce::Component* c : { (juce::Component*) &guitarModeBox, (juce::Component*) &strumDirectionBox,
                                 (juce::Component*) &tremoloSyncBox, (juce::Component*) &guitarModeLabel,
-                                (juce::Component*) &strumDirectionLabel, (juce::Component*) &neck })
+                                (juce::Component*) &strumDirectionLabel, (juce::Component*) &neck,
+                                (juce::Component*) &tuningBox, (juce::Component*) &tuningLabel,
+                                (juce::Component*) &velocityStringsToggle })
         c->setVisible (guitar);
     patternBox.setVisible (guitar && guitarModeBox.getSelectedItemIndex() == GuitarEngine::pattern);
 }
@@ -946,10 +959,12 @@ void SF2PlayerEditor::timerCallback()
         std::array<int, 6> notes {};
         for (size_t i = 0; i < 6; ++i) notes[i] = view.notes[i].load (std::memory_order_relaxed);
         neck.show (notes.data(), view.count.load(), view.pitchClasses.load(), view.bass.load(), view.up.load(),
-                   view.strummed.load(), view.palm.load(), juce::roundToInt (player.parameters.getRawParameterValue ("fretPosition")->load()));
+                   view.strummed.load(), view.palm.load(), juce::roundToInt (player.parameters.getRawParameterValue ("fretPosition")->load()),
+                   GuitarEngine::tuningOf (player.guitarTuning()));
     }
     neck.tick (1.0f / 20.0f);
-    neck.setShape (player.guitarShapeFrets(), guitarModeBox.getSelectedItemIndex() == GuitarEngine::shape);
+    neck.setShape (player.guitarShapeFrets(), guitarModeBox.getSelectedItemIndex() == GuitarEngine::shape,
+                   GuitarEngine::tuningOf (player.guitarTuning()));
     {
         // Pattern mode shows its rhythm menu; Strum Keys tints the chord hand's keys.
         const int mode = guitarModeBox.getSelectedItemIndex();
@@ -1036,8 +1051,8 @@ void SF2PlayerEditor::paint (juce::Graphics& g)
         g.fillRoundedRectangle (guitarPanel.toFloat(), 6.0f);
         drawSectionTitle (g, guitarPanel, "GUITAR", guitarSection);
         g.setFont (juce::FontOptions (11.0f));
-        g.drawText ("Off and 0 leave the SoundFont as it is", guitarPanel.getX() + 82, guitarPanel.getY() + 8,
-                    guitarPanel.getWidth() - 82 - 100, 14, juce::Justification::centredLeft);
+        g.drawText ("Off and 0 change nothing", guitarPanel.getX() + 82, guitarPanel.getY() + 8,
+                    velocityStringsToggle.getX() - guitarPanel.getX() - 90, 14, juce::Justification::centredLeft);
     }
 
     const bool sends = sendsToggle.getToggleState();
@@ -1133,14 +1148,17 @@ void SF2PlayerEditor::resized()
         neck.setBounds (inner.removeFromBottom (neckHeight - 6).reduced (8, 0));
         const int width = inner.getWidth() / 9;
         // Two rows on the left: the mode, and which way chords are strummed.
-        auto combos = inner.removeFromLeft (width * 2).reduced (2, 6);
-        for (auto [label, box] : { std::pair { &guitarModeLabel, &guitarModeBox }, std::pair { &strumDirectionLabel, &strumDirectionBox } })
+        auto combos = inner.removeFromLeft (width * 2).reduced (2, 2);
+        const int rowHeight = combos.getHeight() / 3;
+        for (auto [label, box] : { std::pair { &guitarModeLabel, &guitarModeBox }, std::pair { &strumDirectionLabel, &strumDirectionBox },
+                                   std::pair { &tuningLabel, &tuningBox } })
         {
-            auto row = combos.removeFromTop (combos.getHeight() / (label == &guitarModeLabel ? 2 : 1)).withSizeKeepingCentre (combos.getWidth(), 24);
+            auto row = combos.removeFromTop (rowHeight).withSizeKeepingCentre (combos.getWidth(), 22);
             label->setJustificationType (juce::Justification::centredLeft);
             label->setBounds (row.removeFromLeft (40));
             box->setBounds (row);
         }
+        velocityStringsToggle.setBounds (patternBox.getX() - 8 - 130, guitarPanel.getY() + 4, 130, 20);
         for (auto* knob : { &strum, &fretPosition, &palmMute, &humanize, &doubleMix, &tremoloDepth, &tremoloRate })
             knob->setBounds (inner.removeFromLeft (width));
     }
