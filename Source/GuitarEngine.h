@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ChordName.h"
+
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <algorithm>
 #include <array>
@@ -17,7 +19,7 @@
 class GuitarEngine
 {
 public:
-    enum Mode { solo = 0, chords = 1, bassAndPick = 2, shape = 3, strumKeys = 4, pattern = 5, bassAndChord = 6, harmony = 7, keyChords = 8 };
+    enum Mode { solo = 0, chords = 1, bassAndPick = 2, shape = 3, strumKeys = 4, pattern = 5, bassAndChord = 6, harmony = 7, keyChords = 8, autoChords = 9 };
 
     // What one stroke of the pick does (Strum Keys' white keys, a pattern's steps).
     enum Stroke { strokeDown, strokeUp, mutedDown, mutedUp, bassOnly, highDown, highUp, damp, pickString };
@@ -273,17 +275,37 @@ public:
             const auto chord = pending;
             pending = {};
             std::array<int, 16> keys {};
+            int keyCount = chord.count;
             for (int i = 0; i < chord.count; ++i)
                 keys[(size_t) i] = chord.keys[(size_t) i];
-            std::sort (keys.begin(), keys.begin() + chord.count);
+            const auto at = chord.start + window;
+            if (s.mode == autoChords)
+            {
+                // A key added to a chord still held changes it: the keys still down join the new
+                // ones, and the old chord ends as the new one is strummed.
+                for (auto& group : groups)
+                {
+                    if (! group.used || group.channel != channel) continue;
+                    for (int i = 0; i < group.inputCount && keyCount < (int) keys.size(); ++i)
+                        if (group.held[(size_t) i]) keys[(size_t) keyCount++] = group.inputs[(size_t) i];
+                    endGroup (group, at);
+                }
+            }
+            std::sort (keys.begin(), keys.begin() + keyCount);
+            keyCount = (int) (std::unique (keys.begin(), keys.begin() + keyCount) - keys.begin());
             std::array<int, 16> voiced {};
-            int voicedCount = chord.count;
-            if (s.fret > 0)
-                voicedCount = voice (keys.data(), chord.count, s.fret, voiced.data(), tuningOf (s.tuning));
+            int voicedCount = keyCount;
+            if (s.mode == autoChords)
+            {
+                std::array<int, 16> full {};
+                const int size = completeChord (keys.data(), keyCount, full.data());
+                voicedCount = voice (full.data(), size, s.fret, voiced.data(), tuningOf (s.tuning));
+            }
+            else if (s.fret > 0)
+                voicedCount = voice (keys.data(), keyCount, s.fret, voiced.data(), tuningOf (s.tuning));
             else
-                std::copy (keys.begin(), keys.begin() + chord.count, voiced.begin());
-            startGroupWith (s, channel, keys.data(), chord.count, voiced.data(), voicedCount, chord.velocity,
-                            chord.start + window, true);
+                std::copy (keys.begin(), keys.begin() + keyCount, voiced.begin());
+            startGroupWith (s, channel, keys.data(), keyCount, voiced.data(), voicedCount, chord.velocity, at, true);
             // A key released while the chord gathered still ends its part.
             for (int i = 0; i < chord.count; ++i)
                 if (chord.released[(size_t) i])
@@ -356,6 +378,32 @@ public:
             return count;
         }
         return played;
+    }
+
+    // Auto Chords: the chord the keys ask for, completed. One key: its major chord. More: the
+    // lowest key is the root, and the plainest chord type (ChordName's order) holding every key
+    // is played (C + Eb: C minor; C + Bb: C7; C + F: Csus4). Keys no type holds play as they are.
+    static int completeChord (const int* keys, int count, int* out)
+    {
+        if (count <= 0) return 0;
+        const int root = keys[0];
+        int relative = 0;
+        for (int i = 0; i < count; ++i) relative |= 1 << ((keys[i] - root + 120) % 12);
+        int mask = 0;
+        if (count == 1 || relative == 1)
+            mask = ChordName::bits ({ 0, 4, 7 });
+        else
+            for (const auto& type : ChordName::types)
+                if ((type.mask & relative) == relative) { mask = type.mask; break; }
+        if (mask == 0)
+        {
+            std::copy (keys, keys + count, out);
+            return count;
+        }
+        int n = 0;
+        for (int interval = 0; interval < 12; ++interval)
+            if (mask & (1 << interval)) out[n++] = root + interval;
+        return n;
     }
 
     static constexpr float chordWindowMs = 12.0f;

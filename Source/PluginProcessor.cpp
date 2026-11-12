@@ -91,7 +91,7 @@ static juce::AudioProcessorValueTreeState::ParameterLayout makeLayout()
                                                               juce::StringArray { "Auto", "On", "Off" }, 0));
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "guitarMode", 6 }, "Guitar Mode",
                                                               juce::StringArray { "Solo", "Chords", "Bass & Pick", "Shape", "Strum Keys", "Pattern",
-                                                                                 "Bass & Chord", "Harmony", "Key Chords" }, 1));
+                                                                                 "Bass & Chord", "Harmony", "Key Chords", "Auto Chords" }, 1));
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "chordKey", 6 }, "Chord Key",
                                                               juce::StringArray { "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B" }, 0));
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "chordScale", 6 }, "Chord Scale",

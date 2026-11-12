@@ -308,12 +308,13 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     };
     setUpCombo (guitarPanelBox, { "Guitar: Auto", "Guitar: On", "Guitar: Off" }, "guitarPanel",
                 "The Guitar panel: Auto shows it for guitars (General MIDI 24-31, or named so); On or Off for any instrument");
-    setUpCombo (guitarModeBox, { "Solo", "Chords", "Bass & Pick", "Shape", "Strum Keys", "Pattern", "Bass & Chord", "Harmony", "Key Chords" }, "guitarMode",
+    setUpCombo (guitarModeBox, { "Solo", "Chords", "Bass & Pick", "Shape", "Strum Keys", "Pattern", "Bass & Chord", "Harmony", "Key Chords", "Auto Chords" }, "guitarMode",
                 "Solo: notes as played. Chords: notes played together are strummed. Bass & Pick: the lowest note first, then the rest picked. "
                 "Shape: every key strums the chord drawn on the neck. Strum Keys: hold a chord below C4, play the pick with the white keys from C4 "
                 "(C down, D up, E/F muted, G bass, A/B high strings, black keys damp). Pattern: hold a chord and it plays the rhythm chosen at the top. "
                 "Bass & Chord: below C4 single bass notes, from C4 strummed chords. Harmony: hold a chord below C4; each melody note from C4 gets a second voice under it. "
-                "Key Chords: every key plays its chord in the key chosen at the top (in C major: D plays Dm, G plays G)");
+                "Key Chords: every key plays its chord in the key chosen at the top (in C major: D plays Dm, G plays G). "
+                "Auto Chords: one key plays its major chord; add keys to change it (C + Eb: C minor, C + Bb: C7, C + F: Csus4)");
     setUpCombo (chordKeyBox, { "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B" }, "chordKey", "Key Chords: the key");
     setUpCombo (chordScaleBox, { "Major", "Minor", "Major 7ths", "Minor 7ths" }, "chordScale",
                 "Key Chords: the scale, with triads or seventh chords");

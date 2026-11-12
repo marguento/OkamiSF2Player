@@ -1,6 +1,7 @@
 // The plugin's tests: each check renders through the real processor and fails the run
 // (exit code 1) when a result is off. `ctest` runs it with Tests/fonts; with the HQ
 // Orchestral collection in ~/Downloads it also checks that collection and the CPU use.
+#include <set>
 #include "../Source/PluginProcessor.h"
 #include "../Source/SoundFontInfo.h"
 #include "../Source/GuitarNeck.h"
@@ -981,6 +982,29 @@ int main()
             kc.keyRoot = 9; kc.keyScale = 3;
             const bool minorSevenths = chord (64) == std::vector<int> { 64, 67, 71, 74 };
             expect (major && minorSevenths, "Key Chords: each key plays its chord in the key (Dm, Bdim, borrowed Bb; Em7 in A minor)");
+        }
+
+        // Auto Chords: one key is its major chord, more keys pick the chord holding them all
+        // (C + Eb: C minor, C + Bb: C7, C + F: Csus4); a key added to a held chord changes it.
+        {
+            auto full = [] (std::vector<int> keys) { int out[16] = {}; const int n = GuitarEngine::completeChord (keys.data(), (int) keys.size(), out); return std::vector<int> (out, out + n); };
+            const bool completes = full ({ 60 }) == std::vector<int> { 60, 64, 67 } && full ({ 60, 63 }) == std::vector<int> { 60, 63, 67 }
+                                && full ({ 60, 70 }) == std::vector<int> { 60, 64, 67, 70 } && full ({ 60, 65 }) == std::vector<int> { 60, 65, 67 };
+            GuitarEngine e;
+            e.prepare (rate);
+            GuitarEngine::Settings ac;
+            GuitarEngine::Event ev;
+            ac.mode = GuitarEngine::autoChords;
+            e.noteOn (ac, 0, 48, 100, 0);
+            e.advance (ac, (juce::int64) rate);
+            std::set<int> first, second;
+            while (e.pop ((juce::int64) rate, ev)) if (ev.velocity > 0) first.insert (ev.note % 12);
+            e.noteOn (ac, 0, 51, 100, (juce::int64) rate);   // Eb added while C is held
+            e.advance (ac, (juce::int64) rate * 2);
+            int offs = 0;
+            while (e.pop ((juce::int64) rate * 2, ev)) { if (ev.velocity > 0) second.insert (ev.note % 12); else ++offs; }
+            const bool changes = first == std::set<int> { 0, 4, 7 } && second == std::set<int> { 0, 3, 7 } && offs > 0;
+            expect (completes && changes, "Auto Chords: a key is its major chord, added keys change it (C + Eb: C minor)");
         }
 
         // A C major chord voiced at the 3rd fret: C on the A string, then G, C, E, G.

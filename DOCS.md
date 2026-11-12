@@ -155,6 +155,10 @@ With every control at Off or 0 it changes nothing.
   Major 7ths, Minor 7ths); each note of the scale plays the chord the scale builds on it (in C
   major: C → C, D → Dm, E → Em, F → F, G → G, A → Am, B → Bdim), and a note outside it plays its
   major chord (Bb → Bb, borrowed). Voiced and strummed like the other modes.
+- **Auto Chords:** one key plays its major chord; add keys to change it, the lowest key being the
+  root: C + Eb plays C minor, C + Bb C7, C + B Cmaj7, C + F Csus4, C + A C6, C + Eb + Bb Cm7. A key
+  added while the chord is held changes it at once (hold C, add Eb: C becomes Cm). Voiced and
+  strummed like the other modes, and the neck names the chord played.
 - **Tune:** Standard, Drop D, Drop C, Open G or DADGAD. Chords are voiced, drawn and shown on the
   neck for that tuning.
 - **Velocity strings** (at the top): a soft strum catches only the three high strings, a medium
