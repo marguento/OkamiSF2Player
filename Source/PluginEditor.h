@@ -336,7 +336,7 @@ private:
     void showHint();
     friend struct EditorTestAccess;   // TailTest's snapshots fold sections without touching the settings file
 
-    juce::Rectangle<int> meterArea, reverbPanel, chorusPanel, playPanel, guitarPanel, generalPanel, pianoPanel, soundPanel;
+    juce::Rectangle<int> meterArea, reverbPanel, chorusPanel, playPanel, guitarPanel, generalPanel, pianoPanel, soundPanel, keysPanel;
     static constexpr int pianoHeight = 64;   // the PIANO / INSTRUMENT panel: its title and the layer row
     float shownPeak = 0.0f;
     int lastNoteCount = 0, midiFlash = 0;

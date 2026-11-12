@@ -40,12 +40,13 @@ release bumps it and adds an entry here: one line per change a player would noti
   title (or a right-click on the bar) shows their knobs and presets.
 - The window is in sections with their own colors: **SOUNDFONT** (the file, its author in italics
   beside it, and the instrument), **GENERAL** (Gain, Tone, the effects, PLAY:
-  what every instrument has), then the instrument's own: **GUITAR**, or **PIANO** / **INSTRUMENT**
+  what every instrument has), then the instrument's own: **GUITAR**, or **INSTRUMENT**
   (Layer and Split, which a guitar's zones leave no room for: a guitar turns the layer off).
 - **Help built in:** the ? button opens a guide (Start, Guitar, Controls) and About; the header
   explains whatever control the mouse is over (turn it off in the ? menu).
 - Reverb preset "Short Room" and chorus preset "Bright", for acoustic guitar.
-- A compact on-screen keyboard (it shows what's played; a MIDI or computer keyboard plays): the
+- A compact on-screen keyboard in its own **PIANO** section, folding to its title (it shows what's
+  played; a MIDI or computer keyboard plays): the
   window is as tall as what it shows and stretches only sideways.
 - The window never grows past the screen: with a guitar the effects and PLAY start folded, and
   opening a section folds others when it wouldn't fit.

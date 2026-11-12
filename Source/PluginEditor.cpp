@@ -1190,8 +1190,7 @@ int SF2PlayerEditor::minimumHeight() const
     int height = 46 + soundHeight();   // the title, then SOUNDFONT
     height += 12 + generalHeight();
     height += 12 + (guitarShown ? heightOf (guitarSection) : pianoHeight);
-    height += 12 + 22;                                                     // the keyboard's row
-    if (! collapsed[keyboardSection]) height += 6 + keyboardHeight;
+    height += 12 + (collapsed[keyboardSection] ? collapsedHeight : 26 + keyboardHeight + 10);   // PIANO
     return height + 14;
 }
 
@@ -1254,6 +1253,7 @@ void SF2PlayerEditor::mouseUp (const juce::MouseEvent& e)
         toggleEffectControls();
     else if (title (playPanel).contains (at)) toggleSection (playSection);
     else if (guitarShown && title (guitarPanel).contains (at)) toggleSection (guitarSection);
+    else if (title (keysPanel).contains (at)) toggleSection (keyboardSection);
 }
 
 // A section's title with its fold arrow: ▾ open, ▸ folded.
@@ -1385,17 +1385,18 @@ void SF2PlayerEditor::paint (juce::Graphics& g)
         g.fillRoundedRectangle (area, 6.0f);
         g.setColour (juce::Colours::white.withAlpha (0.07f));
         g.drawRoundedRectangle (area.reduced (0.5f), 6.0f, 1.0f);
-        bool piano = false;
-        if (juce::isPositiveAndBelow (st->preset, (int) st->presets.size()))
-        {
-            const auto& p = st->presets[(size_t) st->preset];
-            // By name: program numbers mean pianos only in General MIDI SoundFonts (bells sit at 0 elsewhere).
-            for (const char* word : { "piano", "grand", "upright", "rhodes", "wurli", "e.piano", "epiano", "clav", "harpsi", "keys" })
-                piano = piano || p.name.containsIgnoreCase (word);
-        }
         g.setColour (juce::Colour (0xffa9b4d6));
         g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
-        g.drawText (piano ? "PIANO" : "INSTRUMENT", pianoPanel.getX() + 12, pianoPanel.getY() + 7, 160, 14, juce::Justification::centredLeft);
+        g.drawText ("INSTRUMENT", pianoPanel.getX() + 12, pianoPanel.getY() + 7, 160, 14, juce::Justification::centredLeft);
+    }
+    // PIANO: a deep green-black under the keyboard.
+    {
+        const auto area = keysPanel.toFloat();
+        g.setGradientFill (juce::ColourGradient::vertical (juce::Colour (0xff1f2a27), area.getY(), juce::Colour (0xff171f1d), area.getBottom()));
+        g.fillRoundedRectangle (area, 6.0f);
+        g.setColour (juce::Colours::white.withAlpha (0.06f));
+        g.drawRoundedRectangle (area.reduced (0.5f), 6.0f, 1.0f);
+        drawSectionTitle (g, keysPanel, "PIANO", keyboardSection);
     }
     g.setColour (juce::Colour (0xff2c313b));
     g.fillRoundedRectangle (playPanel.toFloat(), 6.0f);
@@ -1582,13 +1583,12 @@ void SF2PlayerEditor::resized()
     }
     for (auto* c : std::initializer_list<juce::Component*> { &layerLabel, &layerModeBox, &layerPresetBox, &splitSlider, &layerLevelLabel, &layerLevelSlider })
         c->setVisible (! guitarShown);   // a guitar's keyboard belongs to its zones
-    area.removeFromTop (panelGap);   // the same gap as between the panels
-    auto notes = area.removeFromTop (22);
-    keysButton.setBounds (notes.removeFromLeft (28));
-    warningLabel.setBounds (notes.withTrimmedLeft (4));
-
-    area.removeFromTop (6);
-    auto keys = area.removeFromTop (keyboardHeight);
+    // PIANO: the keyboard, folding to its title (a click on it).
+    area.removeFromTop (panelGap);
+    keysPanel = area.removeFromTop (collapsed[keyboardSection] ? collapsedHeight : 26 + keyboardHeight + 10);
+    keysButton.setBounds ({});
+    warningLabel.setBounds (keysPanel.getX() + 80, keysPanel.getY() + 2, keysPanel.getWidth() - 90, 22);
+    auto keys = keysPanel.reduced (10, 0).withTrimmedTop (26).withHeight (keyboardHeight);
     keyboard.setBounds (keys);
     keyboard.setKeyWidth ((float) keys.getWidth() / 52.0f);   // 52 white keys in 88
     keyboard.setLowestVisibleKey (21);
