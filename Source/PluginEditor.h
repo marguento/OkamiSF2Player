@@ -2,6 +2,7 @@
 
 #include "PluginProcessor.h"
 #include "GuitarNeck.h"
+#include "Guide.h"
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_audio_utils/juce_audio_utils.h>
 
@@ -224,6 +225,15 @@ private:
     void showSectionContents();
     void drawSectionTitle (juce::Graphics&, juce::Rectangle<int> panel, const juce::String& title, Section);
     void mouseUp (const juce::MouseEvent&) override;
+    // Help: the "?" menu (the guide, About, hints on or off) and the hint line in the header,
+    // which explains whatever control the mouse is over.
+    juce::TextButton helpButton { "?" };
+    juce::Label hintLabel;
+    bool showHints = true;
+    std::unique_ptr<Guide> guide;
+    void showHelpMenu();
+    void openGuide (Guide::Page);
+    void showHint();
     friend struct EditorTestAccess;   // TailTest's snapshots fold sections without touching the settings file
 
     juce::Rectangle<int> meterArea, reverbPanel, chorusPanel, playPanel, guitarPanel;

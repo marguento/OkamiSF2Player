@@ -213,6 +213,7 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     settings = std::make_unique<juce::PropertiesFile> (options);
     recentFiles.setMaxNumberOfItems (12);
     recentFiles.restoreFromString (settings->getValue ("recentFiles"));
+    showHints = settings->getBoolValue ("showHints", true);
 
     fileBox.setTextWhenNothingSelected ("Choose a SoundFont...");
     fileBox.onChange = [this]
@@ -356,6 +357,15 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     tremoloDepth.slider.setTooltip ("Stereo tremolo depth (0: off)");
     tremoloRate.slider.setTooltip ("Tremolo speed when Sync is Free");
     addAndMakeVisible (neck);
+    helpButton.setTooltip ("The guide, About, and the hints at the top");
+    helpButton.onClick = [this] { showHelpMenu(); };
+    addAndMakeVisible (helpButton);
+    hintLabel.setFont (juce::FontOptions (12.0f));
+    hintLabel.setColour (juce::Label::textColourId, SF2Look::dim);
+    hintLabel.setJustificationType (juce::Justification::centredLeft);
+    hintLabel.setMinimumHorizontalScale (0.8f);
+    hintLabel.setInterceptsMouseClicks (false, false);
+    addAndMakeVisible (hintLabel);
     {
         static const char* const modeNames[] = { "Solo", "Chords", "Bass & Pick", "Shape", "Strum Keys", "Pattern", "Bass & Chord", "Harmony", "Key Chords", "Auto Chords" };
         for (size_t i = 0; i < modeButtons.size(); ++i)
@@ -1053,6 +1063,7 @@ void SF2PlayerEditor::drawSectionTitle (juce::Graphics& g, juce::Rectangle<int> 
 
 void SF2PlayerEditor::timerCallback()
 {
+    showHint();
     refreshGuitarPanel();
     // The neck: what the Guitar panel's engine played last, and its lights fading.
     auto& view = player.guitarView;
@@ -1206,6 +1217,10 @@ void SF2PlayerEditor::resized()
 
     auto header = area.removeFromTop (46);
     meterArea = header.removeFromRight (110).withSizeKeepingCentre (110, 6);
+    header.removeFromRight (26);   // the MIDI light
+    helpButton.setBounds (header.removeFromRight (24).withSizeKeepingCentre (24, 22));
+    hintLabel.setBounds (header.withTrimmedLeft (220).withTrimmedRight (10).withSizeKeepingCentre (header.getWidth() - 230, 30));
+    if (guide != nullptr) guide->setBounds (getLocalBounds());
 
     fileBox.setBounds (area.removeFromTop (28));
     if (infoLabel.isVisible())
@@ -1337,4 +1352,53 @@ void SF2PlayerEditor::showMode()
     const int mode = guitarModeBox.getSelectedItemIndex();
     for (size_t i = 0; i < modeButtons.size(); ++i)
         modeButtons[i].setToggleState (modeOrder[i] == mode, juce::dontSendNotification);
+}
+
+void SF2PlayerEditor::showHelpMenu()
+{
+    juce::PopupMenu menu;
+    menu.addItem (1, "Guide");
+    menu.addItem (2, "About Okami SF2 Player");
+    menu.addSeparator();
+    menu.addItem (3, "Show hints at the top", true, showHints);
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (helpButton), [this] (int chosen)
+    {
+        if (chosen == 1) openGuide (Guide::start);
+        else if (chosen == 2) openGuide (Guide::about);
+        else if (chosen == 3)
+        {
+            showHints = ! showHints;
+            settings->setValue ("showHints", showHints);
+            hintLabel.setText ({}, juce::dontSendNotification);
+        }
+    });
+}
+
+void SF2PlayerEditor::openGuide (Guide::Page page)
+{
+    if (guide == nullptr)
+    {
+        guide = std::make_unique<Guide> (Guide::Colours { SF2Look::background, SF2Look::panel, SF2Look::line, SF2Look::text,
+                                                          SF2Look::dim, SF2Look::accent },
+                                         juce::String (JucePlugin_VersionString));
+        guide->onClose = [this] { juce::MessageManager::callAsync ([safe = juce::Component::SafePointer (this)]
+                                                                   { if (safe != nullptr) safe->guide.reset(); }); };
+        addAndMakeVisible (*guide);
+        guide->setBounds (getLocalBounds());
+    }
+    guide->show (page);
+    guide->toFront (true);
+    guide->grabKeyboardFocus();
+}
+
+// The hint line: the tooltip of the control under the mouse, without waiting.
+void SF2PlayerEditor::showHint()
+{
+    juce::String hint;
+    if (showHints && guide == nullptr)
+        for (auto* c = juce::Desktop::getInstance().getMainMouseSource().getComponentUnderMouse();
+             c != nullptr && c != this && isParentOf (c); c = c->getParentComponent())
+            if (auto* client = dynamic_cast<juce::TooltipClient*> (c))
+                if (hint = client->getTooltip(); hint.isNotEmpty()) break;
+    if (hintLabel.getText() != hint) hintLabel.setText (hint, juce::dontSendNotification);
 }

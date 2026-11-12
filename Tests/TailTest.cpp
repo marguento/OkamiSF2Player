@@ -20,6 +20,9 @@ struct EditorTestAccess
         editor.resized();
     }
 
+    static void guide (SF2PlayerEditor& editor, int page) { editor.openGuide ((Guide::Page) page); }
+    static void hint (SF2PlayerEditor& editor, const juce::String& text) { editor.hintLabel.setText (text, juce::dontSendNotification); }
+
     // The neck as after a C major chord strummed down at the 3rd fret.
     static void showChord (SF2PlayerEditor& editor)
     {
@@ -155,6 +158,10 @@ int main (int argc, char** argv)
             EditorTestAccess::showChord (*dynamic_cast<SF2PlayerEditor*> (editor.get()));
         if (const char* fold = std::getenv ("FOLD"))   // "effects,play,guitar": those sections folded
             EditorTestAccess::fold (*dynamic_cast<SF2PlayerEditor*> (editor.get()), juce::String (fold));
+        if (const char* page = std::getenv ("GUIDE"))   // the guide open at that page (0-3)
+            EditorTestAccess::guide (*dynamic_cast<SF2PlayerEditor*> (editor.get()), std::atoi (page));
+        if (const char* hint = std::getenv ("HINT"))
+            EditorTestAccess::hint (*dynamic_cast<SF2PlayerEditor*> (editor.get()), juce::String (hint));
         editor->setVisible (true);
         auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f);
         juce::FileOutputStream out { juce::File { juce::String (argv[4]) } };
