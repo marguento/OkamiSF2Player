@@ -219,6 +219,7 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     recentFiles.setMaxNumberOfItems (12);
     recentFiles.restoreFromString (settings->getValue ("recentFiles"));
     showHints = settings->getBoolValue ("showHints", true);
+    showControllers = settings->getBoolValue ("guitarControllers", false);
 
     fileBox.setTextWhenNothingSelected ("Choose a SoundFont...");
     fileBox.onChange = [this]
@@ -352,11 +353,7 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     addAndMakeVisible (fxVelocitySlider);
     addAndMakeVisible (fxTimeSlider);
     for (auto* slider : { &stringsTopSlider, &stringsBottomSlider, &repeatStringsSlider })
-    {
-        slider->setTextBoxStyle (juce::Slider::TextBoxLeft, false, 26, 20);
-        slider->setIncDecButtonsMode (juce::Slider::incDecButtonsNotDraggable);
         addAndMakeVisible (*slider);
-    }
     fxVelocitySlider.setTooltip ("The velocity the Velocity FX switches at");
     fxTimeSlider.setTooltip ("How long a slow strum takes");
     stringsTopSlider.setTooltip ("Chords: the highest string strummed (1: the high E)");
@@ -384,8 +381,76 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
         };
         addAndMakeVisible (button);
     }
+    {
+        juce::StringArray names;
+        for (const char* name : GuitarEngine::articulationNames) names.add (name);
+        const char* keys[] = { "C1", "C#1", "D1", "D#1" };
+        for (int i = 0; i < 4; ++i)
+        {
+            setUpCombo (switchBoxes[(size_t) i], names, ("keySwitch" + juce::String (i + 1)).toRawUTF8(),
+                        juce::String ("Solo: holding ") + keys[i] + " plays the Main zone with this articulation");
+            switchLabels[(size_t) i].setText (keys[i], juce::dontSendNotification);
+        }
+        setUpCombo (pedalBox, names, "pedalFx", "Solo: holding the sustain pedal plays with this articulation (Off: the pedal sustains)");
+        setUpCombo (soloFxBox, { "Off", "H.O.", "Slide" }, "soloFx",
+                    "Solo, always: H.O. (hammer-on, a pull-off when let go) or Slide between legato notes up to Steps apart");
+        setUpCombo (pbBox, { "Pitch", "Slide", "Mono Bend" }, "pbAssign",
+                    "The pitch bender: Pitch (as usual), Slide (by semitones, along the frets) or Mono Bend (the lowest note only)");
+        setUpCombo (mwBox, { "Modulation", "Pitch", "Slide", "Mono Bend" }, "mwAssign", "The mod wheel's job");
+        setUpCombo (atBox, { "Off", "Pitch", "Modulation" }, "atAssign", "Aftertouch's job");
+    }
+    // Small numbers as bars: drag (or double-click to type) to change them.
+    for (auto* slider : { &fxStepsSlider, &legatoStepsSlider, &bassZoneTopSlider, &pbRangeSlider, &mwRangeSlider, &atRangeSlider,
+                          &stringsTopSlider, &stringsBottomSlider, &repeatStringsSlider })
+    {
+        slider->setColour (juce::Slider::trackColourId, juce::Colour (0xff6b4c33));
+        slider->setColour (juce::Slider::textBoxTextColourId, juce::Colour (0xfff1e6c8));
+        slider->setColour (juce::Slider::backgroundColourId, juce::Colour (0xff2a1f17));
+        slider->setMouseDragSensitivity (120);
+        slider->setColour (juce::Slider::textBoxOutlineColourId, juce::Colour (0xff4a3526));
+        addAndMakeVisible (*slider);
+    }
+    for (auto* slider : { &legatoTimeSlider, &accentSlider, &releaseTimeSlider })
+    {
+        slider->setTextBoxStyle (juce::Slider::TextBoxRight, false, slider == &accentSlider ? 34 : 50, 18);
+        addAndMakeVisible (*slider);
+    }
+    fxStepsSlider.setTooltip ("How far a slide or bend goes, in semitones");
+    legatoStepsSlider.setTooltip ("The widest step H.O. and Slide take, in semitones");
+    legatoTimeSlider.setTooltip ("How long a slide takes");
+    bassZoneToggle.setTooltip ("Notes up to the key next to it play firmer and without articulations: a bass line under the melody");
+    bassZoneTopSlider.setTooltip ("The bass zone's highest key");
+    accentSlider.setTooltip ("Accent: the velocity where soft playing turns hard");
+    releaseTimeSlider.setTooltip ("Release time: how long notes ring after they're let go (the same as PLAY's Release)");
+    for (auto* range : { &pbRangeSlider, &mwRangeSlider, &atRangeSlider }) range->setTooltip ("How far, in semitones");
+    addAndMakeVisible (bassZoneToggle);
+    for (int i = 0; i < 4; ++i)
+    {
+        auto& button = curveButtons[(size_t) i];
+        static const char* const glyphs[] = { "/", ")", "(", "S" };
+        button.setButtonText (glyphs[i]);
+        button.getProperties().set ("guitarMode", true);
+        button.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff4a3526));
+        button.setColour (juce::TextButton::buttonOnColourId, SF2Look::accent);
+        button.setColour (juce::TextButton::textColourOffId, juce::Colour (0xfff1e6c8));
+        button.setColour (juce::TextButton::textColourOnId, juce::Colour (0xff1d140d));
+        button.setTooltip (juce::String ("Velocity curve: ") + GuitarEngine::velocityCurveNames[i]);
+        button.onClick = [this, i]
+        {
+            if (auto* parameter = player.parameters.getParameter ("guitarVeloCurve"))
+                parameter->setValueNotifyingHost (parameter->convertTo0to1 ((float) i));
+        };
+        addAndMakeVisible (button);
+    }
+    controllersButton.setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+    controllersButton.setColour (juce::TextButton::textColourOffId, juce::Colour (0xffb8ab90));
+    controllersButton.setTooltip ("Show or hide the velocity curve, Accent, Release and the wheels' jobs");
+    controllersButton.onClick = [this] { toggleControllers(); };
+    addAndMakeVisible (controllersButton);
     for (auto* label : { &fxLabel, &fxVelocityLabel, &fxTimeLabel, &positionLabel, &stringsLabel, &stringsDash, &repeatStringsLabel,
-                         &harmonyLabel, &addOnLabel, &rhythmLabel, &optionsNote })
+                         &harmonyLabel, &addOnLabel, &rhythmLabel, &optionsNote, &fxStepsLabel, &permanentLabel, &legatoStepsLabel,
+                         &legatoTimeLabel, &pedalLabel, &switchLabels[0], &switchLabels[1], &switchLabels[2], &switchLabels[3],
+                         &curveLabel, &accentLabel, &releaseTimeLabel, &pbLabel, &mwLabel, &atLabel })
     {
         label->setFont (juce::FontOptions (12.0f));
         label->setColour (juce::Label::textColourId, SF2Look::dim);
@@ -1325,8 +1390,8 @@ void SF2PlayerEditor::resized()
         guitarPanel = area.removeFromTop (heightOf (guitarSection));
         tremoloSyncBox.setBounds (guitarPanel.getRight() - 6 - 70, guitarPanel.getY() + 5, 70, 18);
         auto inner = guitarPanel.reduced (6).withTrimmedTop (18);
-        auto strip = inner.removeFromBottom (neckHeight - 6);
-        optionsArea = strip.removeFromBottom (24 * 3 + 8).reduced (8, 0);   // three rows of options
+        auto strip = inner.removeFromBottom (neckHeight() - 6);
+        optionsArea = strip.removeFromBottom (24 * (showControllers ? 5 : 3) + 4 * (showControllers ? 4 : 2)).reduced (8, 0);
         strip.removeFromBottom (6);
         auto modes = strip.removeFromBottom (26).reduced (8, 0);   // Pattern, the five modes, Direct
         patternButton.setBounds (modes.removeFromLeft (68).reduced (0, 2));
@@ -1355,6 +1420,7 @@ void SF2PlayerEditor::resized()
         holdButton.setBounds (combos.removeFromTop (rowHeight).withSizeKeepingCentre (combos.getWidth(), 22).withTrimmedLeft (40));
         velocityStringsToggle.setBounds (tremoloSyncBox.getX() - 8 - 130, guitarPanel.getY() + 4, 130, 20);
         guitarPresets.setBounds (guitarPanel.getX() + 82, guitarPanel.getY() + 5, 150, 18);
+        controllersButton.setBounds (guitarPresets.getRight() + 8, guitarPanel.getY() + 4, 100, 20);
         for (auto* knob : { &strum, &palmMute, &humanize, &doubleMix, &tremoloDepth, &tremoloRate })
             knob->setBounds (inner.removeFromLeft (width));
     }
@@ -1419,6 +1485,10 @@ void SF2PlayerEditor::showMode()
         if (button.getToggleState() != (i == mode)) button.setToggleState (i == mode, juce::dontSendNotification);
         if (button.getAlpha() != (direct ? 0.45f : 1.0f)) button.setAlpha (direct ? 0.45f : 1.0f);
     }
+    const int curve = juce::roundToInt (player.parameters.getRawParameterValue ("guitarVeloCurve")->load());
+    for (int i = 0; i < (int) curveButtons.size(); ++i)
+        if (curveButtons[(size_t) i].getToggleState() != (i == curve))
+            curveButtons[(size_t) i].setToggleState (i == curve, juce::dontSendNotification);
     const int position = juce::roundToInt (player.parameters.getRawParameterValue ("chordPosition")->load());
     for (int i = 0; i < (int) positionButtons.size(); ++i)
         if (positionButtons[(size_t) i].getToggleState() != (i == position))
@@ -1439,22 +1509,33 @@ void SF2PlayerEditor::refreshModeOptions()
     const int mode = guitarModeBox.getSelectedItemIndex();
     const bool open = guitarShown && ! collapsed[guitarSection];
     const bool chordMode = mode == GuitarEngine::chords || mode == GuitarEngine::bassAndChord || mode == GuitarEngine::bassAndPick;
-    std::vector<std::pair<juce::Component*, int>> first, second, third;   // a control and its width, per row
+    std::vector<std::pair<juce::Component*, int>> first, second, third, fourth, fifth;   // a control and its width, per row
     auto add = [] (auto& row, juce::Component& c, int width) { row.push_back ({ &c, width }); };
+    const int fx = velocityFxBox.getSelectedItemIndex();
     const bool rhythm = patternButton.getToggleState() && chordMode;
     if (rhythm) { add (first, rhythmLabel, 46); add (first, patternBox, 112); }
-    else add (first, fxLabel, 72);
-    add (first, velocityFxBox, rhythm ? 128 : 160);
-    if (velocityFxBox.getSelectedItemIndex() > 0)
+    else add (first, fxLabel, 68);
+    add (first, velocityFxBox, rhythm ? 128 : 132);
+    if (fx > 0)
     {
         add (first, fxVelocityLabel, 30);
         add (first, fxVelocitySlider, 84);
-        if (velocityFxBox.getSelectedItemIndex() != GuitarEngine::veloMute) { add (first, fxTimeLabel, 30); add (first, fxTimeSlider, 112); }
+        if (fx != GuitarEngine::veloMute) { add (first, fxTimeLabel, 30); add (first, fxTimeSlider, fx >= GuitarEngine::slideUp ? 96 : 112); }
+        if (fx >= GuitarEngine::slideUp && fx <= GuitarEngine::reverseBend && ! rhythm) { add (first, fxStepsLabel, 34); add (first, fxStepsSlider, 44); }
     }
     if (mode == GuitarEngine::solo)
     {
-        add (second, optionsNote, optionsArea.getWidth());
-        optionsNote.setText ("C5-C6 repeat the notes held (black keys muted). Velo Mute mutes soft notes.", juce::dontSendNotification);
+        add (second, permanentLabel, 62);
+        add (second, soloFxBox, 72);
+        add (second, legatoStepsLabel, 34);
+        add (second, legatoStepsSlider, 44);
+        add (second, legatoTimeLabel, 30);
+        add (second, legatoTimeSlider, 96);
+        add (second, bassZoneToggle, 92);
+        add (second, bassZoneTopSlider, 48);
+        for (int i = 0; i < 4; ++i) { add (third, switchLabels[(size_t) i], i == 0 ? 20 : 28); add (third, switchBoxes[(size_t) i], 76); }
+        add (third, pedalLabel, 36);
+        add (third, pedalBox, 76);
     }
     else if (mode == GuitarEngine::harmony)
     {
@@ -1470,25 +1551,49 @@ void SF2PlayerEditor::refreshModeOptions()
         if (mode == GuitarEngine::chords)
         {
             add (second, stringsLabel, 50);
-            add (second, stringsTopSlider, 70);
+            add (second, stringsTopSlider, 40);
             add (second, stringsDash, 8);
-            add (second, stringsBottomSlider, 70);
+            add (second, stringsBottomSlider, 40);
         }
-        if (mode == GuitarEngine::bassAndChord) { add (second, repeatStringsLabel, 58); add (second, repeatStringsSlider, 70); }
+        if (mode == GuitarEngine::bassAndChord) { add (second, repeatStringsLabel, 58); add (second, repeatStringsSlider, 40); }
         if (mode == GuitarEngine::bassAndPick) { add (second, addOnLabel, 72); add (second, addOnBox, 100); }
         add (third, chordBassToggle, 100);
         if (mode != GuitarEngine::chords) { add (third, alterBassToggle, 100); add (third, bassMonoToggle, 100); }
     }
+    if (showControllers)
+    {
+        add (fourth, curveLabel, 64);
+        for (auto& button : curveButtons) add (fourth, button, 28);
+        add (fourth, accentLabel, 46);
+        add (fourth, accentSlider, 130);
+        add (fourth, releaseTimeLabel, 50);
+        add (fourth, releaseTimeSlider, 130);
+        for (auto [label, box, range] : { std::tuple { &pbLabel, &pbBox, &pbRangeSlider }, std::tuple { &mwLabel, &mwBox, &mwRangeSlider },
+                                          std::tuple { &atLabel, &atBox, &atRangeSlider } })
+        {
+            add (fifth, *label, 32);
+            add (fifth, *box, 94);
+            add (fifth, *range, 44);
+        }
+    }
+    optionsNote.setColour (juce::Label::textColourId, SF2Look::dim);
 
     std::vector<juce::Component*> all { &fxLabel, &velocityFxBox, &fxVelocityLabel, &fxVelocitySlider, &fxTimeLabel, &fxTimeSlider, &rhythmLabel,
                                         &patternBox, &optionsNote, &harmonyLabel, &harmonyBox, &positionLabel, &stringsLabel, &stringsTopSlider,
                                         &stringsDash, &stringsBottomSlider, &repeatStringsLabel, &repeatStringsSlider, &addOnLabel, &addOnBox,
-                                        &chordBassToggle, &alterBassToggle, &bassMonoToggle };
+                                        &chordBassToggle, &alterBassToggle, &bassMonoToggle, &soloFxBox, &pedalBox, &fxStepsSlider,
+                                        &legatoStepsSlider, &legatoTimeSlider, &bassZoneTopSlider, &bassZoneToggle, &fxStepsLabel,
+                                        &permanentLabel, &legatoStepsLabel, &legatoTimeLabel, &pedalLabel, &accentSlider, &releaseTimeSlider,
+                                        &pbRangeSlider, &mwRangeSlider, &atRangeSlider, &pbBox, &mwBox, &atBox, &curveLabel, &accentLabel,
+                                        &releaseTimeLabel, &pbLabel, &mwLabel, &atLabel };
+    for (auto& box : switchBoxes) all.push_back (&box);
+    for (auto& label : switchLabels) all.push_back (&label);
+    for (auto& button : curveButtons) all.push_back (&button);
     for (auto& button : positionButtons) all.push_back (&button);
     for (auto* c : all)
     {
         const auto inRow = [c] (const auto& row) { return std::any_of (row.begin(), row.end(), [c] (auto& item) { return item.first == c; }); };
-        const bool shown = open && (inRow (first) || inRow (second) || inRow (third));
+        const bool shown = open && (inRow (first) || inRow (second) || inRow (third) || inRow (fourth) || inRow (fifth));
         if (c->isVisible() != shown) c->setVisible (shown);
     }
     auto place = [] (const auto& row, juce::Rectangle<int> area)
@@ -1506,6 +1611,27 @@ void SF2PlayerEditor::refreshModeOptions()
     place (second, rows.removeFromTop (24));
     rows.removeFromTop (4);
     place (third, rows.removeFromTop (24));
+    rows.removeFromTop (4);
+    place (fourth, rows.removeFromTop (24));
+    rows.removeFromTop (4);
+    place (fifth, rows.removeFromTop (24));
+    controllersButton.setButtonText (juce::String::fromUTF8 (showControllers ? "\xe2\x96\xbe Controllers" : "\xe2\x96\xb8 Controllers"));
+    controllersButton.setVisible (open);
+}
+
+// The controllers' rows in the options box, shown or hidden; the window grows or shrinks by them.
+void SF2PlayerEditor::toggleControllers()
+{
+    const int before = heightOf (guitarSection);
+    showControllers = ! showControllers;
+    settings->setValue ("guitarControllers", showControllers);
+    settings->saveIfNeeded();
+    const int delta = heightOf (guitarSection) - before;
+    const int height = getHeight();   // before setResizeLimits moves it
+    setResizeLimits (620, minimumHeight(), 1600, 1400);
+    setSize (getWidth(), juce::jmax (minimumHeight(), height + delta));
+    resized();
+    repaint();
 }
 
 void SF2PlayerEditor::showHelpMenu()

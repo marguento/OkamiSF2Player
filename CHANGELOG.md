@@ -18,6 +18,11 @@ release bumps it and adds an entry here: one line per change a player would noti
   - **Options for each mode:** Velocity Switch FX (a slow strum above or below a velocity, or soft
     notes muted), Chord Position (I to IV, or Kbd), Strings, Chord/Bass (Am/G), Alter Bass, Bass
     Mono, Bass & Pick's add-on keys (Unison, Chromatic), Harmony's interval.
+  - **Solo's articulations:** H.O. (hammer-on and pull-off) and Slide between legato notes, always
+    or on key switches (C1-D#1) and the pedal, with Tremolo, Sustain 1-2 Mono, Velo Mute and Muted;
+    a Bass Zone; Velocity FX Slide Up, Slide Down, Bend and Reverse Bend.
+  - **Controllers:** velocity curve, Accent, Release, and the pitch bender, mod wheel and
+    aftertouch as Pitch, Slide (by semitones), Mono Bend (the lowest note) or Modulation.
   - Every note lies on a string: a new note on a string stops the one ringing there.
   - **Strum time** (up to 250 ms), **Way** (down, up, alternate), **Tunings** (Standard, Drop D,
     Drop C, Open G, DADGAD), **Velocity strings** (a soft strum catches only the high strings).

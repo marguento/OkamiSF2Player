@@ -207,9 +207,9 @@ private:
     juce::ComboBox velocityFxBox, harmonyBox, addOnBox;
     juce::Slider fxVelocitySlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight },
                  fxTimeSlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight },
-                 stringsTopSlider { juce::Slider::IncDecButtons, juce::Slider::TextBoxLeft },
-                 stringsBottomSlider { juce::Slider::IncDecButtons, juce::Slider::TextBoxLeft },
-                 repeatStringsSlider { juce::Slider::IncDecButtons, juce::Slider::TextBoxLeft };
+                 stringsTopSlider { juce::Slider::LinearBar, juce::Slider::TextBoxLeft },
+                 stringsBottomSlider { juce::Slider::LinearBar, juce::Slider::TextBoxLeft },
+                 repeatStringsSlider { juce::Slider::LinearBar, juce::Slider::TextBoxLeft };
     std::array<juce::TextButton, 5> positionButtons;
     juce::ToggleButton chordBassToggle { "Chord/Bass" }, alterBassToggle { "Alter Bass" }, bassMonoToggle { "Bass Mono" };
     juce::Label fxLabel { {}, "Velocity FX" }, fxVelocityLabel { {}, "Velo" }, fxTimeLabel { {}, "Time" },
@@ -227,6 +227,50 @@ private:
     juce::AudioProcessorValueTreeState::ButtonAttachment chordBassAttachment { player.parameters, "chordBass", chordBassToggle },
                                                          alterBassAttachment { player.parameters, "alterBass", alterBassToggle },
                                                          bassMonoAttachment { player.parameters, "bassMono", bassMonoToggle };
+    // Solo: H.O. or Slide always on, the key switches (C1-D#1) and the pedal, the bass zone.
+    juce::ComboBox soloFxBox, pedalBox;
+    std::array<juce::ComboBox, 4> switchBoxes;
+    juce::Slider fxStepsSlider { juce::Slider::LinearBar, juce::Slider::TextBoxLeft },
+                 legatoStepsSlider { juce::Slider::LinearBar, juce::Slider::TextBoxLeft },
+                 legatoTimeSlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight },
+                 bassZoneTopSlider { juce::Slider::LinearBar, juce::Slider::TextBoxLeft };
+    juce::ToggleButton bassZoneToggle { "Bass Zone" };
+    juce::Label fxStepsLabel { {}, "Steps" }, permanentLabel { {}, "Permanent" }, legatoStepsLabel { {}, "Steps" },
+                legatoTimeLabel { {}, "Time" }, pedalLabel { {}, "Pedal" };
+    std::array<juce::Label, 4> switchLabels;
+    juce::AudioProcessorValueTreeState::ComboBoxAttachment soloFxAttachment { player.parameters, "soloFx", soloFxBox },
+                                                           pedalAttachment { player.parameters, "pedalFx", pedalBox },
+                                                           switch1Attachment { player.parameters, "keySwitch1", switchBoxes[0] },
+                                                           switch2Attachment { player.parameters, "keySwitch2", switchBoxes[1] },
+                                                           switch3Attachment { player.parameters, "keySwitch3", switchBoxes[2] },
+                                                           switch4Attachment { player.parameters, "keySwitch4", switchBoxes[3] };
+    juce::AudioProcessorValueTreeState::SliderAttachment fxStepsAttachment { player.parameters, "fxSteps", fxStepsSlider },
+                                                         legatoStepsAttachment { player.parameters, "legatoSteps", legatoStepsSlider },
+                                                         legatoTimeAttachment { player.parameters, "legatoTime", legatoTimeSlider },
+                                                         bassZoneTopAttachment { player.parameters, "bassZoneTop", bassZoneTopSlider };
+    juce::AudioProcessorValueTreeState::ButtonAttachment bassZoneAttachment { player.parameters, "bassZone", bassZoneToggle };
+    // Controllers (shown with the header's Controllers button): the velocity curve, Accent,
+    // Release, and what the pitch bender, mod wheel and aftertouch do.
+    juce::TextButton controllersButton;
+    bool showControllers = false;
+    void toggleControllers();
+    std::array<juce::TextButton, 4> curveButtons;
+    juce::Slider accentSlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight },
+                 releaseTimeSlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight },
+                 pbRangeSlider { juce::Slider::LinearBar, juce::Slider::TextBoxLeft },
+                 mwRangeSlider { juce::Slider::LinearBar, juce::Slider::TextBoxLeft },
+                 atRangeSlider { juce::Slider::LinearBar, juce::Slider::TextBoxLeft };
+    juce::ComboBox pbBox, mwBox, atBox;
+    juce::Label curveLabel { {}, "Velo curve" }, accentLabel { {}, "Accent" }, releaseTimeLabel { {}, "Release" },
+                pbLabel { {}, "P.B." }, mwLabel { {}, "M.W." }, atLabel { {}, "A.T." };
+    juce::AudioProcessorValueTreeState::SliderAttachment accentAttachment { player.parameters, "accent", accentSlider },
+                                                         releaseTimeAttachment { player.parameters, "release", releaseTimeSlider },
+                                                         pbRangeAttachment { player.parameters, "pbRange", pbRangeSlider },
+                                                         mwRangeAttachment { player.parameters, "mwRange", mwRangeSlider },
+                                                         atRangeAttachment { player.parameters, "atRange", atRangeSlider };
+    juce::AudioProcessorValueTreeState::ComboBoxAttachment pbAttachment { player.parameters, "pbAssign", pbBox },
+                                                           mwAttachment { player.parameters, "mwAssign", mwBox },
+                                                           atAttachment { player.parameters, "atAssign", atBox };
     juce::Rectangle<int> optionsArea;
     void refreshModeOptions();
     bool guitarShown = false;
@@ -239,10 +283,12 @@ private:
     juce::TextButton keysButton;   // folds the keyboard
     int keyboardHeight = 120;      // the keyboard's height when it was last shown
     static constexpr int panelHeight = 118, collapsedHeight = 26, panelGap = 12;
-    static constexpr int neckHeight = 242;   // the neck, the mode buttons and the options box, under the knobs
+    static constexpr int baseNeckHeight = 242, controllersHeight = 56;
+    // The neck, the mode buttons and the options box, under the knobs (the controllers' rows too when shown).
+    int neckHeight() const { return baseNeckHeight + (showControllers ? controllersHeight : 0); }
     int heightOf (Section s) const
     {
-        return collapsed[(size_t) s] ? collapsedHeight : panelHeight + (s == guitarSection ? neckHeight : 0);
+        return collapsed[(size_t) s] ? collapsedHeight : panelHeight + (s == guitarSection ? neckHeight() : 0);
     }
     GuitarNeck neck { { SF2Look::text, SF2Look::dim, SF2Look::accent, SF2Look::panel, SF2Look::line.brighter (0.35f) } };
     int shownGuitarSequence = 0;

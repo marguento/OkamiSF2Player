@@ -184,6 +184,26 @@ letting the chord go stops them all (unless Hold).
   (G#5 below the 1st string), and A#5 to C6 one to three semitones above the 1st.
 - **Rhythm** (with Pattern), **Interval** (Harmony).
 
+**Solo's articulations:**
+
+- **Permanent:** H.O. (a key played while another is held, up to **Steps** semitones away, hammers
+  on: the sounding string bends there without a new pick, and pulls off when let go) or Slide (the
+  same, along the frets over **Time**).
+- **Key switches:** hold C1, C#1, D1 or D#1 and the Main zone plays with its articulation (Muted,
+  H.O., Slide and Tremolo by default); the **Pedal** can take one too (Off: it sustains as usual).
+  Articulations: H.O., Slide, Tremolo (the notes picked again and again), Sustain 1-2 Mono (notes
+  ring until a step of one or two semitones), Velo Mute (notes under Velo muted), Muted.
+- **Bass Zone:** notes up to the key next to it play firmer and without articulations.
+- **Velocity FX** add Slide Up, Slide Down, Bend and Reverse Bend: a note at Velo or harder slides
+  up into its pitch, slides down from it, bends up to it, or starts pre-bent and comes down to it,
+  over **Time** and **Steps**.
+
+**Controllers** (the button at the top of the panel shows them): **Velo curve** (Linear, Convex,
+Concave, S), **Accent** (the velocity where soft playing turns hard: below it velocities fill the
+soft half, from it the hard half), **Release** (PLAY's release time), and what the **P.B.** (pitch
+bender), **M.W.** (mod wheel) and **A.T.** (aftertouch) do and how far: Pitch, Slide (by semitones,
+along the frets), Mono Bend (the lowest note only), Modulation, or as usual.
+
 **The rest of the panel:**
 
 - **Presets** (next to GUITAR): Acoustic Strum, Campfire, Double-Tracked, Slow Ballad, Muted Rock,

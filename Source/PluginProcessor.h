@@ -197,6 +197,14 @@ private:
     double tremoloPhase = 0.0;
     // Pattern mode: plays the rhythm's steps that fall in this block, on every channel holding a chord.
     void runPattern (const GuitarEngine::Settings&, juce::int64 blockStart, int numSamples);
+    // Pitch per voice: the engine's slides and bends, and the wheels and aftertouch when they're
+    // given to Pitch, Slide or Mono Bend. Each voice is retuned by what changed since last time.
+    void applyPitch (juce::int64 now, juce::int64 sinceVoiceId);
+    bool guitarController (const juce::MidiMessage&, const GuitarEngine::Settings&, int channel, juce::int64 at);
+    struct AppliedPitch { juce::int64 id = -1; float cents = 0.0f; };
+    std::array<AppliedPitch, 1024> appliedPitch {};
+    std::array<float, 16> channelCents {}, monoCents {};   // the wheels' offsets, per channel
+    std::array<float, 16> wheelBend {}, wheelMod {}, wheelPressure {};   // -1..1, 0..1, 0..1
     void applyTremolo (int numSamples);
     int housekeepingTicks = 0;
 

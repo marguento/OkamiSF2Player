@@ -43,9 +43,16 @@ public:
     static constexpr const char* harmonyNames[] = { "4th Down", "5th Up", "Octave Up", "Power Chord 1", "Power Chord 2", "2 Octaves Up" };
     // Chord Position: where the voicing's highest note lies (I to IV), or Kbd: in the octave played.
     static constexpr const char* positionNames[] = { "I", "II", "III", "IV", "Kbd" };
-    // Velocity Switch FX.
-    enum VelocityFx { fxOff = 0, slowStrumHigh = 1, slowStrumLow = 2, veloMute = 3 };
-    static constexpr const char* velocityFxNames[] = { "Off", "Slow Strum on Higher Velo", "Slow Strum on Lower Velo", "Velo Mute" };
+    // Velocity Switch FX: what a note gets when its velocity reaches the threshold (Slow Strum on
+    // Lower Velo and Velo Mute: when it stays under it).
+    enum VelocityFx { fxOff = 0, slowStrumHigh, slowStrumLow, slideUp, slideDown, bend, reverseBend, veloMute };
+    static constexpr const char* velocityFxNames[] = { "Off", "Slow Strum on Higher Velo", "Slow Strum on Lower Velo", "Slide Up",
+                                                       "Slide Down", "Bend", "Reverse Bend", "Velo Mute" };
+    // Solo's articulations: always on (H.O., Slide), or while a key switch (C1-D#1) or the pedal is held.
+    enum Articulation { artOff = 0, artHammer, artSlide, artTremolo, artSustainMono, artVeloMute, artMuted };
+    static constexpr const char* articulationNames[] = { "Off", "H.O.", "Slide", "Tremolo", "Sustain 1-2 Mono", "Velo Mute", "Muted" };
+    // Velocity curves: as played, soft notes louder, soft notes softer, an S (both ends pushed out).
+    static constexpr const char* velocityCurveNames[] = { "Linear", "Convex", "Concave", "S-Curve" };
     // Bass & Pick: what the black keys among its string keys do.
     static constexpr const char* addOnNames[] = { "Off", "Unison", "Chromatic" };
 
@@ -93,7 +100,19 @@ public:
         int harmony = 2;                // which of `harmonyNames`
         int velocityFx = fxOff;         // which of `velocityFxNames`
         int fxVelocity = 90;            // its velocity threshold
-        float fxTimeMs = 150.0f;        // a slow strum's length
+        float fxTimeMs = 150.0f;        // a slow strum's length, a slide's or a bend's
+        int fxSteps = 2;                // a slide's or a bend's size, in semitones
+        // Solo.
+        int soloFx = artOff;            // always on: H.O. or Slide (between legato notes)
+        int legatoSteps = 2;            // the widest step H.O. or Slide takes, in semitones
+        float legatoMs = 60.0f;         // a slide's time
+        std::array<int, 4> keySwitch { artMuted, artHammer, artSlide, artTremolo };   // C1, C#1, D1, D#1
+        int pedalFx = artOff;           // the sustain pedal's articulation (Off: the pedal sustains)
+        bool bassZone = false;          // below `bassZoneTop`: a stronger velocity curve, no articulations
+        int bassZoneTop = 52;           // E2
+        // Every mode: the velocity curve, and where soft turns hard.
+        int velocityCurve = 0;
+        int accent = 64;
         bool hold = false;              // chords keep sounding after the keys are let go
         // True when nothing would change: the processor then plays notes directly.
         bool isNeutral() const { return direct; }
@@ -160,6 +179,7 @@ public:
         eventCount = 0;
         for (auto& channel : lastOnTime) channel.fill (-1);
         for (auto& channel : channels) channel = {};
+        for (auto& channel : glides) channel.fill ({});
         for (auto& group : groups) group = {};
         nextUp = false;
     }
@@ -168,6 +188,16 @@ public:
     void noteOn (const Settings& s, int channel, int note, int velocity, juce::int64 time)
     {
         auto& c = channels[(size_t) channel];
+        velocity = shapeVelocity (s, velocity);
+        // What the key's release will need to know, current from this note on (also kept by advance).
+        c.soloMode = s.mode == solo;
+        c.chordMode = s.mode == chords || s.mode == bassAndChord || s.mode == bassAndPick;
+        c.hold = s.hold;
+        if (s.mode == solo && inLeftRepeat (note))   // a key switch: its articulation while it's held
+        {
+            c.switchDown[(size_t) (note - leftRepeatLow)] = true;
+            return;
+        }
         if (! inMain (note) && ! inRepeat (note))   // outside the zones: as it is
         {
             playKeyed (s, channel, note, &note, 1, velocity, time, false);
@@ -180,7 +210,7 @@ public:
                 addKey (c.down, note);
                 c.velocity = velocity;
                 if (s.mode == solo)
-                    playKeyed (s, channel, note, &note, 1, velocity, time, false, s.velocityFx == veloMute && velocity < s.fxVelocity);
+                    soloNoteOn (s, channel, note, velocity, time);
                 else
                 {
                     // One voice at a time: the previous interval ends.
@@ -235,6 +265,14 @@ public:
     {
         auto& c = channels[(size_t) channel];
         bool known = false;
+        if (c.soloMode && inLeftRepeat (note))
+        {
+            c.switchDown[(size_t) (note - leftRepeatLow)] = false;
+            releaseSustained (channel, time);
+            return true;
+        }
+        if (c.soloMode && legatoOff (channel, note, time))
+            return true;
         if (removeKey (c.down, note))
         {
             known = true;
@@ -250,10 +288,46 @@ public:
         for (auto& group : groups)
         {
             if (! group.used || group.channel != channel || group.key != note) continue;
-            endGroup (group, time);
             known = true;
+            if (c.sustainMono && c.soloMode) { group.key = -1; group.sustained = true; continue; }   // rings on
+            endGroup (group, time);
         }
         return known;
+    }
+
+    // The sustain pedal in Solo, when it has an articulation.
+    void pedal (int channel, bool down, juce::int64 time)
+    {
+        channels[(size_t) channel].pedalDown = down;
+        if (! down) releaseSustained (channel, time);
+    }
+
+    // A note's pitch offset in cents at `time` (H.O., slides, bends): the processor retunes its voices.
+    float pitchCents (int channel, int note, juce::int64 time) const
+    {
+        if (! juce::isPositiveAndBelow (channel, 16) || ! juce::isPositiveAndBelow (note, 128)) return 0.0f;
+        const auto& g = glides[(size_t) channel][(size_t) note];
+        if (g.from == 0.0f && g.to == 0.0f) return 0.0f;
+        float value = g.to;
+        if (time < g.start) value = g.from;
+        else if (g.duration > 0 && time < g.start + g.duration)
+            value = g.from + (g.to - g.from) * (float) (time - g.start) / (float) g.duration;
+        return g.quantized ? 100.0f * std::round (value / 100.0f) : value;
+    }
+
+    // Solo: the lowest note sounding for a held key (Mono Bend bends it alone), -1 if none.
+    int lowestHeld (int channel) const
+    {
+        const auto& c = channels[(size_t) channel];
+        int lowest = -1;
+        for (int i = 0; i < c.down.count; ++i)
+        {
+            int key = c.down.keys[(size_t) i];
+            for (int k = 0; k < c.legato.count; ++k) if (c.legato.keys[(size_t) k] == key) key = c.legatoBase;
+            if (lowest < 0 || key < lowest) lowest = key;
+        }
+        if (c.down.count == 0 && c.legato.count > 0) lowest = c.legatoBase;
+        return lowest;
     }
 
     // All notes off on a channel (CC120 / CC123 from the clip): everything ends.
@@ -261,6 +335,7 @@ public:
     {
         endStrings (channel, time);
         channels[(size_t) channel] = {};
+        glides[(size_t) channel].fill ({});
         for (auto& group : groups)
             if (group.used && group.channel == channel)
                 endGroup (group, time);
@@ -276,6 +351,9 @@ public:
             auto& c = channels[(size_t) channel];
             c.chordMode = chordMode;
             c.hold = s.hold;
+            c.soloMode = s.mode == solo;
+            c.sustainMono = c.soloMode && (articulations (s, c) & (1 << artSustainMono)) != 0;
+            if (! c.sustainMono) releaseSustained (channel, until);
             if (c.latched && ! s.hold && c.down.count == 0)
             {
                 endStrings (channel, until);
@@ -294,6 +372,32 @@ public:
                 else { endStrings (channel, at + 1); c.voicing = {}; }
             }
             c.releaseAfterTrigger = false;
+        }
+    }
+
+    // Tremolo: a held note picked again and again while its articulation is on.
+    void tremolo (const Settings& s, juce::int64 until)
+    {
+        const auto interval = samples (tremoloMs);
+        for (auto& group : groups)
+        {
+            if (! group.used || ! group.tremolo || group.key < 0) continue;
+            while (group.nextPick < until)
+            {
+                const auto at = group.nextPick;
+                const int key = group.key, channel = group.channel, velocity = group.velocity;
+                std::array<int, 16> notes {};
+                const int n = group.outputCount;
+                for (int i = 0; i < n; ++i) notes[(size_t) i] = group.outputs[(size_t) i];
+                endGroup (group, at);
+                auto settings = s;
+                settings.velocityFx = fxOff;
+                auto* next = playKeyed (settings, channel, key, notes.data(), n, velocity, at, false);
+                if (next == nullptr) break;
+                next->tremolo = true;
+                next->nextPick = at + interval;
+                if (next != &group) break;   // carried on in another slot: it's seen on its own
+            }
         }
     }
 
@@ -648,7 +752,162 @@ private:
         std::array<StringNote, 6> strings {};
         std::array<int, 3> lastHarmony {};
         int lastHarmonyCount = 0;
+        // Solo: key switches and the pedal held; a legato line (H.O. or Slide) bending its first
+        // note's string: that note, the keys hammered or slid to, and whether its key is still down.
+        std::array<bool, 4> switchDown {};
+        bool pedalDown = false, soloMode = false, sustainMono = false;
+        int legatoBase = -1;
+        Keys legato;
+        bool baseReleased = false, legatoSlides = false;
     };
+
+    // A note's pitch moving from `from` to `to` cents over `duration` samples from `start`
+    // (quantized: by semitones, a slide along the frets).
+    struct Glide
+    {
+        float from = 0.0f, to = 0.0f;
+        juce::int64 start = 0, duration = 0;
+        bool quantized = false;
+    };
+    void setGlide (int channel, int note, float from, float to, juce::int64 start, juce::int64 duration, bool quantized)
+    {
+        if (juce::isPositiveAndBelow (note, 128))
+            glides[(size_t) channel][(size_t) note] = { from, to, start, duration, quantized };
+    }
+
+    // The articulations on now (bits), in Solo.
+    static int articulations (const Settings& s, const Channel& c)
+    {
+        int bits = 1 << s.soloFx;
+        for (size_t i = 0; i < 4; ++i) if (c.switchDown[i]) bits |= 1 << s.keySwitch[i];
+        if (c.pedalDown) bits |= 1 << s.pedalFx;
+        return bits & ~1;
+    }
+
+    // Accent: velocities under it map to the soft half (1-63), from it to the hard half
+    // (64-127); then the curve.
+    static int shapeVelocity (const Settings& s, int velocity)
+    {
+        const int accent = juce::jlimit (2, 126, s.accent);
+        float v = velocity < accent ? 1.0f + (float) (velocity - 1) * 62.0f / (float) (accent - 1)
+                                    : 64.0f + (float) (velocity - accent) * 63.0f / (float) (127 - accent);
+        float x = juce::jlimit (0.0f, 1.0f, v / 127.0f);
+        switch (s.velocityCurve)
+        {
+            case 1: x = std::pow (x, 0.6f); break;
+            case 2: x = std::pow (x, 1.6f); break;
+            case 3: x = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::pi * x); break;
+            default: break;
+        }
+        return juce::jlimit (1, 127, juce::roundToInt (x * 127.0f));
+    }
+
+    // Solo: a note from the Main zone, with whatever articulation is on.
+    void soloNoteOn (const Settings& s, int channel, int note, int velocity, juce::int64 time)
+    {
+        auto& c = channels[(size_t) channel];
+        addKey (c.down, note);
+        c.velocity = velocity;
+        if (s.bassZone && note <= s.bassZoneTop)   // the bass zone: firmer, no articulations
+        {
+            playKeyed (s, channel, note, &note, 1, juce::jmin (127, velocity + 20), time, false, false, false);
+            return;
+        }
+        const int arts = articulations (s, c);
+        const bool hammer = (arts & (1 << artHammer)) != 0, slide = (arts & (1 << artSlide)) != 0;
+        // A legato step (the line's key still down): the string sounding bends there, no new pick.
+        if ((hammer || slide) && c.legatoBase >= 0 && (! c.baseReleased || c.legato.count > 0))
+        {
+            const int current = c.legato.count > 0 ? c.legato.keys[(size_t) c.legato.count - 1] : c.legatoBase;
+            const int step = std::abs (note - current);
+            const bool lineHeld = c.legato.count > 0 || hasKey (c.down, c.legatoBase, note);
+            if (step >= 1 && step <= s.legatoSteps && lineHeld)
+            {
+                addKey (c.legato, note);
+                c.legatoSlides = slide && ! hammer;
+                setGlide (channel, c.legatoBase, pitchCents (channel, c.legatoBase, time), (float) (note - c.legatoBase) * 100.0f, time,
+                          c.legatoSlides ? samples (s.legatoMs) : 0, c.legatoSlides);
+                showNote (note);
+                return;
+            }
+        }
+        // Sustain 1-2 Mono: a step of one or two semitones stops the note it steps from.
+        if (c.sustainMono)
+            for (auto& group : groups)
+                if (group.used && group.channel == channel && group.sustained && group.outputCount > 0
+                    && std::abs (group.outputs[0] - note) <= 2)
+                    endGroup (group, time);
+        const bool muted = (arts & (1 << artMuted)) != 0 || ((arts & (1 << artVeloMute)) != 0 && velocity < s.fxVelocity)
+                        || (s.velocityFx == veloMute && velocity < s.fxVelocity);
+        auto* group = playKeyed (s, channel, note, &note, 1, velocity, time, false, muted);
+        if (group != nullptr && (arts & (1 << artTremolo)) != 0)
+        {
+            group->tremolo = true;
+            group->nextPick = time + samples (tremoloMs);
+        }
+        c.legatoBase = note;   // a new line starts here
+        c.legato = {};
+        c.baseReleased = false;
+    }
+
+    static bool hasKey (const Keys& k, int note, int except = -1)
+    {
+        for (int i = 0; i < k.count; ++i) if (k.keys[(size_t) i] == note && note != except) return true;
+        return false;
+    }
+
+    // Solo: a key of a legato line let go. The last one pulls off (or slides back) to the one
+    // before; when nothing of the line is held, its note ends. False: not the line's.
+    bool legatoOff (int channel, int note, juce::int64 time)
+    {
+        auto& c = channels[(size_t) channel];
+        if (c.legatoBase < 0) return false;
+        if (note == c.legatoBase && c.legato.count > 0)   // the line's first key, while others hold on
+        {
+            removeKey (c.down, note);
+            c.baseReleased = true;
+            return true;
+        }
+        if (! hasKey (c.legato, note)) return false;
+        const bool last = c.legato.keys[(size_t) c.legato.count - 1] == note;
+        // Keep the order: the keys stay as they were added.
+        int at = 0;
+        for (int i = 0; i < c.legato.count; ++i) if (c.legato.keys[(size_t) i] != note) c.legato.keys[(size_t) at++] = c.legato.keys[(size_t) i];
+        c.legato.count = at;
+        removeKey (c.down, note);
+        if (! last) return true;
+        if (c.legato.count == 0 && c.baseReleased)   // nothing of the line held: it ends
+        {
+            for (auto& group : groups)
+                if (group.used && group.channel == channel && group.key == c.legatoBase) endGroup (group, time);
+            c.legatoBase = -1;
+            return true;
+        }
+        const int target = c.legato.count > 0 ? c.legato.keys[(size_t) c.legato.count - 1] : c.legatoBase;
+        setGlide (channel, c.legatoBase, pitchCents (channel, c.legatoBase, time), (float) (target - c.legatoBase) * 100.0f, time,
+                  c.legatoSlides ? samples (legatoBackMs) : 0, c.legatoSlides);
+        showNote (target);
+        return true;
+    }
+
+    // Notes Sustain 1-2 Mono or the pedal kept ringing, once that articulation is off.
+    void releaseSustained (int channel, juce::int64 time)
+    {
+        auto& c = channels[(size_t) channel];
+        if (c.sustainMono && (c.pedalDown || std::any_of (c.switchDown.begin(), c.switchDown.end(), [] (bool b) { return b; }))) return;
+        for (auto& group : groups)
+            if (group.used && group.channel == channel && group.sustained) endGroup (group, time);
+    }
+
+    void showNote (int note)
+    {
+        last.count = 1;
+        last.notes[0] = note;
+        last.strummed = false;
+        ++last.sequence;
+    }
+
+    static constexpr float tremoloMs = 75.0f, legatoBackMs = 40.0f;
 
     // The Main zone's chord: recognized, voiced and played as the mode says.
     void triggerChord (const Settings& s, int channel, juce::int64 time)
@@ -831,7 +1090,7 @@ private:
     // Notes tied to a key (Solo, Harmony, the zones' outside): they end when it's let go.
     struct Group;
     Group* playKeyed (const Settings& s, int channel, int key, const int* notes, int count, int velocity, juce::int64 time,
-                      bool strummed, bool muted = false)
+                      bool strummed, bool muted = false, bool applyFx = true)
     {
         auto settings = s;
         if (muted)
@@ -839,8 +1098,8 @@ private:
             settings.palm = juce::jmax (0.6f, s.palm);
             velocity = juce::jmin (velocity, palmVelocity - 1);
         }
-        auto* group = startGroupWith (settings, channel, notes, count, velocity, time, strummed);
-        if (group != nullptr) group->key = key;
+        auto* group = startGroupWith (settings, channel, notes, count, velocity, time, strummed, applyFx);
+        if (group != nullptr) { group->key = key; group->velocity = velocity; }
         return group;
     }
 
@@ -850,6 +1109,10 @@ private:
         int channel = 0;
         int key = -1;            // the key that ends it (-1: none)
         bool harmony = false;
+        bool sustained = false;  // let go, but kept by Sustain 1-2 Mono
+        bool tremolo = false;    // picked again every `tremoloMs` while held
+        juce::int64 nextPick = 0;
+        int velocity = 100;
         std::array<juce::uint8, 16> outputs {};
         std::array<juce::int64, 16> onsets {};   // when each output starts (strummed: later and later)
         int outputCount = 0;
@@ -878,7 +1141,8 @@ private:
     }
 
     // Starts the notes of a chord (or one note), strummed and humanized.
-    Group* startGroupWith (const Settings& s, int channel, const int* outputs, int outputCount, int velocity, juce::int64 time, bool strum)
+    Group* startGroupWith (const Settings& s, int channel, const int* outputs, int outputCount, int velocity, juce::int64 time, bool strum,
+                           bool applyFx = true)
     {
         if (outputCount <= 0) return nullptr;
         Group* group = nullptr;
@@ -936,6 +1200,15 @@ private:
             const auto palmOff = samples (juce::jmap (s.palm, 600.0f, 70.0f));
             const auto pitch = group->outputs[(size_t) i];
             group->onsets[(size_t) i] = at;
+            // Slides and bends from the Velocity FX; any other note starts in tune.
+            const float steps = 100.0f * (float) s.fxSteps;
+            const auto length = samples (s.fxTimeMs);
+            const bool fx = applyFx && velocity >= s.fxVelocity;
+            if (fx && s.velocityFx == slideUp)          setGlide (channel, pitch, -steps, 0.0f, at, length, true);
+            else if (fx && s.velocityFx == slideDown)   setGlide (channel, pitch, 0.0f, -steps, at + length / 2, length, true);
+            else if (fx && s.velocityFx == bend)        setGlide (channel, pitch, -steps, 0.0f, at, length, false);
+            else if (fx && s.velocityFx == reverseBend) setGlide (channel, pitch, steps, 0.0f, at, length, false);
+            else                                        setGlide (channel, pitch, 0.0f, 0.0f, at, 0, false);
             schedule ({ at, (juce::uint8) channel, pitch, velocityByte, detune, palm, false });
             // Palm mute: the string is stopped by the hand soon after it's struck (dropped if the
             // same pitch is struck again before then).
@@ -966,6 +1239,7 @@ private:
     std::array<std::array<juce::int64, 128>, 32> lastOnTime {};
     int nextVictim = 0;
     std::array<Channel, 16> channels {};
+    std::array<std::array<Glide, 128>, 16> glides {};
     std::array<Group, 64> groups {};
     bool nextUp = false;
     LastPlayed last;

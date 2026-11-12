@@ -116,6 +116,42 @@ static juce::AudioProcessorValueTreeState::ParameterLayout makeLayout()
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "alterBass", 6 }, "Alter Bass", false));
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "bassMono", 6 }, "Bass Mono", false));
     layout.add (std::make_unique<juce::AudioParameterInt> (juce::ParameterID { "fxVelocity", 6 }, "FX Velocity", 1, 127, 90));
+    layout.add (std::make_unique<juce::AudioParameterInt> (juce::ParameterID { "fxSteps", 6 }, "FX Steps", 1, 12, 2));
+    {
+        juce::StringArray names;
+        for (const char* name : GuitarEngine::articulationNames) names.add (name);
+        layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "soloFx", 6 }, "Solo Permanent FX",
+                                                                  juce::StringArray { "Off", "H.O.", "Slide" }, 0));
+        const int defaults[] = { GuitarEngine::artMuted, GuitarEngine::artHammer, GuitarEngine::artSlide, GuitarEngine::artTremolo };
+        const char* keys[] = { "C1", "C#1", "D1", "D#1" };
+        for (int i = 0; i < 4; ++i)
+            layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "keySwitch" + juce::String (i + 1), 6 },
+                                                                      juce::String ("Key Switch ") + keys[i], names, defaults[i]));
+        layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "pedalFx", 6 }, "Pedal FX", names, 0));
+        names.clear();
+        for (const char* name : GuitarEngine::velocityCurveNames) names.add (name);
+        layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "guitarVeloCurve", 6 }, "Guitar Velocity Curve", names, 0));
+    }
+    layout.add (std::make_unique<juce::AudioParameterInt> (juce::ParameterID { "legatoSteps", 6 }, "Legato Steps", 1, 12, 2));
+    layout.add (std::make_unique<Float> (juce::ParameterID { "legatoTime", 6 }, "Slide Time", range (10.0f, 400.0f, 1.0f), 60.0f,
+                                         juce::AudioParameterFloatAttributes().withStringFromValueFunction (
+                                             [] (float v, int) { return juce::String (juce::roundToInt (v)) + " ms"; })));
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "bassZone", 6 }, "Bass Zone", false));
+    layout.add (std::make_unique<juce::AudioParameterInt> (juce::ParameterID { "bassZoneTop", 6 }, "Bass Zone Top", 40, 64, 52,
+                                                           juce::AudioParameterIntAttributes().withStringFromValueFunction (
+                                                               [] (int v, int) { return juce::MidiMessage::getMidiNoteName (v, true, true, 3); })));
+    layout.add (std::make_unique<juce::AudioParameterInt> (juce::ParameterID { "accent", 6 }, "Accent", 2, 126, 64));
+    {
+        // The wheels and aftertouch: what each one does, and how far (semitones).
+        layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "pbAssign", 6 }, "Pitch Bender",
+                                                                  juce::StringArray { "Pitch", "Slide", "Mono Bend" }, 0));
+        layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "mwAssign", 6 }, "Mod Wheel",
+                                                                  juce::StringArray { "Modulation", "Pitch", "Slide", "Mono Bend" }, 0));
+        layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "atAssign", 6 }, "Aftertouch",
+                                                                  juce::StringArray { "Off", "Pitch", "Modulation" }, 0));
+        for (const char* id : { "pbRange", "mwRange", "atRange" })
+            layout.add (std::make_unique<juce::AudioParameterInt> (juce::ParameterID { id, 6 }, juce::String (id).replace ("Range", " Range"), 1, 12, 2));
+    }
     layout.add (std::make_unique<Float> (juce::ParameterID { "fxTime", 6 }, "FX Time", range (20.0f, 500.0f, 1.0f), 150.0f,
                                          juce::AudioParameterFloatAttributes().withStringFromValueFunction (
                                              [] (float v, int) { return juce::String (juce::roundToInt (v)) + " ms"; })));
@@ -991,6 +1027,16 @@ GuitarEngine::Settings SF2PlayerProcessor::currentGuitarSettings() const
     s.velocityFx = juce::roundToInt (value ("velocityFx"));
     s.fxVelocity = juce::roundToInt (value ("fxVelocity"));
     s.fxTimeMs = value ("fxTime");
+    s.fxSteps = juce::roundToInt (value ("fxSteps"));
+    s.soloFx = juce::roundToInt (value ("soloFx"));
+    for (int i = 0; i < 4; ++i) s.keySwitch[(size_t) i] = juce::roundToInt (value (("keySwitch" + juce::String (i + 1)).toRawUTF8()));
+    s.pedalFx = juce::roundToInt (value ("pedalFx"));
+    s.legatoSteps = juce::roundToInt (value ("legatoSteps"));
+    s.legatoMs = value ("legatoTime");
+    s.bassZone = value ("bassZone") > 0.5f;
+    s.bassZoneTop = juce::roundToInt (value ("bassZoneTop"));
+    s.velocityCurve = juce::roundToInt (value ("guitarVeloCurve"));
+    s.accent = juce::roundToInt (value ("accent"));
     return s;
 }
 
@@ -1039,6 +1085,85 @@ void SF2PlayerProcessor::tweakNewVoices (int channel, int detuneCents, bool palm
             fluid_voice_update_param (voice, GEN_FILTERFC);
         }
     }
+}
+
+// Retunes voices by what their pitch should be now: the engine's glide for their note, plus the
+// wheels' offset for the channel (and Mono Bend's for the lowest note). Only voices newer than
+// `sinceVoiceId` when it's given (a note just started).
+void SF2PlayerProcessor::applyPitch (juce::int64 now, juce::int64 sinceVoiceId)
+{
+    std::array<fluid_voice_t*, 256> voices {};
+    fluid_synth_get_voicelist (engine->synth, voices.data(), (int) voices.size(), -1);
+    const int transpose = transposeFor (0);
+    std::array<int, 16> lowest;
+    for (int c = 0; c < numMidiChannels; ++c) lowest[(size_t) c] = monoCents[(size_t) c] != 0.0f ? guitar.lowestHeld (c) : -1;
+    for (auto* voice : voices)
+    {
+        if (voice == nullptr) continue;
+        const auto id = (juce::int64) fluid_voice_get_id (voice);
+        if (id <= sinceVoiceId) continue;
+        const int channel = fluid_voice_get_channel (voice) % 16;   // the instrument's, the layer's and the Double's
+        const int note = fluid_voice_get_key (voice) - transpose;
+        float cents = guitar.pitchCents (channel, note, now) + channelCents[(size_t) channel];
+        if (note == lowest[(size_t) channel]) cents += monoCents[(size_t) channel];
+        auto& applied = appliedPitch[(size_t) (id % (juce::int64) appliedPitch.size())];
+        if (applied.id != id) applied = { id, 0.0f };
+        if (std::abs (cents - applied.cents) < 0.5f) continue;
+        fluid_voice_gen_incr (voice, GEN_FINETUNE, cents - applied.cents);
+        fluid_voice_update_param (voice, GEN_FINETUNE);
+        applied.cents = cents;
+    }
+}
+
+// The wheels, aftertouch and the pedal when the Guitar panel gives them a job (Pitch, Slide, Mono
+// Bend; the pedal's articulation in Solo). True when taken: the synth doesn't get it.
+bool SF2PlayerProcessor::guitarController (const juce::MidiMessage& m, const GuitarEngine::Settings& s, int channel, juce::int64 at)
+{
+    auto value = [this] (const char* id) { return juce::roundToInt (parameters.getRawParameterValue (id)->load()); };
+    if (m.isSustainPedalOn() || m.isSustainPedalOff())
+    {
+        if (s.mode != GuitarEngine::solo || s.pedalFx == GuitarEngine::artOff) return false;
+        guitar.pedal (channel, m.isSustainPedalOn(), at);
+        return true;
+    }
+    const int pb = value ("pbAssign"), mw = value ("mwAssign"), at2 = value ("atAssign");
+    bool taken = false;
+    if (m.isPitchWheel() && pb != 0)
+    {
+        wheelBend[(size_t) channel] = (float) (m.getPitchWheelValue() - 8192) / 8192.0f;
+        taken = true;
+    }
+    else if (m.isController() && m.getControllerNumber() == 1 && mw != 0)
+    {
+        wheelMod[(size_t) channel] = (float) m.getControllerValue() / 127.0f;
+        taken = true;
+    }
+    else if (m.isChannelPressure() && at2 != 0)
+    {
+        wheelPressure[(size_t) channel] = (float) m.getChannelPressureValue() / 127.0f;
+        if (at2 == 2)   // Modulation: the pressure plays the mod wheel
+        {
+            handleMidi (juce::MidiMessage::controllerEvent (channel + 1, 1, m.getChannelPressureValue()));
+            return true;
+        }
+        taken = true;
+    }
+    if (! taken) return false;
+    // The offsets: Pitch smooth, Slide by semitones (along the frets), Mono Bend on the lowest note.
+    float channelOffset = 0.0f, monoOffset = 0.0f;
+    auto add = [&] (int kind, float amount, int range)   // kind: 1 pitch, 2 slide, 3 mono bend
+    {
+        const float cents = amount * 100.0f * (float) range;
+        if (kind == 1) channelOffset += cents;
+        else if (kind == 2) channelOffset += 100.0f * std::round (cents / 100.0f);
+        else if (kind == 3) monoOffset += cents;
+    };
+    if (pb != 0) add (pb == 1 ? 2 : 3, wheelBend[(size_t) channel], value ("pbRange"));
+    if (mw != 0) add (mw, wheelMod[(size_t) channel], value ("mwRange"));
+    if (at2 == 1) add (1, wheelPressure[(size_t) channel], value ("atRange"));
+    channelCents[(size_t) channel] = channelOffset;
+    monoCents[(size_t) channel] = monoOffset;
+    return true;
 }
 
 // Sixteenth-note steps: on the host's grid while it plays (so a pattern lines up with the clip),
@@ -1217,7 +1342,9 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                 const int channel = message.getChannel() - 1;
                 const auto at = blockStart + juce::jlimit (0, numSamples, metadata.samplePosition);
                 const bool onChannel = juce::isPositiveAndBelow (channel, numMidiChannels);
-                if (onChannel && message.isNoteOn())
+                if (onChannel && guitarController (message, guitarSettings, channel, at))
+                    {}   // a wheel, aftertouch or the pedal, taken by the guitar
+                else if (onChannel && message.isNoteOn())
                     guitar.noteOn (guitarSettings, channel, message.getNoteNumber(), message.getVelocity(), at);
                 else if (onChannel && message.isNoteOff() && guitar.noteOff (channel, message.getNoteNumber(), at))
                     {}   // the engine ends what it started for this key
@@ -1234,6 +1361,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
             }
             const auto blockEnd = blockStart + numSamples;
             guitar.advance (guitarSettings, blockEnd);   // first: the chord a pattern plays is voiced here
+            guitar.tremolo (guitarSettings, blockEnd);
             if (guitarSettings.pattern)
                 runPattern (guitarSettings, blockStart, numSamples);
             GuitarEngine::Event due;
@@ -1244,6 +1372,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                        { return a.position != b.position ? a.position < b.position : a.order < b.order; });
 
             int position = 0;
+            applyPitch (blockStart, -1);   // slides and bends move on
             for (int i = 0; i < count; ++i)
             {
                 const auto& item = items[(size_t) i];
@@ -1273,7 +1402,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                 const int pan = doubled ? (note.isDouble ? doublePan : -doublePan) : 0;
                 const float attenuation = note.isDouble ? -200.0f * std::log10 (juce::jmax (0.01f, guitarSettings.doubleMix)) : 0.0f;
                 const bool tweak = note.detuneCents != 0 || note.palmMuted || pan != 0 || attenuation > 0.0f;
-                const auto before = tweak ? newestVoiceId() : (juce::int64) -1;
+                const auto before = newestVoiceId();
                 if (note.isDouble)
                 {
                     const int key = transposeFor (note.note);
@@ -1287,6 +1416,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                     handleMidi (juce::MidiMessage::noteOn (note.channel + 1, note.note, (juce::uint8) note.velocity));
                 if (tweak)
                     tweakNewVoices (note.isDouble ? twinChannel : note.channel, note.detuneCents, note.palmMuted, pan, attenuation, before);
+                applyPitch (blockStart + item.position, before);   // a slide or bend starts with the note
             }
             render (position, numSamples);
         }

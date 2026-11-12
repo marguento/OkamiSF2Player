@@ -1025,6 +1025,103 @@ int main()
                     "Harmony plays its interval one voice at a time; Solo's Repeat keys and Velo Mute");
         }
 
+        // Solo's articulations. H.O.: a legato step bends the string sounding (no new pick), its
+        // release pulls off. Slide: by semitones over its time. A key switch (C1: Muted) mutes;
+        // D#1 (Tremolo) picks again and again; Sustain 1-2 Mono (on the pedal) keeps notes until a
+        // step of one or two semitones.
+        {
+            GuitarEngine g;
+            g.prepare (rate);
+            auto s = chordSettings (GuitarEngine::solo);
+            s.soloFx = GuitarEngine::artHammer;
+            g.noteOn (s, 0, 60, 100, 0);
+            g.noteOn (s, 0, 62, 100, 1000);
+            const auto hammered = drain (g, second);
+            const float up = g.pitchCents (0, 60, 2000);
+            g.noteOff (0, 62, 3000);
+            const float back = g.pitchCents (0, 60, 4000);
+            g.noteOff (0, 60, 5000);
+            const auto ended = drain (g, second);
+            const bool hammer = notesOf (hammered) == std::vector<int> { 60 } && up == 200.0f && back == 0.0f && ended.offs == 1;
+
+            g.reset();
+            auto sl = chordSettings (GuitarEngine::solo);
+            sl.soloFx = GuitarEngine::artSlide;
+            sl.legatoMs = 100.0f;
+            g.noteOn (sl, 0, 60, 100, 0);
+            g.noteOn (sl, 0, 62, 100, 1000);   // a step of two: within Steps
+            const float mid = g.pitchCents (0, 60, 1000 + (juce::int64) (0.05 * rate));
+            const bool slide = mid == 100.0f && g.pitchCents (0, 60, second) == 200.0f;
+
+            g.reset();
+            auto ks = chordSettings (GuitarEngine::solo);
+            g.noteOn (ks, 0, 36, 100, 0);   // C1: Muted
+            g.noteOn (ks, 0, 60, 100, 10);
+            const bool muted = drain (g, second).palm;
+            g.noteOff (0, 36, 20);
+            g.noteOff (0, 60, 30);
+            drain (g, second);
+            g.noteOn (ks, 0, 39, 100, second);   // D#1: Tremolo
+            g.noteOn (ks, 0, 60, 100, second);
+            g.advance (ks, second * 2);
+            g.tremolo (ks, second + second / 2);
+            const auto picked = drain (g, second * 2);
+
+            g.reset();
+            auto sus = chordSettings (GuitarEngine::solo);
+            sus.pedalFx = GuitarEngine::artSustainMono;
+            g.advance (sus, 0);
+            g.pedal (0, true, 0);
+            g.advance (sus, 1);
+            g.noteOn (sus, 0, 60, 100, 10);
+            g.noteOff (0, 60, 100);
+            const auto kept = drain (g, second);
+            g.noteOn (sus, 0, 67, 100, second);   // a fifth away: both ring
+            g.noteOff (0, 67, second + 100);
+            const auto both = drain (g, second * 2);
+            g.noteOn (sus, 0, 62, 100, second * 2);   // a step from 60: it stops 60
+            const auto stepped = drain (g, second * 3);
+            g.pedal (0, false, second * 3);
+            const auto released = drain (g, second * 4);
+            const bool sustain = kept.offs == 0 && both.offs == 0 && stepped.offs == 1 && released.offs >= 1;
+            expect (hammer && slide && muted && picked.ons.size() >= 5 && sustain,
+                    "Solo: H.O. and pull-off, Slide by semitones, key switches (Muted, Tremolo), Sustain 1-2 Mono on the pedal",
+                    juce::String ((int) picked.ons.size()) + " tremolo picks, slide at " + juce::String (mid));
+        }
+
+        // Velocity FX Bend: a hard note starts two semitones low and bends up. Accent and the
+        // velocity curve shape what's played; the bass zone plays firmer and without articulations.
+        {
+            GuitarEngine g;
+            g.prepare (rate);
+            auto b = chordSettings (GuitarEngine::solo);
+            b.velocityFx = GuitarEngine::bend;
+            b.fxVelocity = 90;
+            b.fxTimeMs = 100.0f;
+            g.noteOn (b, 0, 60, 120, 0);
+            const bool bent = g.pitchCents (0, 60, 0) == -200.0f && g.pitchCents (0, 60, second) == 0.0f;
+            g.noteOn (b, 0, 64, 60, 10);   // soft: no bend
+            const bool soft = g.pitchCents (0, 64, 10) == 0.0f;
+            g.reset();
+            auto c = chordSettings (GuitarEngine::solo);
+            c.velocityCurve = 1;   // convex: soft notes louder
+            g.noteOn (c, 0, 60, 40, 0);
+            const auto louder = g.pop (second, *std::make_unique<GuitarEngine::Event>());
+            GuitarEngine::Event ev;
+            g.reset();
+            g.noteOn (c, 0, 60, 40, 0);
+            g.pop (second, ev);
+            const bool curved = louder && ev.velocity > 40;
+            g.reset();
+            auto z = chordSettings (GuitarEngine::solo);
+            z.bassZone = true;
+            g.noteOn (z, 0, 36, 100, 0);   // C1: Muted
+            g.noteOn (z, 0, 45, 80, 10);   // in the bass zone (up to E2)
+            g.pop (second, ev);
+            const bool zone = ! ev.palmMuted && ev.velocity == 100;
+            expect (bent && soft && curved && zone, "Velocity FX Bend, the velocity curve, and the bass zone");
+        }
+
         // Hold: the chord rings after the keys are let go, until the next chord.
         {
             GuitarEngine g;
