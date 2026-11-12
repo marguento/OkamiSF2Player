@@ -179,6 +179,10 @@ private:
     Knob tremoloRate { *this, "tremoloRate", "Rate" };
     juce::ComboBox guitarPanelBox, guitarModeBox, strumDirectionBox, tremoloSyncBox, patternBox, tuningBox;
     juce::ToggleButton velocityStringsToggle { "Velocity strings" };
+    // Starting points for the Guitar panel: they set its controls (Off: all neutral).
+    juce::ComboBox guitarPresets;
+    void applyGuitarPreset (int index);
+    void showGuitarPreset();
     juce::Label guitarModeLabel { {}, "Mode" }, strumDirectionLabel { {}, "Way" };
     juce::AudioProcessorValueTreeState::ComboBoxAttachment guitarPanelAttachment, guitarModeAttachment,
         strumDirectionAttachment, tremoloSyncAttachment, patternAttachment, tuningAttachment;

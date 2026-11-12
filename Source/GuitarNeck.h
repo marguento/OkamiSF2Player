@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ChordName.h"
 #include "GuitarEngine.h"
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <functional>
@@ -88,38 +89,7 @@ public:
 
     // "C", "Am7", "G/B": the chord the pitch classes make, the bass after a slash when it isn't
     // the root. One note: its name. Nothing recognisable: an empty string.
-    static juce::String chordName (int pitchClasses, int bass)
-    {
-        static const char* const noteNames[] = { "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B" };
-        if (pitchClasses == 0) return {};
-        if ((pitchClasses & (pitchClasses - 1)) == 0)   // one pitch class
-            for (int pc = 0; pc < 12; ++pc)
-                if (pitchClasses == 1 << pc) return noteNames[pc];
-        struct Shape { const char* suffix; std::initializer_list<int> intervals; };
-        static const Shape shapes[] = {
-            { "", { 0, 4, 7 } }, { "m", { 0, 3, 7 } }, { "7", { 0, 4, 7, 10 } }, { "maj7", { 0, 4, 7, 11 } },
-            { "m7", { 0, 3, 7, 10 } }, { "6", { 0, 4, 7, 9 } }, { "m6", { 0, 3, 7, 9 } }, { "sus4", { 0, 5, 7 } },
-            { "sus2", { 0, 2, 7 } }, { "7sus4", { 0, 5, 7, 10 } }, { "add9", { 0, 2, 4, 7 } }, { "9", { 0, 2, 4, 7, 10 } },
-            { "m9", { 0, 2, 3, 7, 10 } }, { "maj9", { 0, 2, 4, 7, 11 } }, { "dim", { 0, 3, 6 } }, { "dim7", { 0, 3, 6, 9 } },
-            { "m7b5", { 0, 3, 6, 10 } }, { "aug", { 0, 4, 8 } }, { "mmaj7", { 0, 3, 7, 11 } }, { "5", { 0, 7 } },
-        };
-        // The bass as the root first, so G-B-D over G is "G", not "Bm/G".
-        for (int attempt = 0; attempt < 13; ++attempt)
-        {
-            const int root = attempt == 0 ? bass : attempt - 1;
-            if (root < 0 || (attempt > 0 && root == bass) || ! (pitchClasses & (1 << root))) continue;
-            for (const auto& shape : shapes)
-            {
-                int mask = 0;
-                for (int interval : shape.intervals) mask |= 1 << ((root + interval) % 12);
-                if (mask != pitchClasses) continue;
-                juce::String result = juce::String (noteNames[root]) + shape.suffix;
-                if (bass >= 0 && bass != root) result << "/" << noteNames[bass];
-                return result;
-            }
-        }
-        return {};
-    }
+    static juce::String chordName (int pitchClasses, int bass) { return ChordName::name (pitchClasses, bass); }
 
     void paint (juce::Graphics& g) override
     {

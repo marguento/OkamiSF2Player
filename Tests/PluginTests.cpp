@@ -813,8 +813,16 @@ int main()
                         && GuitarNeck::chordName (classes ({ 7, 11, 2 }), 11) == "G/B"
                         && GuitarNeck::chordName (classes ({ 2, 6, 9, 0 }), 2) == "D7"
                         && GuitarNeck::chordName (classes ({ 4 }), 4) == "E"
-                        && GuitarNeck::chordName (classes ({ 0, 1, 2 }), 0).isEmpty();
-        expect (names, "Guitar: chords are named (C, Am7, G/B, D7; a single note; nothing for a cluster)");
+                        && GuitarNeck::chordName (classes ({ 0, 1, 2 }), 0).isEmpty()
+                        // Partial chords, as drawn on a neck: two notes, a seventh without its fifth.
+                        && GuitarNeck::chordName (classes ({ 0, 4 }), 0) == "C(no5)"
+                        && GuitarNeck::chordName (classes ({ 9, 0 }), 9) == "Am(no5)"
+                        && GuitarNeck::chordName (classes ({ 0, 7 }), 0) == "C5"
+                        && GuitarNeck::chordName (classes ({ 0, 4, 10 }), 0) == "C7"
+                        && GuitarNeck::chordName (classes ({ 0, 2 }), 0) == "C M2"
+                        && GuitarNeck::chordName (classes ({ 2, 6, 9, 0, 4 }), 2) == "D9"
+                        && GuitarNeck::chordName (classes ({ 7, 11, 2, 5 }), 5) == "G7/F";
+        expect (names, "Guitar: chords are named (C, Am7, G/B, D7, D9, G7/F; partial ones like C(no5), C5, C7 without its fifth; intervals)");
         const int cShape[] = { 48, 55, 60, 64, 67 };
         const auto placed = GuitarEngine::placeOnStrings (cShape, 5, 3);
         expect (placed == std::array<int, 6> { -1, 3, 5, 5, 5, 3 }, "Guitar: the neck places a voiced chord on its strings");

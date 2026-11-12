@@ -4,6 +4,25 @@
 #include <numeric>
 #include <tuple>
 
+namespace
+{
+// Mode, way, strum (ms), fret, palm, humanize, double, tremolo, velocity strings, rhythm.
+struct GuitarPreset { const char* name; float values[10]; };
+const GuitarPreset guitarPresetList[] = {
+    { "Off",            { 1, 0,   0, 0, 0.0f, 0.00f, 0.0f, 0.00f, 0, 2 } },
+    { "Acoustic Strum", { 1, 0,  35, 0, 0.0f, 0.35f, 0.0f, 0.00f, 1, 2 } },
+    { "Campfire",       { 1, 2,  45, 0, 0.0f, 0.50f, 0.0f, 0.00f, 1, 2 } },
+    { "Double-Tracked", { 1, 2,  30, 0, 0.0f, 0.40f, 0.8f, 0.00f, 1, 2 } },
+    { "Slow Ballad",    { 1, 0, 120, 0, 0.0f, 0.30f, 0.5f, 0.15f, 0, 2 } },
+    { "Muted Rock",     { 1, 0,  20, 0, 0.6f, 0.30f, 0.0f, 0.00f, 0, 2 } },
+    { "Folk Pattern",   { 5, 0,  30, 0, 0.0f, 0.40f, 0.0f, 0.00f, 1, 2 } },
+    { "Fingerpicking",  { 5, 0,   0, 0, 0.0f, 0.45f, 0.0f, 0.00f, 0, 10 } },
+    { "Strum Keys",     { 4, 0,  30, 0, 0.0f, 0.35f, 0.0f, 0.00f, 1, 2 } },
+};
+const char* const guitarPresetIds[] = { "guitarMode", "strumDirection", "strum", "fretPosition", "palmMute", "humanize",
+                                        "doubleMix", "tremoloDepth", "strumByVelocity", "strumPattern" };
+} // namespace
+
 // ---------------------------------------------------------------------------- look
 
 SF2Look::SF2Look()
@@ -295,6 +314,13 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
         setUpCombo (tuningBox, tunings, "guitarTuning", "The guitar's tuning: how chords are voiced, drawn and shown on the neck");
     }
     velocityStringsToggle.setTooltip ("Soft strums catch only the high strings, hard ones all six");
+    {
+        int id = 1;
+        for (const auto& preset : guitarPresetList) guitarPresets.addItem (preset.name, id++);
+        guitarPresets.setTooltip ("Starting points for the Guitar panel: they set its controls (Off: the SoundFont as it is)");
+        guitarPresets.onChange = [this] { if (guitarPresets.getSelectedId() > 0) applyGuitarPreset (guitarPresets.getSelectedId() - 1); };
+        addAndMakeVisible (guitarPresets);
+    }
     addAndMakeVisible (velocityStringsToggle);
     {
         juce::StringArray rhythms;
@@ -427,6 +453,7 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     refreshLayerControls();
     refreshGuitarPanel();
     neck.setShape (player.guitarShapeFrets(), guitarModeBox.getSelectedItemIndex() == GuitarEngine::shape);
+    showGuitarPreset();
 }
 
 SF2PlayerEditor::~SF2PlayerEditor()
@@ -854,6 +881,34 @@ void SF2PlayerEditor::changeListenerCallback (juce::ChangeBroadcaster*)
     refresh();
 }
 
+
+void SF2PlayerEditor::applyGuitarPreset (int index)
+{
+    if (! juce::isPositiveAndBelow (index, (int) std::size (guitarPresetList)))
+        return;
+    for (size_t i = 0; i < std::size (guitarPresetIds); ++i)
+        if (auto* parameter = player.parameters.getParameter (guitarPresetIds[i]))
+            parameter->setValueNotifyingHost (parameter->convertTo0to1 (guitarPresetList[index].values[i]));
+}
+
+// The menu names the preset the controls match, else "Custom".
+void SF2PlayerEditor::showGuitarPreset()
+{
+    for (int p = 0; p < (int) std::size (guitarPresetList); ++p)
+    {
+        bool matches = true;
+        for (size_t i = 0; i < std::size (guitarPresetIds) && matches; ++i)
+            matches = std::abs (player.parameters.getRawParameterValue (guitarPresetIds[i])->load() - guitarPresetList[p].values[i]) < 0.01f;
+        if (matches)
+        {
+            if (guitarPresets.getSelectedId() != p + 1) guitarPresets.setSelectedId (p + 1, juce::dontSendNotification);
+            return;
+        }
+    }
+    if (guitarPresets.getText() != "Custom")
+        guitarPresets.setText ("Custom", juce::dontSendNotification);
+}
+
 // Shows or hides the Guitar panel (Auto follows the instrument), growing the window by its height.
 void SF2PlayerEditor::refreshGuitarPanel()
 {
@@ -929,7 +984,7 @@ void SF2PlayerEditor::showSectionContents()
                                 (juce::Component*) &tremoloSyncBox, (juce::Component*) &guitarModeLabel,
                                 (juce::Component*) &strumDirectionLabel, (juce::Component*) &neck,
                                 (juce::Component*) &tuningBox, (juce::Component*) &tuningLabel,
-                                (juce::Component*) &velocityStringsToggle })
+                                (juce::Component*) &velocityStringsToggle, (juce::Component*) &guitarPresets })
         c->setVisible (guitar);
     patternBox.setVisible (guitar && guitarModeBox.getSelectedItemIndex() == GuitarEngine::pattern);
 }
@@ -968,6 +1023,7 @@ void SF2PlayerEditor::timerCallback()
                    GuitarEngine::tuningOf (player.guitarTuning()));
     }
     neck.tick (1.0f / 20.0f);
+    if (guitarShown) showGuitarPreset();
     neck.setShape (player.guitarShapeFrets(), guitarModeBox.getSelectedItemIndex() == GuitarEngine::shape,
                    GuitarEngine::tuningOf (player.guitarTuning()));
     {
@@ -1055,9 +1111,6 @@ void SF2PlayerEditor::paint (juce::Graphics& g)
         g.setColour (SF2Look::panel);
         g.fillRoundedRectangle (guitarPanel.toFloat(), 6.0f);
         drawSectionTitle (g, guitarPanel, "GUITAR", guitarSection);
-        g.setFont (juce::FontOptions (11.0f));
-        g.drawText ("Off and 0 change nothing", guitarPanel.getX() + 82, guitarPanel.getY() + 8,
-                    velocityStringsToggle.getX() - guitarPanel.getX() - 90, 14, juce::Justification::centredLeft);
     }
 
     const bool sends = sendsToggle.getToggleState();
@@ -1164,6 +1217,7 @@ void SF2PlayerEditor::resized()
             box->setBounds (row);
         }
         velocityStringsToggle.setBounds (patternBox.getX() - 8 - 130, guitarPanel.getY() + 4, 130, 20);
+        guitarPresets.setBounds (guitarPanel.getX() + 82, guitarPanel.getY() + 5, 150, 18);
         for (auto* knob : { &strum, &fretPosition, &palmMute, &humanize, &doubleMix, &tremoloDepth, &tremoloRate })
             knob->setBounds (inner.removeFromLeft (width));
     }

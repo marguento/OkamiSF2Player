@@ -140,6 +140,10 @@ The **GUITAR** panel appears by itself, first under the instrument, when it's a 
 choose **On** to use it with any instrument (a harp, a ukulele, a piano), or **Off** to hide it.
 With every control at Off or 0 it changes nothing.
 
+- **Presets** (the menu next to GUITAR): starting points that set the panel's controls. Acoustic
+  Strum, Campfire (alternating, looser), Double-Tracked, Slow Ballad, Muted Rock, Folk Pattern,
+  Fingerpicking, Strum Keys, or Off (everything neutral: the SoundFont as it is). Move a control
+  and the menu says Custom.
 - **Mode:** **Solo** plays notes as you play them. **Chords** strums the notes you play together.
   **Bass & Pick** plays the lowest note first, then picks the rest. **Shape** strums the chord
   drawn on the neck on every key, moved so its bass is the key you play. **Bass & Chord** plays

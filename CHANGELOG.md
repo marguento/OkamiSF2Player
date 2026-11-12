@@ -19,6 +19,12 @@ release bumps it and adds an entry here: one line per change a player would noti
 - Reverb preset "Short Room" and chorus preset "Bright", for acoustic guitar.
 - The Guitar panel shows what it plays: the chord's name (C, Am7, G/B...), a six-string neck with
   where its notes lie, an arrow lit by each strum (down or up) and a light for palm-muted notes.
+- **Guitar presets:** Acoustic Strum, Campfire, Double-Tracked, Slow Ballad, Muted Rock, Folk
+  Pattern, Fingerpicking, Strum Keys, and Off (the SoundFont as it is). The menu says Custom once
+  a control moves.
+- Chord names know about 45 chord types (sus, add, 6/9, 7, 9, 11, 13, b5, #5, b9, #9, #11...),
+  chords without their fifth (C7, D(no5)), power chords (C5) and two-note intervals, so a chord
+  being drawn is named from its second note on.
 - With a guitar, its panel comes first, right under the instrument, with a bigger neck and chord name.
 - **Draw chords on the neck:** click a string at a fret (12 frets) to put a finger there, left of
   the nut for open or not played; the chord is named as you draw. The new **Shape** mode strums
