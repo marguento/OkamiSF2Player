@@ -3,6 +3,21 @@
 The version shows next to the title (`project(... VERSION x.y.z)` in CMakeLists.txt). Each
 release bumps it and adds an entry here: one line per change a player would notice.
 
+## 1.3.0 — Nov 11, 2026
+
+- **Guitar panel.** It appears by itself for a guitar (General MIDI 24-31, or an instrument named
+  one), or for any instrument from the Guitar menu in PLAY's header. Everything in it starts off.
+  - **Strum:** notes played together are strummed, 0 to 80 ms from the first string to the last,
+    down, up or alternating.
+  - **Mode:** Solo (notes as played), Chords (strummed), Bass & Pick (the lowest note first, then
+    the rest picked).
+  - **Fret:** chords voiced on six strings at a fret position, as a guitarist would play them.
+  - **Palm:** soft notes (velocity under 45) are stopped by the hand, shorter and darker.
+  - **Humanize:** small random changes of velocity, timing and tuning on every note.
+  - **Double:** a second take, 18 ms later and a little sharp, on the right; the original on the left.
+  - **Tremolo:** stereo, at a rate or locked to Ableton's tempo.
+- Reverb preset "Short Room" and chorus preset "Bright", for acoustic guitar.
+
 ## 1.2.6 — Nov 11, 2026
 
 - The window always shows the finished state after a project opens or the audio device changes

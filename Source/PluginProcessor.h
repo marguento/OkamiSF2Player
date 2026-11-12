@@ -3,6 +3,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "SoundFontInfo.h"
+#include "GuitarEngine.h"
 #include <array>
 #include <atomic>
 #include <memory>
@@ -88,6 +89,11 @@ public:
     // unreadable one when it changes (with a growing wait between tries).
     void runMessageThreadTasks();
 
+    // The Guitar panel shows (and its controls act) for this instrument: Auto follows the
+    // instrument, On and Off force it.
+    bool guitarPanelActive() const;
+    static bool isGuitar (const Preset&);
+
     // Voices sounding after the last block (for the editor and tests).
     std::atomic<int> activeVoices { 0 };
     // Tests: render with another interpolation (FLUID_INTERP_*); -1 keeps the 7th order.
@@ -106,7 +112,10 @@ public:
     struct Engine;   // a FluidSynth instance with the SoundFont loaded
 
     // FluidSynth runs 32 channels: 0-15 play the instrument, 16-31 the layer (channel + 16).
-    static constexpr int layerChannelOffset = 16, numSynthChannels = 32;
+    // 0-15 the instrument, 16-31 the layer, 32-47 the Guitar panel's Double (the instrument again,
+    // so a doubled note never cuts its twin: FluidSynth ends a note repeated on its channel).
+    static constexpr int layerChannelOffset = 16, doubleChannelOffset = 32, numSynthChannels = 48;
+    static bool isLayerChannel (int channel) { return channel >= layerChannelOffset && channel < doubleChannelOffset; }
 
 private:
     static constexpr int numMidiChannels = 16;
@@ -148,6 +157,21 @@ private:
     std::atomic<int> pinGeneration { 0 };   // bumped when the engine or a channel's preset changes: pin afresh
     int seenGeneration = 0;                    // audio thread only
     juce::MidiBuffer shortMidi;   // a block's MIDI without sysex (reserved in prepareToPlay)
+
+    // Guitar panel (audio thread, under engineLock): the strum timeline and its clock.
+    GuitarEngine guitar;
+    juce::int64 sampleClock = 0;   // samples since prepareToPlay
+    bool guitarEngaged = false;    // notes are going through `guitar`
+    // Whether the chosen instrument is a guitar (General MIDI 24-31, or named one): set when
+    // the state is published, read by the audio thread for the panel's Auto setting.
+    std::atomic<bool> guitarInstrument { false };
+    GuitarEngine::Settings currentGuitarSettings() const;
+    // A guitar note's voices just started: detune them (Humanize) or darken them (palm mute).
+    void tweakNewVoices (int channel, int detuneCents, bool palmMuted, int pan, float attenuationCb, juce::int64 sinceVoiceId);
+    static constexpr int doublePan = 350;   // Double: original and twin this far apart (of 500)
+    juce::int64 newestVoiceId() const;
+    double tremoloPhase = 0.0;
+    void applyTremolo (int numSamples);
     int housekeepingTicks = 0;
 
     // A file that failed to load is retried when it changes (time or size), or after a wait

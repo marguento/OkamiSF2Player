@@ -802,6 +802,96 @@ int main()
             expect (share < 0.3, "CPU: 64 string notes take under 30 % of the time available", juce::String (share * 100, 1) + " %");
     }
 
+    // ------------------------------------------------------------------ Guitar panel
+    {
+        // A C major chord voiced at the 3rd fret: C on the A string, then G, C, E, G.
+        const int keys[] = { 60, 64, 67 };
+        int voiced[16] = {};
+        const int n = GuitarEngine::voice (keys, 3, 3, voiced);
+        const std::vector<int> got (voiced, voiced + n);
+        expect (got == std::vector<int> { 48, 55, 60, 64, 67 }, "Guitar: a chord is voiced on six strings at the fret position",
+                juce::String (n) + " notes");
+
+        // Three notes together, strummed down over 40 ms: low to high, 20 ms apart, after the chord window.
+        GuitarEngine engine;
+        engine.prepare (rate);
+        GuitarEngine::Settings s;
+        s.strumMs = 40;
+        for (int key : { 67, 60, 64 })
+            engine.noteOn (s, 0, key, 100, 0);
+        engine.advance (s, (juce::int64) rate);
+        std::vector<std::pair<juce::int64, int>> ons;
+        GuitarEngine::Event e;
+        while (engine.pop ((juce::int64) rate, e))
+            if (e.velocity > 0) ons.push_back ({ e.time, e.note });
+        std::sort (ons.begin(), ons.end());
+        const auto window = (juce::int64) (GuitarEngine::chordWindowMs * 0.001 * rate);
+        const bool timing = ons.size() == 3 && ons[0] == std::pair<juce::int64, int> { window, 60 }
+                         && ons[1] == std::pair<juce::int64, int> { window + 960, 64 } && ons[2] == std::pair<juce::int64, int> { window + 1920, 67 };
+        expect (timing, "Guitar: a chord is strummed low to high over the strum time");
+
+        // Letting the keys go ends every note the chord started (the voiced ones too).
+        s.fret = 3;
+        engine.reset();
+        for (int key : { 60, 64, 67 }) engine.noteOn (s, 0, key, 100, 0);
+        engine.advance (s, (juce::int64) rate);
+        while (engine.pop ((juce::int64) rate, e)) {}
+        for (int key : { 60, 64, 67 }) engine.noteOff (0, key, (juce::int64) rate);
+        int offs = 0;
+        while (engine.pop ((juce::int64) rate * 2, e)) offs += e.velocity == 0 ? 1 : 0;
+        expect (offs == 5 && ! engine.hasWork(), "Guitar: releasing a chord ends all its voiced notes", juce::String (offs) + " note-offs");
+
+        // On the plugin: with the panel on but every control neutral, the sound is the SoundFont's.
+        auto chord = [] (Player& player)
+        {
+            return player.render (1.5, [] (int b, juce::MidiBuffer& m)
+            {
+                if (b == 0) for (int key : { 60, 64, 67 }) m.addEvent (juce::MidiMessage::noteOn (1, key, (juce::uint8) 100), 10);
+                if (b == blockOf (1.0)) for (int key : { 60, 64, 67 }) m.addEvent (juce::MidiMessage::noteOff (1, key), 0);
+            });
+        };
+        Player plain (testFont), neutral (testFont), strummed (testFont);
+        neutral.set ("guitarPanel", 1);
+        strummed.set ("guitarPanel", 1);
+        strummed.set ("strum", 60);
+        const auto a = chord (plain), b = chord (neutral), c = chord (strummed);
+        expect (a == b, "Guitar: the panel on with neutral controls changes nothing (bit for bit)");
+        // Strummed: the top note comes ~60 ms after the bottom one, so the first 40 ms are quieter.
+        const double early = rms (c, 0.0, 0.05), plainEarly = rms (a, 0.0, 0.05);
+        expect (early < plainEarly * 0.9 && rms (c, 0.2, 0.9) > 0.01, "Guitar: strumming spreads the chord's start",
+                db (early) + " vs " + db (plainEarly));
+
+        // Double: the original leans left, a twin 18 ms later leans right.
+        {
+            Player doubled (testFont);
+            doubled.set ("guitarPanel", 1);
+            doubled.set ("doubleMix", 1.0f);
+            juce::AudioBuffer<float> buffer (6, block);
+            std::vector<float> left, right;
+            for (int b = 0; b < blockOf (0.6); ++b)
+            {
+                juce::MidiBuffer m;
+                if (b == 0) m.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
+                doubled.p.processBlock (buffer, m);
+                for (int i = 0; i < block; ++i) { left.push_back (buffer.getSample (0, i)); right.push_back (buffer.getSample (1, i)); }
+            }
+            const auto window = GuitarEngine::chordWindowMs / 1000.0;
+            const double leftEarly = rms (left, window, window + 0.015), rightEarly = rms (right, window, window + 0.015);
+            expect (leftEarly > rightEarly * 1.5 && rms (right, 0.1, 0.5) > 0.005,
+                    "Double: the original leans left, its twin comes later on the right", db (leftEarly) + " vs " + db (rightEarly));
+        }
+
+        // Tremolo: the level swings at its rate.
+        Player tremolo (testFont);
+        tremolo.set ("guitarPanel", 1);   // a Guitar panel control: it acts only while the panel shows
+        tremolo.set ("tremoloDepth", 1.0f);
+        tremolo.set ("tremoloRate", 5.0f);
+        const auto t = tremolo.note (60, 100, 1.5, 1.5);
+        double low = 1e9, high = 0;
+        for (double at = 0.3; at < 1.2; at += 0.02) { const double v = rms (t, at, at + 0.02); low = juce::jmin (low, v); high = juce::jmax (high, v); }
+        expect (high > low * 4, "Tremolo: the level swings with depth at 100 %", db (low) + " to " + db (high));
+    }
+
     std::printf ("\n%d of %d checks passed\n", checks - failures, checks);
     return failures == 0 ? 0 : 1;
 }

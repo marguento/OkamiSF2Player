@@ -168,7 +168,23 @@ private:
     RangeKeyboard keyboard { player.keyboardState, juce::MidiKeyboardComponent::horizontalKeyboard };
 
     std::unique_ptr<juce::FileChooser> chooser;
-    juce::Rectangle<int> meterArea, reverbPanel, chorusPanel, playPanel;
+    // The Guitar panel: shown for a guitar (Auto) or when forced on (the Guitar menu in PLAY's header).
+    Knob strum { *this, "strum", "Strum" };
+    Knob fretPosition { *this, "fretPosition", "Fret" };
+    Knob palmMute { *this, "palmMute", "Palm" };
+    Knob humanize { *this, "humanize", "Humanize" };
+    Knob doubleMix { *this, "doubleMix", "Double" };
+    Knob tremoloDepth { *this, "tremoloDepth", "Tremolo" };
+    Knob tremoloRate { *this, "tremoloRate", "Rate" };
+    juce::ComboBox guitarPanelBox, guitarModeBox, strumDirectionBox, tremoloSyncBox;
+    juce::Label guitarModeLabel { {}, "Mode" }, strumDirectionLabel { {}, "Way" };
+    juce::AudioProcessorValueTreeState::ComboBoxAttachment guitarPanelAttachment, guitarModeAttachment,
+        strumDirectionAttachment, tremoloSyncAttachment;
+    bool guitarShown = false;
+    static constexpr int guitarPanelHeight = 130;   // the panel and the gap above it
+    void refreshGuitarPanel();
+
+    juce::Rectangle<int> meterArea, reverbPanel, chorusPanel, playPanel, guitarPanel;
     float shownPeak = 0.0f;
     int lastNoteCount = 0, midiFlash = 0;
     bool dragging = false;

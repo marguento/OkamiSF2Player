@@ -126,6 +126,29 @@ At their defaults (x1, Linear, 0, Poly, Off) they change nothing.
   connected notes.
 - **Mod wheel:** adds vibrato, as the SoundFont standard defines.
 
+## Guitar
+
+The **GUITAR** panel appears by itself when the instrument is a guitar (General MIDI programs
+24-31, or an instrument named "guitar"). The menu at the top right of PLAY says **Guitar: Auto**;
+choose **On** to use it with any instrument (a harp, a ukulele, a piano), or **Off** to hide it.
+With every control at Off or 0 it changes nothing.
+
+- **Mode:** **Solo** plays notes as you play them. **Chords** strums the notes you play together.
+  **Bass & Pick** plays the lowest note first, then picks the rest.
+- **Way:** strum **Down** (low string to high), **Up**, or **Alternate** (down, up, down...).
+- **Strum:** how long a chord takes from its first string to its last, 0 to 80 ms. Chords are
+  gathered for 12 ms, so in Chords mode notes start that much later.
+- **Fret:** 1 to 12 voices each chord on six strings at that fret, the way a guitarist would hold
+  it (which notes, in which octave). Off plays the notes you press.
+- **Palm:** notes softer than velocity 45 are stopped by the hand: shorter and darker the higher it is.
+- **Humanize:** small random changes to each note's velocity (up to ±5), timing (up to 5 ms later)
+  and tuning (up to ±5 cents), so a part doesn't sound mechanical.
+- **Double:** a second take of every note, 18 ms later and 4 cents sharp, on the right, with the
+  original on the left (double-tracking). The knob is the second take's level.
+- **Tremolo** and **Rate:** a stereo tremolo; the menu at the top right locks it to Ableton's
+  tempo (1/2 to 1/16, triplets).
+- For acoustic guitar, try the reverb preset **Short Room** and the chorus preset **Bright**.
+
 ## MIDI from clips
 
 - **Program Change** switches the instrument on that MIDI channel at once, so a note sent with

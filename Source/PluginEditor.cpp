@@ -170,7 +170,11 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
       sendsAttachment (p.parameters, "sendOutputs", sendsToggle),
       reverbOnAttachment (p.parameters, "fsReverbOn", reverbToggle),
       chorusOnAttachment (p.parameters, "fsChorusOn", chorusToggle),
-      playModeAttachment (p.parameters, "playMode", playMode)
+      playModeAttachment (p.parameters, "playMode", playMode),
+      guitarPanelAttachment (p.parameters, "guitarPanel", guitarPanelBox),
+      guitarModeAttachment (p.parameters, "guitarMode", guitarModeBox),
+      strumDirectionAttachment (p.parameters, "strumDirection", strumDirectionBox),
+      tremoloSyncAttachment (p.parameters, "tremoloSync", tremoloSyncBox)
 {
     setLookAndFeel (&look);
 
@@ -266,6 +270,37 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     playModeLabel.setColour (juce::Label::textColourId, SF2Look::dim);
     addAndMakeVisible (playMode);
     addAndMakeVisible (playModeLabel);
+
+    // Guitar panel.
+    auto setUpCombo = [this] (juce::ComboBox& box, const juce::StringArray& items, const char* id, const juce::String& tip)
+    {
+        box.addItemList (items, 1);
+        box.setSelectedItemIndex (juce::roundToInt (player.parameters.getRawParameterValue (id)->load()), juce::dontSendNotification);
+        box.setTooltip (tip);
+        addAndMakeVisible (box);
+    };
+    setUpCombo (guitarPanelBox, { "Guitar: Auto", "Guitar: On", "Guitar: Off" }, "guitarPanel",
+                "The Guitar panel: Auto shows it for guitars (General MIDI 24-31, or named so); On or Off for any instrument");
+    setUpCombo (guitarModeBox, { "Solo", "Chords", "Bass & Pick" }, "guitarMode",
+                "Solo: notes as played. Chords: notes played together are strummed. Bass & Pick: the lowest note first, then the rest picked");
+    setUpCombo (strumDirectionBox, { "Down", "Up", "Alternate" }, "strumDirection",
+                "Down: low string to high. Up: high to low. Alternate: down, up, down...");
+    setUpCombo (tremoloSyncBox, { "Free", "1/2", "1/4", "1/8", "1/16", "1/4T", "1/8T" }, "tremoloSync",
+                "Tremolo at Rate (Free) or locked to Ableton's tempo");
+    for (auto* label : { &guitarModeLabel, &strumDirectionLabel })
+    {
+        label->setJustificationType (juce::Justification::centred);
+        label->setFont (juce::FontOptions (12.0f));
+        label->setColour (juce::Label::textColourId, SF2Look::dim);
+        addAndMakeVisible (*label);
+    }
+    strum.slider.setTooltip ("How long a chord takes from the first string to the last (Off: all at once)");
+    fretPosition.slider.setTooltip ("Chords voiced on six strings at this fret (Off: as you play them)");
+    palmMute.slider.setTooltip ("Notes under velocity 45 are stopped by the hand: shorter and darker");
+    humanize.slider.setTooltip ("Small random changes of velocity, timing and tuning on every note");
+    doubleMix.slider.setTooltip ("A second take: the same notes 18 ms later, a little sharp, on the right; the original on the left");
+    tremoloDepth.slider.setTooltip ("Stereo tremolo depth (0: off)");
+    tremoloRate.slider.setTooltip ("Tremolo speed when Sync is Free");
     attack.slider.setTooltip ("How long notes take to start: x1 is the SoundFont's own");
     release.slider.setTooltip ("How long notes take to fade after the key is let go: x1 is the SoundFont's own");
     velocityCurve.slider.setTooltip ("+ makes soft playing louder, - makes it softer. Linear: velocities as played");
@@ -334,6 +369,7 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     if (getHeight() == 0)
         setSize (620, 628);
     refreshLayerControls();
+    refreshGuitarPanel();
 }
 
 SF2PlayerEditor::~SF2PlayerEditor()
@@ -663,6 +699,7 @@ const EffectPreset reverbPresetList[] = {
     { "Hall",      { 0.65f, 0.80f, 0.30f, 1.00f } },
     { "Church",    { 0.70f, 0.92f, 0.20f, 1.00f } },
     { "Cathedral", { 0.75f, 1.00f, 0.10f, 1.00f } },
+    { "Short Room", { 0.45f, 0.25f, 0.25f, 0.70f } },   // a small bright room, for acoustic guitar
 };
 // Level, rate (Hz), depth (ms), voices.
 const EffectPreset chorusPresetList[] = {
@@ -670,6 +707,7 @@ const EffectPreset chorusPresetList[] = {
     { "Subtle",   { 0.40f, 0.30f, 2.00f, 2.0f } },
     { "Wide",     { 0.80f, 0.40f, 6.00f, 4.0f } },
     { "Ensemble", { 1.00f, 0.60f, 8.00f, 6.0f } },
+    { "Bright",   { 0.90f, 0.70f, 5.00f, 3.0f } },   // a clear, quick shimmer, for acoustic guitar
 };
 const char* const reverbIds[] = { "fsReverbLevel", "fsReverbRoom", "fsReverbDamping", "fsReverbWidth" };
 const char* const chorusIds[] = { "fsChorusLevel", "fsChorusRate", "fsChorusDepth", "fsChorusVoices" };
@@ -757,8 +795,32 @@ void SF2PlayerEditor::changeListenerCallback (juce::ChangeBroadcaster*)
     refresh();
 }
 
+// Shows or hides the Guitar panel (Auto follows the instrument), growing the window by its height.
+void SF2PlayerEditor::refreshGuitarPanel()
+{
+    const bool show = player.guitarPanelActive();
+    for (auto* knob : { &strum, &fretPosition, &palmMute, &humanize, &doubleMix, &tremoloDepth, &tremoloRate })
+    {
+        knob->slider.setVisible (show);
+        knob->label.setVisible (show);
+    }
+    for (juce::Component* c : { (juce::Component*) &guitarModeBox, (juce::Component*) &strumDirectionBox,
+                                (juce::Component*) &tremoloSyncBox, (juce::Component*) &guitarModeLabel,
+                                (juce::Component*) &strumDirectionLabel })
+        c->setVisible (show);
+    tremoloRate.slider.setEnabled (tremoloSyncBox.getSelectedItemIndex() <= 0);
+    if (show == guitarShown)
+        return;
+    guitarShown = show;
+    setResizeLimits (620, 606 + (show ? guitarPanelHeight : 0), 1600, 1400);
+    setSize (getWidth(), juce::jmax (606 + (show ? guitarPanelHeight : 0), getHeight() + (show ? guitarPanelHeight : -guitarPanelHeight)));
+    resized();
+    repaint();
+}
+
 void SF2PlayerEditor::timerCallback()
 {
+    refreshGuitarPanel();
     const float peak = player.outputPeak.exchange (0.0f);
     shownPeak = juce::jmax (peak, shownPeak * 0.85f);
 
@@ -825,7 +887,19 @@ void SF2PlayerEditor::paint (juce::Graphics& g)
     g.drawText ("PLAY", playPanel.getX() + 12, playPanel.getY() + 8, 100, 14, juce::Justification::centredLeft);
     g.setFont (juce::FontOptions (11.0f));
     g.drawText ("x1, Linear, 0, Poly and Off leave the SoundFont as it is", playPanel.getX() + 52, playPanel.getY() + 8,
-                playPanel.getWidth() - 64, 14, juce::Justification::centredLeft);
+                playPanel.getWidth() - 64 - 120, 14, juce::Justification::centredLeft);
+
+    if (guitarShown)
+    {
+        g.setColour (SF2Look::panel);
+        g.fillRoundedRectangle (guitarPanel.toFloat(), 6.0f);
+        g.setColour (SF2Look::dim);
+        g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
+        g.drawText ("GUITAR", guitarPanel.getX() + 12, guitarPanel.getY() + 8, 100, 14, juce::Justification::centredLeft);
+        g.setFont (juce::FontOptions (11.0f));
+        g.drawText ("Off and 0 leave the SoundFont as it is", guitarPanel.getX() + 70, guitarPanel.getY() + 8,
+                    guitarPanel.getWidth() - 70 - 100, 14, juce::Justification::centredLeft);
+    }
 
     const bool sends = sendsToggle.getToggleState();
     for (auto [area, title] : { std::pair { reverbPanel, "REVERB" }, std::pair { chorusPanel, "CHORUS" } })
@@ -938,6 +1012,29 @@ void SF2PlayerEditor::resized()
         playModeLabel.setBounds (modeArea.removeFromTop (16));
         playMode.setBounds (modeArea.withSizeKeepingCentre (juce::jmin (modeArea.getWidth() - 4, 84), 24).translated (0, -6));
     }
+    guitarPanelBox.setBounds (playPanel.getRight() - 6 - 112, playPanel.getY() + 5, 112, 18);
+
+    if (guitarShown)
+    {
+        area.removeFromTop (12);
+        guitarPanel = area.removeFromTop (guitarPanelHeight - 12);
+        tremoloSyncBox.setBounds (guitarPanel.getRight() - 6 - 70, guitarPanel.getY() + 5, 70, 18);
+        auto inner = guitarPanel.reduced (6).withTrimmedTop (18);
+        const int width = inner.getWidth() / 9;
+        // Two rows on the left: the mode, and which way chords are strummed.
+        auto combos = inner.removeFromLeft (width * 2).reduced (2, 6);
+        for (auto [label, box] : { std::pair { &guitarModeLabel, &guitarModeBox }, std::pair { &strumDirectionLabel, &strumDirectionBox } })
+        {
+            auto row = combos.removeFromTop (combos.getHeight() / (label == &guitarModeLabel ? 2 : 1)).withSizeKeepingCentre (combos.getWidth(), 24);
+            label->setJustificationType (juce::Justification::centredLeft);
+            label->setBounds (row.removeFromLeft (40));
+            box->setBounds (row);
+        }
+        for (auto* knob : { &strum, &fretPosition, &palmMute, &humanize, &doubleMix, &tremoloDepth, &tremoloRate })
+            knob->setBounds (inner.removeFromLeft (width));
+    }
+    else
+        guitarPanel = {};
 
     area.removeFromTop (4);
     auto notes = area.removeFromTop (22);
