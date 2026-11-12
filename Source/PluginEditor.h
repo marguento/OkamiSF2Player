@@ -42,6 +42,30 @@ struct SF2Look : juce::LookAndFeel_V4
 };
 
 // The on-screen keyboard, with the keys the preset doesn't play dimmed.
+// A switch with a round light, as on a hardware panel (the Guitar panel's Pattern, Direct, Hold
+// and its on/off options): it toggles on each click.
+struct LedButton : juce::TextButton
+{
+    explicit LedButton (const juce::String& text) : juce::TextButton (text) { setClickingTogglesState (true); }
+    void paintButton (juce::Graphics& g, bool over, bool down) override
+    {
+        auto r = getLocalBounds().toFloat().reduced (0.5f);
+        g.setColour (juce::Colour (0xff2a1f17).brighter (down ? 0.15f : over ? 0.08f : 0.0f));
+        g.fillRoundedRectangle (r, 5.0f);
+        g.setColour (juce::Colours::black.withAlpha (0.45f));
+        g.drawRoundedRectangle (r, 5.0f, 1.0f);
+        const bool on = getToggleState();
+        const auto led = r.removeFromLeft (r.getHeight()).withSizeKeepingCentre (8.0f, 8.0f).translated (3.0f, 0.0f);
+        const juce::Colour green (0xff6fe07a);
+        if (on) { g.setColour (green.withAlpha (0.3f)); g.fillEllipse (led.expanded (3.0f)); }
+        g.setColour (on ? green : juce::Colour (0xff1c3a20));
+        g.fillEllipse (led);
+        g.setColour (juce::Colour (0xfff1e6c8).withAlpha (on ? 1.0f : 0.6f));
+        g.setFont (juce::FontOptions (juce::jmin (14.0f, r.getHeight() * 0.62f), juce::Font::bold));
+        g.drawText (getButtonText(), r.withTrimmedRight (6.0f), juce::Justification::centred);
+    }
+};
+
 struct RangeKeyboard : juce::MidiKeyboardComponent
 {
     using MidiKeyboardComponent::MidiKeyboardComponent;
@@ -200,7 +224,7 @@ private:
     // The five modes as buttons under the neck, Pattern and Direct beside them (the hidden Mode
     // menu holds the parameter); Hold by the display.
     std::array<juce::TextButton, GuitarEngine::modeCount> modeButtons;
-    juce::TextButton patternButton { "Pattern" }, directButton { "Direct" }, holdButton { "Hold" };
+    LedButton patternButton { "Pattern" }, directButton { "Direct" }, holdButton { "Hold" };
     juce::AudioProcessorValueTreeState::ButtonAttachment guitarPatternAttachment { player.parameters, "guitarPattern", patternButton },
                                                          directAttachment { player.parameters, "guitarDirect", directButton },
                                                          holdAttachment { player.parameters, "guitarHold", holdButton };
@@ -216,7 +240,7 @@ private:
     // Chords' Strings: the six strings, low E to high E, lit when the strum plays them (a range).
     std::array<juce::TextButton, 6> stringButtons;
     void clickString (int index);
-    juce::ToggleButton chordBassToggle { "Chord/Bass" }, alterBassToggle { "Alter Bass" }, bassMonoToggle { "Bass Mono" };
+    LedButton chordBassToggle { "Chord/Bass" }, alterBassToggle { "Alter Bass" }, bassMonoToggle { "Bass Mono" };
     juce::Label fxLabel { {}, "Velocity FX" }, fxVelocityLabel { {}, "Velo" }, fxTimeLabel { {}, "Time" },
                 positionLabel { {}, "Chord Position" }, stringsLabel { {}, "Strings" }, stringsDash { {}, "-" },
                 repeatStringsLabel { {}, "Strings #" }, harmonyLabel { {}, "Interval" }, addOnLabel { {}, "Add-on keys" },
@@ -239,7 +263,7 @@ private:
                  legatoStepsSlider { juce::Slider::LinearBar, juce::Slider::TextBoxLeft },
                  legatoTimeSlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight },
                  bassZoneTopSlider { juce::Slider::LinearBar, juce::Slider::TextBoxLeft };
-    juce::ToggleButton bassZoneToggle { "Bass Zone" };
+    LedButton bassZoneToggle { "Bass Zone" };
     juce::Label fxStepsLabel { {}, "Steps" }, permanentLabel { {}, "Permanent" }, legatoStepsLabel { {}, "Steps" },
                 legatoTimeLabel { {}, "Time" }, pedalLabel { {}, "Pedal" };
     std::array<juce::Label, 4> switchLabels;
@@ -276,7 +300,7 @@ private:
     juce::AudioProcessorValueTreeState::ComboBoxAttachment pbAttachment { player.parameters, "pbAssign", pbBox },
                                                            mwAttachment { player.parameters, "mwAssign", mwBox },
                                                            atAttachment { player.parameters, "atAssign", atBox };
-    juce::Rectangle<int> optionsArea;
+    juce::Rectangle<int> optionsArea, optionsFrame;   // the options box and its frame (with the mode's name)
     void refreshModeOptions();
     // Beside the instrument: which panel it gets (Auto detects guitars; Guitar or No panel when a
     // SoundFont doesn't follow General MIDI), remembered for each instrument of each SoundFont.
@@ -296,7 +320,7 @@ private:
     static constexpr int keyboardHeight = 64;   // a small keyboard: it shows what's played, a MIDI keyboard plays
     void applyHeight();   // the window's height is its contents': it never stretches
     static constexpr int panelHeight = 118, collapsedHeight = 26, panelGap = 12;
-    static constexpr int baseNeckHeight = 224, controllersHeight = 112, guitarHeader = 30;
+    static constexpr int baseNeckHeight = 250, controllersHeight = 112, guitarHeader = 30;
     // The neck, the mode buttons and the options box, under the knobs (the controllers' rows too when shown).
     int neckHeight() const { return baseNeckHeight + (showControllers ? controllersHeight : 0); }
     int heightOf (Section s) const

@@ -1283,6 +1283,13 @@ void SF2PlayerEditor::timerCallback()
                    view.strummed.load(), view.palm.load(), positionFret[juce::jlimit (0, 4, juce::roundToInt (player.parameters.getRawParameterValue ("chordPosition")->load()))],
                    GuitarEngine::tuningOf (player.guitarTuning()));
     }
+    {
+        // The board shades the Chord Position while a chord mode plays (not Kbd, not Direct).
+        const int mode = guitarModeBox.getSelectedItemIndex();
+        const int position = juce::roundToInt (player.parameters.getRawParameterValue ("chordPosition")->load());
+        const bool chordMode = mode == GuitarEngine::chords || mode == GuitarEngine::bassAndChord || mode == GuitarEngine::bassAndPick;
+        neck.setPosition (chordMode && ! directButton.getToggleState() && position < 4 ? position : -1);
+    }
     neck.tick (1.0f / 20.0f);
     if (guitarShown) showGuitarPreset();
     neck.setShape (player.guitarShapeFrets(), GuitarEngine::tuningOf (player.guitarTuning()));
@@ -1414,6 +1421,21 @@ void SF2PlayerEditor::paint (juce::Graphics& g)
         g.setColour (juce::Colours::white.withAlpha (0.07f));
         g.drawRoundedRectangle (wood.reduced (0.5f), 6.0f, 1.0f);
         drawSectionTitle (g, guitarPanel, "GUITAR", guitarSection);
+        if (! collapsed[guitarSection] && ! optionsFrame.isEmpty())
+        {
+            // The mode's options in a box of their own, named after it.
+            const auto box = optionsFrame.toFloat();
+            g.setColour (juce::Colours::black.withAlpha (0.18f));
+            g.fillRoundedRectangle (box, 6.0f);
+            g.setColour (juce::Colour (0xfff1e6c8).withAlpha (0.10f));
+            g.drawRoundedRectangle (box.reduced (0.5f), 6.0f, 1.0f);
+            static const char* const modeNames[] = { "SOLO", "HARMONY", "CHORDS", "BASS & CHORD", "BASS & PICK" };
+            const int mode = juce::jlimit (0, GuitarEngine::modeCount - 1, guitarModeBox.getSelectedItemIndex());
+            g.setColour (juce::Colour (0xffb8ab90));
+            g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
+            g.drawText (juce::String (modeNames[mode]) + " OPTIONS", optionsFrame.getX() + 10, optionsFrame.getY() + 5, 240, 14,
+                        juce::Justification::centredLeft);
+        }
     }
 
     const bool sends = sendsToggle.getToggleState();
@@ -1550,11 +1572,12 @@ void SF2PlayerEditor::resized()
         auto inner = guitarPanel.reduced (6).withTrimmedTop (guitarHeader - 6);
         auto strip = inner.removeFromBottom (neckHeight() - 6);
         const int rows = showControllers ? 7 : 3;
-        optionsArea = strip.removeFromBottom (24 * rows + 4 * (rows - 1)).reduced (8, 0);
+        optionsFrame = strip.removeFromBottom (24 * rows + 4 * (rows - 1) + 30).reduced (8, 0);
+        optionsArea = optionsFrame.reduced (8, 0).withTrimmedTop (22).withTrimmedBottom (8);
         strip.removeFromBottom (6);
         auto modes = strip.removeFromBottom (26).reduced (8, 0);   // Pattern, the five modes, Direct
-        patternButton.setBounds (modes.removeFromLeft (68).reduced (0, 2));
-        directButton.setBounds (modes.removeFromRight (64).reduced (0, 2));
+        patternButton.setBounds (modes.removeFromLeft (86).reduced (0, 2));
+        directButton.setBounds (modes.removeFromRight (78).reduced (0, 2));
         modes.reduce (8, 0);
         const int gap = 4, buttonWidth = (modes.getWidth() - gap * (GuitarEngine::modeCount - 1)) / GuitarEngine::modeCount;
         for (auto& button : modeButtons)
@@ -1625,6 +1648,7 @@ void SF2PlayerEditor::showMode()
         if (positionButtons[(size_t) i].getToggleState() != (i == position))
             positionButtons[(size_t) i].setToggleState (i == position, juce::dontSendNotification);
     refreshModeOptions();
+    repaint (optionsFrame);
 }
 
 void SF2PlayerEditor::stopAudition()

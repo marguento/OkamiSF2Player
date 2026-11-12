@@ -31,6 +31,8 @@ struct EditorTestAccess
         int voiced[6] = {}, n = 0, classes = 0;
         for (int note : v.notes) if (note >= 0) { voiced[n++] = note; classes |= 1 << (note % 12); }
         editor.neck.show (voiced, n, classes, voiced[0] % 12, false, true, false, 1);
+        editor.timerCallback();   // the position on the board
+        editor.neck.tick (0.12f);   // the strum's sweep, partway
     }
 };
 

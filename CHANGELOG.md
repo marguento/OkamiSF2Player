@@ -35,6 +35,10 @@ release bumps it and adds an entry here: one line per change a player would noti
     **Tremolo** (at a rate or locked to Ableton's tempo).
   - **Presets:** Acoustic Strum, Campfire, Double-Tracked, Slow Ballad, High Strings, Folk Pattern,
     Fingerpicking, Bass & Pick, and Off (Direct).
+  - **The neck** lights each string as the pick crosses it (down from the low E, up from the high
+    one) and shades the Chord Position's frets; the display shows the chord, a big strum arrow, the
+    fret and its notes. Pattern, Direct, Hold and the on/off options are lit switches; each mode's
+    options sit in a box named after it.
   - **The neck** shows what's played (a rosewood neck, frets, inlays, strings) and the chord's
     name in a display (about 45 chord types, slash chords, partial chords, intervals), with lights
     for the strum's direction and palm-muted notes. **Draw chords on it** to see their name, and
