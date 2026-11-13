@@ -183,7 +183,7 @@ private:
                 { "Bass Zone (Solo)", "Notes up to the key next to it play firmer and without articulations: a bass line under the melody." },
                 { "Chord Position", "Where chords lie on the neck: I is the open position, up to IV; Kbd: the octave you play the chord in picks it (from E1: I, E2: II, E3: III, E4: IV)." },
                 { "Strings", "Chords: the six strings, low E to high E; the lit ones are strummed. Click one to leave it out or bring it back." },
-                { "Chord/Bass", "Off: the keys you hold are read as one chord (G A C E: Am7 over its root). On: the lowest key is the bass and the others the chord above it, played as such (G + A C E: Am/G, with G in the bass)." },
+                { "Chord/Bass", "Off: every key you hold is part of one chord. On: the lowest key is only the bass, and the keys above it are the chord (G + A C E: Am with G in the bass, Am/G)." },
                 { "Alter Bass, Bass Mono", "The same chord again alternates its bass with the fifth; the second bass stops the first." },
                 { "Add-on keys", "Bass & Pick's black keys: Unison doubles the strings, Chromatic plays a semitone below them." },
                 { "The neck", "" },
