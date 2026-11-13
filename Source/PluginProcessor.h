@@ -221,15 +221,15 @@ private:
     void refreshWheelOffsets();
     void clearWheels();
     void noteWheelPosition (const juce::MidiMessage&);
-    int lastPbAssign = 0, lastMwAssign = 0, lastAtAssign = 0;
+    int lastPbAssign = 0, lastMwAssign = 0, lastAtAssign = 0;   // refreshWheelOffsets: a job just taken rests the synth's own wheel
     int blockPb = 0, blockMw = 0, blockAt = 0;   // the wheels' jobs as read at this block's start (audio thread)
-    static bool changesLastingState (const juce::MidiMessage&);   // refreshWheelOffsets: an assignment just taken resets the synth's own wheel
+    static bool changesLastingState (const juce::MidiMessage&);
     bool hostWasPlaying = false;   // the transport's state at the last block (audio thread)
     juce::Optional<juce::AudioPlayHead::PositionInfo> blockPosition;   // this block's playhead (audio thread)
     // A guitar block's events (the clip's and the engine's), sorted by time. Audio thread.
     struct GuitarItem { int position, order; juce::uint8 bytes[3]; int size; GuitarEngine::Event note; bool fromGuitar; };
     std::array<GuitarItem, 2048> guitarItems;
-    std::array<int, 4096> overflowIndices {};   // a flood's messages past guitarItems, by their place in the block
+    std::array<int, 16384> overflowIndices {};   // a flood's messages past guitarItems, by their place in the block
     // What each voice was retuned by, keyed by FluidSynth's voice (a fixed pool, so a slot per pool
     // entry, found by linear probing and never shared); a new note on that voice (another id)
     // starts from 0. Cleared with a new engine.

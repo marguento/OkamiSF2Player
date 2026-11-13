@@ -996,6 +996,19 @@ void SF2PlayerProcessor::flushGuitar()
         }
     });
     guitarEngaged = false;
+    // The guitar's retuning comes off the voices still ringing (their tails would get the wheel twice).
+    {
+        std::array<fluid_voice_t*, 256> voices {};
+        fluid_synth_get_voicelist (engine->synth, voices.data(), (int) voices.size(), -1);
+        for (auto* voice : voices)
+            if (voice != nullptr)
+                if (auto* applied = appliedPitchFor (voice, (juce::int64) fluid_voice_get_id (voice)); applied != nullptr && applied->cents != 0.0f)
+                {
+                    fluid_voice_gen_incr (voice, GEN_FINETUNE, -applied->cents);
+                    fluid_voice_update_param (voice, GEN_FINETUNE);
+                    applied->cents = 0.0f;
+                }
+    }
     // The guitar stops (Direct, the panel hidden): the synth takes every wheel back where it is.
     for (int channel = 0; channel < 16; ++channel)
     {
@@ -1174,7 +1187,6 @@ void SF2PlayerProcessor::applyPitch (juce::int64 now, juce::int64 sinceVoiceId)
 // Bend; the pedal's articulation in Solo). True when taken: the synth doesn't get it.
 bool SF2PlayerProcessor::guitarController (const juce::MidiMessage& m, const GuitarEngine::Settings& s, int channel, juce::int64 at)
 {
-    auto value = [this] (const char* id) { return juce::roundToInt (parameters.getRawParameterValue (id)->load()); };
     if (m.isSustainPedalOn() || m.isSustainPedalOff())
     {
         if (s.mode != GuitarEngine::solo || s.pedalFx == GuitarEngine::artOff) return false;
@@ -1226,6 +1238,9 @@ void SF2PlayerProcessor::refreshWheelOffsets()
         for (int channel = 0; channel < 16; ++channel) handleMidi (juce::MidiMessage::pitchWheel (channel + 1, 8192));
     if (mw != 0 && lastMwAssign == 0)
         for (int channel = 0; channel < 16; ++channel) handleMidi (juce::MidiMessage::controllerEvent (channel + 1, 1, 0));
+    if (lastAtAssign == 2 && at2 != 2)   // pressure no longer drives CC1: the mod wheel's own (or rest, if it has a job)
+        for (int channel = 0; channel < 16; ++channel)
+            handleMidi (juce::MidiMessage::controllerEvent (channel + 1, 1, mw != 0 ? 0 : juce::roundToInt (wheelMod[(size_t) channel] * 127.0f)));
     if (at2 != 0 && lastAtAssign == 0)
         for (int channel = 0; channel < 16; ++channel) handleMidi (juce::MidiMessage::channelPressureChange (channel + 1, 0));
     lastAtAssign = at2;
@@ -1378,6 +1393,8 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         }
         if (engine == nullptr)   // no SoundFont: nothing to play these events, or older ones
         {
+            for (const auto metadata : midi)   // the wheels still move
+                if (metadata.numBytes <= 3) noteWheelPosition (juce::MidiMessage (metadata.data, metadata.numBytes));
             clearDeferredMidi();
             return;
         }
@@ -1484,7 +1501,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                     if (count >= maxItems)   // past the list (a flood): played after it, at the block's end, in order
                     {
                         if (overflowCount < (int) overflowIndices.size()) overflowIndices[(size_t) overflowCount++] = index;
-                        else if (changesLastingState (message)) handleMidi (message);   // past even that: what lasts still plays (now)
+                        else if (message.isNoteOff()) handleMidi (message);   // past even that (16k): a note still ends, early; the rest is lost
                         continue;
                     }
                     Item item { juce::jlimit (0, numSamples, metadata.samplePosition), order++, {}, metadata.numBytes, {}, false };

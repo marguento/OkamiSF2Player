@@ -313,7 +313,10 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     presetBox.onChange = [this]
     {
         if (const int id = presetBox.getSelectedId(); id > 0)
+        {
+            userPickedInstrument = true;   // its remembered panel choice applies
             player.selectPreset (presetIndexOf (id));
+        }
     };
     addAndMakeVisible (presetBox);
 
@@ -820,6 +823,7 @@ void SF2PlayerEditor::load (const juce::File& file)
         refreshFileBox (*player.state());
         return;
     }
+    userPickedInstrument = true;   // the file's instrument gets its remembered panel choice
     if (! player.loadSoundFont (file))
         juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Okami SF2 Player",
                                                 file.getFileName() + " couldn't be read as a SoundFont.");
@@ -2526,25 +2530,12 @@ void SF2PlayerEditor::toggleEffectControls()
 void SF2PlayerEditor::applyPanelChoice (const SF2PlayerProcessor::State& st)
 {
     const auto key = favouriteKey (st, st.preset);
-    if (! panelKeyPrimed)
-    {
-        // The first instrument this window sees is the project's own: its saved choice stands. A
-        // SoundFont still loading hasn't shown it yet; a missing one may come back (the same file
-        // is the project's own again, another one is new).
-        if (key.isEmpty())
-        {
-            if (st.file != juce::File()) return;                         // loading
-            if (st.missing != juce::File()) { missingAtOpening = st.missing; return; }
-            panelKeyPrimed = true;                                         // nothing loaded: what comes next is new
-            panelKey = {};
-            return;
-        }
-        panelKeyPrimed = true;
-        const bool projectsOwn = missingAtOpening == juce::File() || st.file == missingAtOpening;
-        if (projectsOwn) { panelKey = key; return; }
-    }
     if (key.isEmpty() || key == panelKey) return;
     panelKey = key;
+    // Only an instrument the user picks here gets its remembered choice: one the project (or a
+    // clip's program change) brings keeps the choice saved with the project.
+    if (! userPickedInstrument) return;
+    userPickedInstrument = false;
     const auto choices = juce::StringArray::fromLines (settings->getValue ("panelChoices"));
     float choice = 0.0f;   // Auto
     for (const auto& line : choices)
