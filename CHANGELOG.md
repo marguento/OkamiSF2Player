@@ -28,8 +28,8 @@ release bumps it and adds an entry here: one line per change a player would noti
     when the pick reaches it. Strums are played by a hand: a hard stroke is quicker, an up stroke
     quicker and on the high strings, the strings between fall a little early or late, the first
     ones hit are the strongest.
-  - **Strum time** (up to 250 ms) and **Hold** in the panel's title bar; the rest stays out of the
-    way under **Controllers**: velocity curve, Accent, Release, the wheels, **Double** (a second
+  - **Pattern**, **Hold** and **Direct** together in the panel's title bar; the rest stays out of
+    the way in **CONTROLLERS** (folding to its title): **Strum time** (up to 250 ms), velocity curve, Accent, Release, the wheels, **Double** (a second
     take, 18 ms later and a little sharp, on the right), **Humanize** (small random changes of
     velocity, timing and tuning), **Tune** (Standard, Drop D, Drop C, Open G, DADGAD) and a stereo
     **Tremolo** (at a rate or locked to Ableton's tempo), in a box of their own: FEEL and SOUND

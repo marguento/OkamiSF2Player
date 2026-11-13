@@ -372,11 +372,13 @@ private:
     int neckHeight() const
     {
         return baseNeckHeight + optionsHeight (optionRows) + (patternBoxShown ? patternBoxHeight + 6 : 0)
-             + (showControllers ? controllersBoxHeight + 6 : 0);
+             + (showControllers ? controllersBoxHeight : collapsedControllersHeight) + 6;
     }
-    // CONTROLLERS, a box of its own under the mode's: FEEL and SOUND side by side, then WHEELS.
+    // CONTROLLERS, a box of its own under the mode's, folding to its title: FEEL and SOUND side by
+    // side, then WHEELS.
     juce::Rectangle<int> controllersFrame, controllersDivider;
-    static constexpr int controllersBoxHeight = 22 + 4 * 24 + 3 * 4 + 12 + 24 + 10;
+    static constexpr int collapsedControllersHeight = 26;
+    static constexpr int controllersBoxHeight = 24 + 18 + 5 * 24 + 4 * 4 + 12 + 24 + 10;
     void layoutControllers (bool shown);
     int heightOf (Section s) const
     {

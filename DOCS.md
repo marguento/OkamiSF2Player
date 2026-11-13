@@ -170,7 +170,7 @@ holds. Notes outside the zones play as they are.
   (3/4), Fingerpicking, Arpeggio. While Ableton plays, the steps fall on its grid; stopped, the
   rhythm starts with the chord, at Ableton's tempo.
 - **Direct:** a plain sampler.
-- **Hold** (by the display): chords keep sounding after the keys are let go, until the next chord.
+- **Hold**: chords keep sounding after the keys are let go, until the next chord.
 
 Every note lies on a string: a new note on a string stops the one ringing there, as on a guitar;
 letting the chord go stops them all (unless Hold).
@@ -207,7 +207,10 @@ letting the chord go stops them all (unless Hold).
   up into its pitch, slides down from it, bends up to it, or starts pre-bent and comes down to it,
   over **Time** and **Steps**.
 
-**Controllers** (the button at the top of the panel shows them): **Velo curve** (Linear, Convex,
+Pattern, Hold and Direct sit together in the panel's title bar, Direct a little apart.
+
+**CONTROLLERS** (the box under the options; click its title to fold it) has three groups: FEEL
+(Strum, Velocity, Accent, Humanize), SOUND (Release, Tune, Double, Tremolo) and WHEELS. **Velocity** (Linear, Convex,
 Concave, S), **Accent** (the velocity where soft playing turns hard: below it velocities fill the
 soft half, from it the hard half), **Release** (PLAY's release time), and what the **P.B.** (pitch
 bender), **M.W.** (mod wheel) and **A.T.** (aftertouch) do and how far: Pitch, Slide (by semitones,
@@ -217,9 +220,9 @@ along the frets), Mono Bend (the lowest note only), Modulation, or as usual.
 
 - **Presets** (next to GUITAR): Acoustic Strum, Campfire, Double-Tracked, Slow Ballad, High Strings,
   Folk Pattern, Fingerpicking, Bass & Pick, or Off (Direct). Move a control and it says Custom.
-- **Strum** (in the title bar): strum time, from the first string to the last, up to 250 ms (Off:
-  a pick's 18 ms). **Hold** is beside it.
-- **Controllers** (the title bar's button) adds, besides the curve, Accent, Release and wheels:
+- **Strum** (CONTROLLERS, FEEL): strum time, from the first string to the last, up to 250 ms (Off:
+  a pick's 18 ms).
+- CONTROLLERS also has:
   - **Double:** a second take of every note, 18 ms later and 4 cents sharp, on the right, with
     the original on the left (double-tracking); the slider is the second take's level.
   - **Humanize:** small random changes to each note's velocity (up to ±5), timing (up to 5 ms

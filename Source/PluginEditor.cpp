@@ -1299,8 +1299,6 @@ void SF2PlayerEditor::showSectionContents()
     playMode.setVisible (play);
     playModeLabel.setVisible (play);
     const bool guitar = guitarShown && ! collapsed[guitarSection];
-    strum.slider.setVisible (guitar);
-    strum.label.setVisible (guitar);
     for (juce::Component* gone : { (juce::Component*) &palmMute.slider, (juce::Component*) &palmMute.label,
                                    (juce::Component*) &strumDirectionBox, (juce::Component*) &strumDirectionLabel,
                                    (juce::Component*) &velocityStringsToggle })
@@ -1326,6 +1324,7 @@ void SF2PlayerEditor::mouseUp (const juce::MouseEvent& e)
     else if (guitarShown && title (guitarPanel).contains (at)) toggleSection (guitarSection);
     else if (title (keysPanel).contains (at)) toggleSection (keyboardSection);
     else if (title (soundPanel).contains (at)) toggleSound();
+    else if (guitarShown && controllersFrame.withHeight (collapsedControllersHeight).contains (at)) toggleControllers();
 }
 
 // A section's title with its fold arrow: ▾ open, ▸ folded.
@@ -1601,15 +1600,29 @@ void SF2PlayerEditor::paint (juce::Graphics& g)
                 g.fillRoundedRectangle (box, 6.0f);
                 g.setColour (SF2Look::accent.withAlpha (0.22f));
                 g.drawRoundedRectangle (box.reduced (0.5f), 6.0f, 1.0f);
+                g.setColour (SF2Look::dim);
+                g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
+                g.drawText (juce::String::fromUTF8 (showControllers ? "\xe2\x96\xbe" : "\xe2\x96\xb8"), controllersFrame.getX() + 8,
+                            controllersFrame.getY() + 6, 12, 14, juce::Justification::centred);
+                g.drawText ("CONTROLLERS", controllersFrame.getX() + 22, controllersFrame.getY() + 6, 120, 14, juce::Justification::centredLeft);
+                if (! showControllers)
+                {
+                    g.setFont (juce::FontOptions (11.0f));
+                    g.drawText ("strum, velocity, release, tuning, tremolo, wheels", controllersFrame.getX() + 130, controllersFrame.getY() + 6,
+                                controllersFrame.getWidth() - 140, 14, juce::Justification::centredLeft);
+                }
+            }
+            if (showControllers && ! controllersFrame.isEmpty())
+            {
                 // The two columns' headings, a hairline between them, and WHEELS under both.
                 const int middle = releaseTimeLabel.getX() - 12;   // the middle of the columns' gap
                 g.setColour (juce::Colour (0xfff1e6c8).withAlpha (0.08f));
-                g.fillRect (juce::Rectangle<int> (middle, controllersFrame.getY() + 8, 1, controllersDivider.getY() - controllersFrame.getY() - 12));
+                g.fillRect (juce::Rectangle<int> (middle, controllersFrame.getY() + 28, 1, controllersDivider.getY() - controllersFrame.getY() - 32));
                 g.fillRect (controllersDivider);
                 g.setColour (juce::Colour (0xffb8ab90));
                 g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
-                g.drawText ("FEEL", curveLabel.getX(), controllersFrame.getY() + 5, 120, 14, juce::Justification::centredLeft);
-                g.drawText ("SOUND", releaseTimeLabel.getX(), controllersFrame.getY() + 5, 120, 14, juce::Justification::centredLeft);
+                g.drawText ("FEEL", curveLabel.getX(), controllersFrame.getY() + 26, 120, 14, juce::Justification::centredLeft);
+                g.drawText ("SOUND", releaseTimeLabel.getX(), controllersFrame.getY() + 26, 120, 14, juce::Justification::centredLeft);
                 g.drawText ("WHEELS", curveLabel.getX(), pbBox.getY(), 64, pbBox.getHeight(), juce::Justification::centredLeft);
             }
         }
@@ -1741,21 +1754,21 @@ void SF2PlayerEditor::resized()
     {
         guitarPanel = area.removeFromTop (heightOf (guitarSection));
         pianoPanel = {};
-        // The title bar: presets, the Controllers button, Strum and Hold.
+        // The title bar: presets, then how the panel plays: Pattern and Hold, and Direct (none of it) apart.
         guitarPresets.setBounds (guitarPanel.getX() + 82, guitarPanel.getY() + 5, 150, 18);
-        controllersButton.setBounds (guitarPresets.getRight() + 8, guitarPanel.getY() + 4, 100, 20);
-        holdButton.setBounds (guitarPanel.getRight() - 8 - 58, guitarPanel.getY() + 4, 58, 21);
-        strum.slider.setBounds (holdButton.getX() - 10 - 130, guitarPanel.getY() + 4, 130, 21);
-        strum.label.setBounds (strum.slider.getX() - 44, guitarPanel.getY() + 4, 42, 21);
+        {
+            auto bar = juce::Rectangle<int> (guitarPanel.getX(), guitarPanel.getY() + 4, guitarPanel.getWidth() - 8, 21);
+            directButton.setBounds (bar.removeFromRight (74));
+            bar.removeFromRight (14);
+            holdButton.setBounds (bar.removeFromRight (64));
+            bar.removeFromRight (4);
+            patternButton.setBounds (bar.removeFromRight (82));
+        }
         auto inner = guitarPanel.reduced (6).withTrimmedTop (guitarHeader - 6);
         auto strip = inner.removeFromBottom (neckHeight() - 6);
-        if (showControllers)   // CONTROLLERS, at the bottom
-        {
-            controllersFrame = strip.removeFromBottom (controllersBoxHeight).reduced (8, 0);
-            strip.removeFromBottom (6);
-        }
-        else
-            controllersFrame = {};
+        // CONTROLLERS, at the bottom (its title only, folded).
+        controllersFrame = strip.removeFromBottom (showControllers ? controllersBoxHeight : collapsedControllersHeight).reduced (8, 0);
+        strip.removeFromBottom (6);
         layoutControllers (showControllers && ! collapsed[guitarSection]);
         if (patternBoxShown)   // Pattern's rhythms, under the mode's options
         {
@@ -1772,10 +1785,8 @@ void SF2PlayerEditor::resized()
         optionsFrame = strip.removeFromBottom (optionsHeight (optionRows)).reduced (8, 0);
         optionsArea = optionsFrame.reduced (8, 0).withTrimmedTop (10).withTrimmedBottom (8);
         // The mode tabs sit on the box (the chosen one runs into it, over its top edge).
-        auto modes = strip.removeFromBottom (28).reduced (8, 0).translated (0, 1);   // Pattern, the five tabs, Direct
-        patternButton.setBounds (modes.removeFromLeft (86).withTrimmedBottom (6).withTrimmedTop (1));
-        directButton.setBounds (modes.removeFromRight (78).withTrimmedBottom (6).withTrimmedTop (1));
-        modes.reduce (8, 0);
+        auto modes = strip.removeFromBottom (28).reduced (8, 0).translated (0, 1);   // the five tabs
+        modes.reduce (6, 0);
         const int gap = 3, buttonWidth = (modes.getWidth() - gap * (GuitarEngine::modeCount - 1)) / GuitarEngine::modeCount;
         for (auto& button : modeButtons)
         {
@@ -2023,15 +2034,14 @@ void SF2PlayerEditor::refreshModeOptions()
             line.removeFromLeft (dynamic_cast<juce::TextButton*> (component) != nullptr ? 3 : 5);
         }
     }
-    controllersButton.setButtonText (juce::String::fromUTF8 (showControllers ? "\xe2\x96\xbe Controllers" : "\xe2\x96\xb8 Controllers"));
-    controllersButton.setVisible (open);
+    controllersButton.setVisible (false);   // CONTROLLERS folds by its own title
 }
 
 // CONTROLLERS: how the keyboard's playing turns into the guitar's. FEEL (velocity, accent, timing,
 // a second take) and SOUND (release, tuning, tremolo) side by side, the three wheels' jobs under them.
 void SF2PlayerEditor::layoutControllers (bool shown)
 {
-    std::vector<juce::Component*> parts { &curveLabel, &accentLabel, &accentSlider, &humanize.label, &humanize.slider,
+    std::vector<juce::Component*> parts { &strum.label, &strum.slider, &curveLabel, &accentLabel, &accentSlider, &humanize.label, &humanize.slider,
                                           &doubleMix.label, &doubleMix.slider, &releaseTimeLabel, &releaseTimeSlider,
                                           &tuningLabel, &tuningBox, &tremoloDepth.label, &tremoloDepth.slider,
                                           &tremoloRate.label, &tremoloRate.slider, &tremoloSyncBox, &wheelsLabel,
@@ -2043,8 +2053,8 @@ void SF2PlayerEditor::layoutControllers (bool shown)
     if (! shown || controllersFrame.isEmpty()) { controllersDivider = {}; return; }
 
     constexpr int labelWidth = 64, rowHeight = 24, gap = 4;
-    auto inner = controllersFrame.reduced (12, 0).withTrimmedTop (22).withTrimmedBottom (10);
-    auto columns = inner.removeFromTop (4 * rowHeight + 3 * gap);
+    auto inner = controllersFrame.reduced (12, 0).withTrimmedTop (24 + 18).withTrimmedBottom (10);
+    auto columns = inner.removeFromTop (5 * rowHeight + 4 * gap);
     const int columnGap = 24;
     auto feel = columns.removeFromLeft ((columns.getWidth() - columnGap) / 2);
     columns.removeFromLeft (columnGap);
@@ -2058,15 +2068,16 @@ void SF2PlayerEditor::layoutControllers (bool shown)
         place (label, r.removeFromLeft (labelWidth));
         return r.reduced (0, 1);
     };
+    place (strum.slider, line (feel, strum.label));
     {
         auto r = line (feel, curveLabel);
         for (auto& button : curveButtons) { place (button, r.removeFromLeft (30)); r.removeFromLeft (3); }
     }
     place (accentSlider, line (feel, accentLabel));
     place (humanize.slider, line (feel, humanize.label));
-    place (doubleMix.slider, line (feel, doubleMix.label));
     place (releaseTimeSlider, line (sound, releaseTimeLabel));
     place (tuningBox, line (sound, tuningLabel).withWidth (130));
+    place (doubleMix.slider, line (sound, doubleMix.label));
     place (tremoloDepth.slider, line (sound, tremoloDepth.label));
     {
         auto r = line (sound, tremoloRate.label);
