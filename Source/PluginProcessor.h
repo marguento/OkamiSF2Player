@@ -106,6 +106,7 @@ public:
         std::atomic<int> bass { -1 };
         std::atomic<bool> up { false }, strummed { false }, palm { false };
         std::atomic<int> fx { 0 };                  // the Velocity Switch FX it fired (0: none)
+        std::atomic<int> position { 0 };            // the Chord Position voiced (Kbd's choice)
     };
     GuitarEngine::Settings guitarSettingsNow() const { return currentGuitarSettings(); }   // for the editor
     int guitarTuning() const { return juce::roundToInt (parameters.getRawParameterValue ("guitarTuning")->load()); }

@@ -106,10 +106,11 @@ public:
         repaint();
     }
 
-    void setPosition (int position)
+    void setPosition (int position, bool byKeyboard = false)   // byKeyboard: Kbd chose it
     {
-        if (position == shownPosition) return;
+        if (position == shownPosition && byKeyboard == positionByKeyboard) return;
         shownPosition = position;
+        positionByKeyboard = byKeyboard;
         repaint();
     }
 
@@ -266,7 +267,7 @@ public:
             g.drawRect (band, 1.0f);
             g.setColour (juce::Colour (0xfff1e6c8).withAlpha (0.75f));
             g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
-            g.drawText ("POS " + juce::String (numerals[shownPosition]), band.withHeight (12.0f).translated (0.0f, -12.5f),
+            g.drawText ((positionByKeyboard ? "KBD " + juce::String::fromUTF8 ("\xc2\xb7 ") : juce::String()) + "POS " + juce::String (numerals[shownPosition]), band.withHeight (12.0f).translated (0.0f, -12.5f),
                         juce::Justification::centred);
         }
         auto inlay = [&g] (float x, float y)
@@ -389,6 +390,7 @@ private:
     bool arrowUp = false, palmMuted = false;
     float arrowGlow = 0.0f, palmGlow = 0.0f, fxGlow = 0.0f, age = 99.0f;
     juce::String fxName;
+    bool positionByKeyboard = false;
     std::array<float, 6> stringGlow {}, stringDelay {};
     std::array<bool, 6> stringPending {};
     int shownPosition = -1;

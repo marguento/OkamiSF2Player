@@ -181,7 +181,7 @@ private:
                 { "Permanent (Solo)", "H.O.: a key played while another is held, up to Steps away, hammers on (the string bends there, no new pick) and pulls off when let go. Slide: the same, sliding along the frets over Time." },
                 { "Articulations", "Tremolo picks the notes again and again; Sustain 1-2 Mono keeps notes ringing until a step of one or two semitones; Muted mutes everything; Velo Mute mutes soft notes." },
                 { "Bass Zone (Solo)", "Notes up to the key next to it play firmer and without articulations: a bass line under the melody." },
-                { "Chord Position", "Where chords lie on the neck: I is the open position, up to IV; Kbd: the octave you play the chord in picks it (from E1: I, E2: II, E3: III, E4: IV)." },
+                { "Chord Position", "Where chords lie on the neck: I is the open position, up to IV; Kbd: the keyboard octave you play the chord in picks it (below C2: I, C2: II, C3: III, C4: IV); the neck says which (KBD · POS II)." },
                 { "Strings", "Chords: the six strings, low E to high E; the lit ones are strummed. Click one to leave it out or bring it back." },
                 { "Chord/Bass", "Off: every key you hold is part of one chord. On: the lowest key is only the bass, and the keys above it are the chord (G + A C E: Am with G in the bass, Am/G)." },
                 { "Alter Bass, Bass Mono", "The same chord again alternates its bass with the fifth; the second bass stops the first." },

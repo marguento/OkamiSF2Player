@@ -33,6 +33,8 @@ release bumps it and adds an entry here: one line per change a player would noti
   - A new guitar starts in **Chords** with **Pattern** and **Hold** on, ready to try (saved
     projects keep their own settings).
   - Each stroke lights the keys it plays on the keyboard, not only the neck.
+  - Kbd follows the keyboard's octaves as labelled (below C2: I, C2: II, C3: III, C4: IV), and
+    the neck shows the position it chose.
   - Humanize you can hear: each stroke varies in loudness, timing and speed across the strings;
     the Convex and Concave velocity curves are stronger.
   - Hints for the keyboard (each key's zone and job), the zones and the section titles; PLAY says

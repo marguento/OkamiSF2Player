@@ -1480,7 +1480,7 @@ void SF2PlayerEditor::timerCallback()
         std::array<int, 6> notes {};
         for (size_t i = 0; i < 6; ++i) notes[i] = view.notes[i].load (std::memory_order_relaxed);
         neck.show (notes.data(), view.count.load(), view.pitchClasses.load(), view.bass.load(), view.up.load(),
-                   view.strummed.load(), view.palm.load(), positionFret[juce::jlimit (0, 4, juce::roundToInt (player.parameters.getRawParameterValue ("chordPosition")->load()))],
+                   view.strummed.load(), view.palm.load(), positionFret[juce::jlimit (0, 3, view.position.load())],
                    GuitarEngine::tuningOf (player.guitarTuning()));
         static const char* const fxNames[] = { "", "SLOW STRUM", "SLOW STRUM", "SLIDE UP", "SLIDE DOWN", "BEND", "REV. BEND", "VELO MUTE" };
         neck.showFx (fxNames[juce::jlimit (0, 7, view.fx.load())]);
@@ -1511,7 +1511,10 @@ void SF2PlayerEditor::timerCallback()
         const int mode = guitarModeBox.getSelectedItemIndex();
         const int position = juce::roundToInt (player.parameters.getRawParameterValue ("chordPosition")->load());
         const bool chordMode = mode == GuitarEngine::chords || mode == GuitarEngine::bassAndChord || mode == GuitarEngine::bassAndPick;
-        neck.setPosition (chordMode && ! directButton.getToggleState() && position < 4 ? position : -1);
+        // Kbd: the position it chose for the last chord, by the octave it was played in.
+        const bool kbd = position >= 4;
+        const int shown = kbd ? juce::jlimit (0, 3, player.guitarView.position.load()) : position;
+        neck.setPosition (chordMode && ! directButton.getToggleState() ? shown : -1, kbd);
         neck.setPattern (patternButton.getToggleState() && chordMode && ! directButton.getToggleState() ? patternBox.getText() : juce::String());
     }
     neck.tick (1.0f / 20.0f);

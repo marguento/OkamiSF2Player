@@ -373,6 +373,7 @@ public:
             {
                 const auto chord = recognize (c.chordKeys.keys.data(), c.chordKeys.count, s.chordBass);
                 c.voicing = voiceChord (chord, s.position, c.chordKeys.keys[0], tuningOf (s.tuning));
+                last.position = c.voicing.position;
                 c.voicedPosition = s.position;
                 c.voicedTuning = s.tuning;
                 c.voicedChordBass = s.chordBass;
@@ -525,6 +526,7 @@ public:
         int bassTwo = -1;       // Bass II: the fifth, usually on a neighbouring string (a note)
         int bassTwoString = -1;
         Chord chord;
+        int position = 0;       // the Chord Position it was voiced at (Kbd's choice included)
         bool valid() const { return bassString >= 0; }
         int top() const { int t = -1; for (int n : notes) t = juce::jmax (t, n); return t; }
     };
@@ -553,12 +555,13 @@ public:
 
     // The voicing whose highest note falls in the Chord Position's range (I: E3-G#3, II: G3-B3,
     // III: A#3-D4, IV: C#4-F4), the lowest such fret; else the closest. Kbd: the position is the
-    // octave of the Main zone the chord is played in, E to E (E1: I, E2: II, E3: III, E4: IV),
-    // by its lowest key. Bass II found too.
+    // keyboard's octave the chord is played in, by its lowest key, as the keys are labelled (below
+    // C2: I, C2-B2: II, C3-B3: III, from C4: IV). Bass II found too.
+    static int kbdPosition (int lowestKey) { return juce::jlimit (0, 3, (lowestKey - 36) / 12); }
     static Voicing voiceChord (const Chord& chord, int position, int lowestKey, const Tuning& tuning)
     {
         if (position < 0 || position > 3)
-            position = juce::jlimit (0, 3, (lowestKey - mainLow) / 12);
+            position = kbdPosition (lowestKey);
         static constexpr int ranges[4][2] = { { 64, 68 }, { 67, 71 }, { 70, 74 }, { 73, 77 } };
         auto distanceTo = [] (int top, int low, int high) { return top < low ? low - top : top > high ? top - high : 0; };
         // Every shape the neck offers, by the fret it starts at.
@@ -597,6 +600,7 @@ public:
             chosen = below;
         }
         Voicing best = chosen >= 0 ? shapes[(size_t) chosen] : Voicing {};
+        best.position = position;
         if (! best.valid()) return best;
         // Bass II: the fifth, on the string below the bass when it can reach it, else on one above.
         const int fifth = (chord.bass + 7) % 12;
@@ -638,6 +642,7 @@ public:
         int count = 0;
         bool up = false, strummed = false, palm = false;
         int fx = fxOff;              // the Velocity Switch FX it fired, if any
+        int position = 0;            // the Chord Position of the chord voiced last (Kbd's choice)
     };
     const LastPlayed& lastPlayed() const { return last; }
     // A velocity as the engine hears it (after Accent and the curve): what Velocity FX compare.
@@ -965,6 +970,7 @@ private:
         std::sort (keys.keys.begin(), keys.keys.begin() + keys.count);
         const auto chord = recognize (keys.keys.data(), keys.count, s.chordBass);
         c.voicing = voiceChord (chord, s.position, keys.keys[0], tuningOf (s.tuning));
+        last.position = c.voicing.position;
         c.chordKeys = keys;
         c.voicedPosition = s.position;
         c.voicedTuning = s.tuning;

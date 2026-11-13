@@ -1433,6 +1433,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
             guitarView.strummed.store (last.strummed, std::memory_order_relaxed);
             guitarView.palm.store (last.palm, std::memory_order_relaxed);
             guitarView.fx.store (last.fx, std::memory_order_relaxed);
+            guitarView.position.store (last.position, std::memory_order_relaxed);
             guitarView.sequence.store (last.sequence, std::memory_order_release);
         }
         activeVoices = fluid_synth_get_active_voice_count (engine->synth);

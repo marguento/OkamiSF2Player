@@ -197,8 +197,9 @@ left, VELOCITY FX at the right):
   untouched: 90 for the hard ones, 45 for the soft ones. The display lights its name when it
   fires. Solo has no strums, so no slow ones.
 - **Chord Position:** where chords lie on the neck, by their highest note: I (E3-G#3, the open
-  position), II (G3-B3), III (A#3-D4), IV (C#4-F4), or Kbd: the octave you play the chord in picks
-  it, E to E (from E1: I, from E2: II, from E3: III, from E4: IV).
+  position), II (G3-B3), III (A#3-D4), IV (C#4-F4), or Kbd: the keyboard octave you play the chord in
+  picks it, by its lowest key (below C2: I, C2-B2: II, C3-B3: III, from C4: IV); the neck shows
+  the one it chose (KBD · POS II).
 - **Strings** (Chords): the six strings, low E to high E; the lit ones are strummed. A click on one
   at either end leaves it out, on an unlit one brings it back (they stay a range).
 - **Strings #** (Bass & Chord): how many upper strings the Repeat keys strum.
