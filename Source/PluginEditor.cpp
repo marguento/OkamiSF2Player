@@ -444,8 +444,8 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
                     "Solo, always: H.O. (hammer-on, a pull-off when let go) or Slide between legato notes up to Steps apart");
         setUpCombo (pbBox, { "Pitch", "Slide", "Mono Bend" }, "pbAssign",
                     "The pitch bender: Pitch (as usual), Slide (by semitones, along the frets) or Mono Bend (the lowest note only)");
-        setUpCombo (mwBox, { "Modulation", "Pitch", "Slide", "Mono Bend" }, "mwAssign", "The mod wheel's job");
-        setUpCombo (atBox, { "Off", "Pitch", "Modulation" }, "atAssign", "Aftertouch's job");
+        setUpCombo (mwBox, { "Mod.", "Pitch", "Slide", "Mono Bend" }, "mwAssign", "The mod wheel's job (Mod.: modulation, as usual)");
+        setUpCombo (atBox, { "Off", "Pitch", "Mod." }, "atAssign", "Aftertouch's job (Mod.: modulation)");
     }
     // Small numbers as bars: drag (or double-click to type) to change them.
     for (auto* slider : { &fxStepsSlider, &legatoStepsSlider, &bassZoneTopSlider, &pbRangeSlider, &mwRangeSlider, &atRangeSlider,
@@ -460,7 +460,7 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     }
     for (auto* slider : { &legatoTimeSlider, &accentSlider, &releaseTimeSlider })
     {
-        slider->setTextBoxStyle (juce::Slider::TextBoxRight, false, slider == &accentSlider ? 34 : 50, 18);
+        slider->setTextBoxStyle (juce::Slider::TextBoxRight, false, 52, 18);
         addAndMakeVisible (*slider);
     }
     fxStepsSlider.setTooltip ("How far a slide or bend goes, in semitones");
@@ -1594,6 +1594,24 @@ void SF2PlayerEditor::paint (juce::Graphics& g)
                 g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
                 g.drawText ("PATTERN RHYTHM", patternFrame.getX() + 10, patternFrame.getY() + 5, 240, 14, juce::Justification::centredLeft);
             }
+            if (! controllersFrame.isEmpty())
+            {
+                const auto box = controllersFrame.toFloat();
+                g.setColour (juce::Colours::black.withAlpha (0.18f));
+                g.fillRoundedRectangle (box, 6.0f);
+                g.setColour (SF2Look::accent.withAlpha (0.22f));
+                g.drawRoundedRectangle (box.reduced (0.5f), 6.0f, 1.0f);
+                // The two columns' headings, a hairline between them, and WHEELS under both.
+                const int middle = releaseTimeLabel.getX() - 12;   // the middle of the columns' gap
+                g.setColour (juce::Colour (0xfff1e6c8).withAlpha (0.08f));
+                g.fillRect (juce::Rectangle<int> (middle, controllersFrame.getY() + 8, 1, controllersDivider.getY() - controllersFrame.getY() - 12));
+                g.fillRect (controllersDivider);
+                g.setColour (juce::Colour (0xffb8ab90));
+                g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
+                g.drawText ("FEEL", curveLabel.getX(), controllersFrame.getY() + 5, 120, 14, juce::Justification::centredLeft);
+                g.drawText ("SOUND", releaseTimeLabel.getX(), controllersFrame.getY() + 5, 120, 14, juce::Justification::centredLeft);
+                g.drawText ("WHEELS", curveLabel.getX(), pbBox.getY(), 64, pbBox.getHeight(), juce::Justification::centredLeft);
+            }
         }
     }
 
@@ -1731,6 +1749,14 @@ void SF2PlayerEditor::resized()
         strum.label.setBounds (strum.slider.getX() - 44, guitarPanel.getY() + 4, 42, 21);
         auto inner = guitarPanel.reduced (6).withTrimmedTop (guitarHeader - 6);
         auto strip = inner.removeFromBottom (neckHeight() - 6);
+        if (showControllers)   // CONTROLLERS, at the bottom
+        {
+            controllersFrame = strip.removeFromBottom (controllersBoxHeight).reduced (8, 0);
+            strip.removeFromBottom (6);
+        }
+        else
+            controllersFrame = {};
+        layoutControllers (showControllers && ! collapsed[guitarSection]);
         if (patternBoxShown)   // Pattern's rhythms, under the mode's options
         {
             patternFrame = strip.removeFromBottom (patternBoxHeight).reduced (8, 0);
@@ -1763,6 +1789,8 @@ void SF2PlayerEditor::resized()
     else
     {
         guitarPanel = {};
+        controllersFrame = {};
+        layoutControllers (false);
         pianoPanel = area.removeFromTop (pianoHeight);
         auto inner = pianoPanel.reduced (10, 0).withTrimmedTop (28).withHeight (26);
         layerLabel.setBounds (inner.removeFromLeft (44));
@@ -1925,34 +1953,6 @@ void SF2PlayerEditor::refreshModeOptions()
             addRight (t, bassMonoToggle, 98);
         }
     }
-    if (showControllers)
-    {
-        const auto c = row (&curveLabel);
-        for (auto& button : curveButtons) add (c, button, 28);
-        addRight (c, accentLabel, 46);
-        addRight (c, accentSlider, 130);
-        const auto r = row (&releaseTimeLabel);
-        add (r, releaseTimeSlider, 150);
-        addRight (r, tuningLabel, 36);
-        addRight (r, tuningBox, 110);
-        const auto w = row (&wheelsLabel);
-        for (auto [label, box, range] : { std::tuple { &pbLabel, &pbBox, &pbRangeSlider }, std::tuple { &mwLabel, &mwBox, &mwRangeSlider },
-                                          std::tuple { &atLabel, &atBox, &atRangeSlider } })
-        {
-            add (w, *label, 28);
-            add (w, *box, 82);
-            add (w, *range, 28);
-        }
-        const auto d = row (&doubleMix.label);
-        add (d, doubleMix.slider, 150);
-        addRight (d, humanize.label, 64);
-        addRight (d, humanize.slider, 140);
-        const auto t = row (&tremoloDepth.label);
-        add (t, tremoloDepth.slider, 150);
-        addRight (t, tremoloRate.label, 36);
-        addRight (t, tremoloRate.slider, 120);
-        addRight (t, tremoloSyncBox, 74);
-    }
     optionsNote.setColour (juce::Label::textColourId, SF2Look::dim);
 
     {
@@ -1970,16 +1970,10 @@ void SF2PlayerEditor::refreshModeOptions()
                                         &stringsDash, &stringsBottomSlider, &repeatStringsLabel, &repeatStringsSlider, &addOnLabel, &addOnBox,
                                         &chordBassToggle, &alterBassToggle, &bassMonoToggle, &soloFxBox, &pedalBox, &fxStepsSlider,
                                         &legatoStepsSlider, &legatoTimeSlider, &bassZoneTopSlider, &bassZoneToggle, &fxStepsLabel,
-                                        &permanentLabel, &legatoStepsLabel, &legatoTimeLabel, &pedalLabel, &accentSlider, &releaseTimeSlider,
-                                        &pbRangeSlider, &mwRangeSlider, &atRangeSlider, &pbBox, &mwBox, &atBox, &curveLabel, &accentLabel,
-                                        &releaseTimeLabel, &pbLabel, &mwLabel, &atLabel, &doubleMix.label, &doubleMix.slider,
-                                        &humanize.label, &humanize.slider, &tuningLabel, &tuningBox, &tremoloDepth.label,
-                                        &tremoloDepth.slider, &tremoloRate.label, &tremoloRate.slider, &tremoloSyncBox,
-                                        &keySwitchesLabel, &wheelsLabel };
+                                        &permanentLabel, &legatoStepsLabel, &legatoTimeLabel, &pedalLabel, &keySwitchesLabel };
     for (auto& button : fxButtons) all.push_back (button.get());
     for (auto& box : switchBoxes) all.push_back (&box);
     for (auto& label : switchLabels) all.push_back (&label);
-    for (auto& button : curveButtons) all.push_back (&button);
     for (auto& button : stringButtons) all.push_back (&button);
     for (auto& button : positionButtons) all.push_back (&button);
     for (auto* c : all)
@@ -2031,6 +2025,73 @@ void SF2PlayerEditor::refreshModeOptions()
     }
     controllersButton.setButtonText (juce::String::fromUTF8 (showControllers ? "\xe2\x96\xbe Controllers" : "\xe2\x96\xb8 Controllers"));
     controllersButton.setVisible (open);
+}
+
+// CONTROLLERS: how the keyboard's playing turns into the guitar's. FEEL (velocity, accent, timing,
+// a second take) and SOUND (release, tuning, tremolo) side by side, the three wheels' jobs under them.
+void SF2PlayerEditor::layoutControllers (bool shown)
+{
+    std::vector<juce::Component*> parts { &curveLabel, &accentLabel, &accentSlider, &humanize.label, &humanize.slider,
+                                          &doubleMix.label, &doubleMix.slider, &releaseTimeLabel, &releaseTimeSlider,
+                                          &tuningLabel, &tuningBox, &tremoloDepth.label, &tremoloDepth.slider,
+                                          &tremoloRate.label, &tremoloRate.slider, &tremoloSyncBox, &wheelsLabel,
+                                          &pbLabel, &pbBox, &pbRangeSlider, &mwLabel, &mwBox, &mwRangeSlider,
+                                          &atLabel, &atBox, &atRangeSlider };
+    for (auto& button : curveButtons) parts.push_back (&button);
+    for (auto* c : parts)
+        if (c->isVisible() != shown) c->setVisible (shown);
+    if (! shown || controllersFrame.isEmpty()) { controllersDivider = {}; return; }
+
+    constexpr int labelWidth = 64, rowHeight = 24, gap = 4;
+    auto inner = controllersFrame.reduced (12, 0).withTrimmedTop (22).withTrimmedBottom (10);
+    auto columns = inner.removeFromTop (4 * rowHeight + 3 * gap);
+    const int columnGap = 24;
+    auto feel = columns.removeFromLeft ((columns.getWidth() - columnGap) / 2);
+    columns.removeFromLeft (columnGap);
+    auto sound = columns;
+    auto place = [] (juce::Component& c, juce::Rectangle<int> bounds) { if (c.getBounds() != bounds) c.setBounds (bounds); };
+    auto line = [&] (juce::Rectangle<int>& column, juce::Label& label)
+    {
+        auto r = column.removeFromTop (rowHeight);
+        column.removeFromTop (gap);
+        label.setJustificationType (juce::Justification::centredLeft);
+        place (label, r.removeFromLeft (labelWidth));
+        return r.reduced (0, 1);
+    };
+    {
+        auto r = line (feel, curveLabel);
+        for (auto& button : curveButtons) { place (button, r.removeFromLeft (30)); r.removeFromLeft (3); }
+    }
+    place (accentSlider, line (feel, accentLabel));
+    place (humanize.slider, line (feel, humanize.label));
+    place (doubleMix.slider, line (feel, doubleMix.label));
+    place (releaseTimeSlider, line (sound, releaseTimeLabel));
+    place (tuningBox, line (sound, tuningLabel).withWidth (130));
+    place (tremoloDepth.slider, line (sound, tremoloDepth.label));
+    {
+        auto r = line (sound, tremoloRate.label);
+        place (tremoloSyncBox, r.removeFromRight (70));
+        r.removeFromRight (6);
+        place (tremoloRate.slider, r);
+    }
+    inner.removeFromTop (6);
+    controllersDivider = inner.removeFromTop (1);
+    inner.removeFromTop (5);
+    auto wheels = inner.removeFromTop (rowHeight);
+    wheelsLabel.setVisible (false);   // WHEELS is painted, like the other headings
+    wheels.removeFromLeft (labelWidth);
+    const int groupWidth = (wheels.getWidth() - 2 * 12) / 3;
+    for (auto [label, box, range] : { std::tuple { &pbLabel, &pbBox, &pbRangeSlider }, std::tuple { &mwLabel, &mwBox, &mwRangeSlider },
+                                      std::tuple { &atLabel, &atBox, &atRangeSlider } })
+    {
+        auto group = wheels.removeFromLeft (groupWidth).reduced (0, 1);
+        wheels.removeFromLeft (12);
+        label->setJustificationType (juce::Justification::centredLeft);
+        place (*label, group.removeFromLeft (32));
+        place (*range, group.removeFromRight (36));
+        group.removeFromRight (4);
+        place (*box, group);
+    }
 }
 
 // The controllers' rows in the options box, shown or hidden; the window grows or shrinks by them.

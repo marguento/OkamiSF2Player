@@ -32,7 +32,8 @@ release bumps it and adds an entry here: one line per change a player would noti
     way under **Controllers**: velocity curve, Accent, Release, the wheels, **Double** (a second
     take, 18 ms later and a little sharp, on the right), **Humanize** (small random changes of
     velocity, timing and tuning), **Tune** (Standard, Drop D, Drop C, Open G, DADGAD) and a stereo
-    **Tremolo** (at a rate or locked to Ableton's tempo).
+    **Tremolo** (at a rate or locked to Ableton's tempo), in a box of their own: FEEL and SOUND
+    side by side, the three wheels' jobs under them.
   - **Presets:** Acoustic Strum, Campfire, Double-Tracked, Slow Ballad, High Strings, Folk Pattern,
     Fingerpicking, Bass & Pick, and Off (Direct).
   - **The neck** lights each string as the pick crosses it (down from the low E, up from the high

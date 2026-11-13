@@ -334,7 +334,7 @@ private:
                  mwRangeSlider { juce::Slider::LinearBar, juce::Slider::TextBoxLeft },
                  atRangeSlider { juce::Slider::LinearBar, juce::Slider::TextBoxLeft };
     juce::ComboBox pbBox, mwBox, atBox;
-    juce::Label curveLabel { {}, "Velo curve" }, accentLabel { {}, "Accent" }, releaseTimeLabel { {}, "Release" },
+    juce::Label curveLabel { {}, "Velocity" }, accentLabel { {}, "Accent" }, releaseTimeLabel { {}, "Release" },
                 pbLabel { {}, "P.B." }, mwLabel { {}, "M.W." }, atLabel { {}, "A.T." };
     juce::AudioProcessorValueTreeState::SliderAttachment accentAttachment { player.parameters, "accent", accentSlider },
                                                          releaseTimeAttachment { player.parameters, "release", releaseTimeSlider },
@@ -369,7 +369,15 @@ private:
     int optionRows = 3;   // the options box's rows, as laid out for the mode (and the controllers)
     static int optionsHeight (int rows) { return 24 * rows + 4 * (rows - 1) + 20; }
     // The neck, the mode buttons and the options box, under the knobs (the controllers' rows too when shown).
-    int neckHeight() const { return baseNeckHeight + optionsHeight (optionRows) + (patternBoxShown ? patternBoxHeight + 6 : 0); }
+    int neckHeight() const
+    {
+        return baseNeckHeight + optionsHeight (optionRows) + (patternBoxShown ? patternBoxHeight + 6 : 0)
+             + (showControllers ? controllersBoxHeight + 6 : 0);
+    }
+    // CONTROLLERS, a box of its own under the mode's: FEEL and SOUND side by side, then WHEELS.
+    juce::Rectangle<int> controllersFrame, controllersDivider;
+    static constexpr int controllersBoxHeight = 22 + 4 * 24 + 3 * 4 + 12 + 24 + 10;
+    void layoutControllers (bool shown);
     int heightOf (Section s) const
     {
         if (collapsed[(size_t) s] || (s == effectsSection && ! showEffectControls)) return collapsedHeight;
