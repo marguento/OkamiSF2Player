@@ -591,6 +591,17 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
             button->onClick = [this] { showMode(); };
             addAndMakeVisible (*button);
         }
+        // Velocity FX in view: short names on the switches, the full ones in their tooltips.
+        static const char* const fxShort[] = { "Off", "Slow if Hard", "Slow if Soft", "Slide Up", "Slide Down", "Bend", "Rev. Bend", "Velo Mute" };
+        for (int i = 0; i < (int) std::size (fxShort); ++i)
+        {
+            auto button = std::make_unique<LedButton> (fxShort[i]);
+            button->setClickingTogglesState (false);
+            button->setTooltip (juce::String ("Velocity FX: ") + GuitarEngine::velocityFxNames[i]);
+            button->onClick = [this, i] { velocityFxBox.setSelectedItemIndex (i, juce::sendNotificationSync); showMode(); };
+            addChildComponent (*button);
+            fxButtons.push_back (std::move (button));
+        }
         for (int i = 0; i < GuitarEngine::rhythmCount; ++i)
         {
             auto button = std::make_unique<LedButton> (GuitarEngine::rhythms[i].name);
@@ -1500,7 +1511,8 @@ void SF2PlayerEditor::paint (juce::Graphics& g)
         {
             g.setColour (SF2Look::text.withAlpha (0.85f));
             g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
-            g.drawText (heldText, keysPanel.getX() + 76, keysPanel.getY() + 8, 260, 14, juce::Justification::centredLeft);
+            // At the right end of the title row, clear of the zones' names.
+            g.drawFittedText (heldText, keysPanel.getRight() - 10 - 150, keysPanel.getY() + 7, 150, 14, juce::Justification::centredRight, 1, 0.7f);
         }
         // With the Guitar panel: what its zones are, over them.
         if (keyboard.repeatZones && keyboard.isVisible())
@@ -1511,12 +1523,12 @@ void SF2PlayerEditor::paint (juce::Graphics& g)
                 const float x1 = (float) keyboard.getX() + keyboard.getKeyStartPosition (to) + keyboard.getKeyWidth();
                 return std::pair { x0, x1 };
             };
-            const float y = (float) keyboard.getY() - (float) zoneBand + 1.0f;
+            const float y = (float) keysPanel.getY() + 6.0f;   // in the title row, over the keys
             auto zone = [&] (int from, int to, const juce::String& label, juce::Colour colour)
             {
                 const auto [x0, x1] = spanX (from, to);
                 g.setColour (colour);
-                g.fillRoundedRectangle (x0 + 1.0f, y + 11.0f, x1 - x0 - 2.0f, 2.5f, 1.0f);
+                g.fillRoundedRectangle (x0 + 1.0f, (float) keyboard.getY() - 4.0f, x1 - x0 - 2.0f, 2.5f, 1.0f);
                 g.setFont (juce::FontOptions (8.5f, juce::Font::bold));
                 g.drawText (label, juce::Rectangle<float> (x0 - 30.0f, y, x1 - x0 + 60.0f, 10.0f), juce::Justification::centred);
             };
@@ -1809,10 +1821,10 @@ void SF2PlayerEditor::refreshModeOptions()
     const bool open = guitarShown && ! collapsed[guitarSection];
     const bool chordMode = mode == GuitarEngine::chords || mode == GuitarEngine::bassAndChord || mode == GuitarEngine::bassAndPick;
     // A form: each row's name in the left column, its controls after it, extras at the right edge.
-    struct Row { juce::Label* label = nullptr; std::vector<std::pair<juce::Component*, int>> left, right; };
+    struct Row { juce::Label* label = nullptr; std::vector<std::pair<juce::Component*, int>> left, right; bool indent = false; };
     std::vector<Row> rows;
     rows.reserve (12);
-    auto row = [&rows] (juce::Label* label) -> size_t { rows.push_back ({ label, {}, {} }); return rows.size() - 1; };
+    auto row = [&rows] (juce::Label* label, bool indent = false) -> size_t { rows.push_back ({ label, {}, {}, indent }); return rows.size() - 1; };
     auto add = [&rows] (size_t r, juce::Component& c, int width) { rows[r].left.push_back ({ &c, width }); };
     auto addRight = [&rows] (size_t r, juce::Component& c, int width) { rows[r].right.push_back ({ &c, width }); };
     const int fx = velocityFxBox.getSelectedItemIndex();
@@ -1842,9 +1854,18 @@ void SF2PlayerEditor::refreshModeOptions()
         }
     }
     {
-        const auto f = row (&fxLabel);
-        add (f, velocityFxBox, 150);
-        if (fx > 0) fxDetails (f);
+        // Velocity FX: its eight choices in two rows (the strum's, the pitch's), then its settings.
+        static constexpr int order[2][4] = { { GuitarEngine::fxOff, GuitarEngine::slowStrumHigh, GuitarEngine::slowStrumLow, GuitarEngine::veloMute },
+                                             { GuitarEngine::slideUp, GuitarEngine::slideDown, GuitarEngine::bend, GuitarEngine::reverseBend } };
+        const int columnWidth = (optionsArea.getWidth() - 104 - 3 * 3) / 4;
+        for (int line = 0; line < 2; ++line)
+        {
+            const auto f = line == 0 ? row (&fxLabel) : row (nullptr, true);
+            for (int k = 0; k < 4; ++k) add (f, *fxButtons[(size_t) order[line][k]], columnWidth);
+        }
+        if (fx > 0) fxDetails (row (nullptr, true));
+        for (int i = 0; i < (int) fxButtons.size(); ++i)
+            if (fxButtons[(size_t) i]->getToggleState() != (i == fx)) fxButtons[(size_t) i]->setToggleState (i == fx, juce::dontSendNotification);
     }
     if (mode == GuitarEngine::solo)
     {
@@ -1939,6 +1960,7 @@ void SF2PlayerEditor::refreshModeOptions()
                                         &humanize.label, &humanize.slider, &tuningLabel, &tuningBox, &tremoloDepth.label,
                                         &tremoloDepth.slider, &tremoloRate.label, &tremoloRate.slider, &tremoloSyncBox,
                                         &keySwitchesLabel, &wheelsLabel };
+    for (auto& button : fxButtons) all.push_back (button.get());
     for (auto& box : switchBoxes) all.push_back (&box);
     for (auto& label : switchLabels) all.push_back (&label);
     for (auto& button : curveButtons) all.push_back (&button);
@@ -1968,6 +1990,8 @@ void SF2PlayerEditor::refreshModeOptions()
             r.label->setJustificationType (juce::Justification::centredLeft);
             setBounds (r.label, line.removeFromLeft (labelColumn));
         }
+        else if (r.indent)
+            line.removeFromLeft (labelColumn);
         if (! r.right.empty())   // at the right edge, read left to right
         {
             int total = -6;

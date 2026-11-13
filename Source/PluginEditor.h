@@ -232,6 +232,7 @@ private:
     LedButton patternButton { "Pattern" }, directButton { "Direct" }, holdButton { "Hold" };
     // Pattern's rhythms, all in view in their own box while Pattern is on; one lit at a time.
     std::vector<std::unique_ptr<LedButton>> rhythmButtons;
+    std::vector<std::unique_ptr<LedButton>> fxButtons;   // Velocity FX, all in view; one lit
     juce::Rectangle<int> patternFrame;
     bool patternBoxShown = false;
     static constexpr int patternBoxHeight = 22 + 3 * 24 + 2 * 4 + 10;
@@ -329,7 +330,7 @@ private:
     std::array<bool, 4> collapsed {};
     juce::TextButton keysButton;   // folds the keyboard
     static constexpr int keyboardHeight = 64;
-    static constexpr int zoneBand = 16;   // over the keys: the Guitar panel's zones, named   // a small keyboard: it shows what's played, a MIDI keyboard plays
+    static constexpr int zoneBand = 0;   // the guitar's zones are named in the title row, over their keys   // a small keyboard: it shows what's played, a MIDI keyboard plays
     void applyHeight();   // the window's height is its contents': it never stretches
     static constexpr int panelHeight = 118, collapsedHeight = 26, panelGap = 12;
     static constexpr int baseNeckHeight = 140, guitarHeader = 30;   // the neck and the mode buttons
