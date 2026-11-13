@@ -591,6 +591,15 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
             button->onClick = [this] { showMode(); };
             addAndMakeVisible (*button);
         }
+        for (int i = 0; i < GuitarEngine::rhythmCount; ++i)
+        {
+            auto button = std::make_unique<LedButton> (GuitarEngine::rhythms[i].name);
+            button->setClickingTogglesState (false);   // one lit at a time: the one chosen
+            button->setTooltip (juce::String ("Pattern plays ") + GuitarEngine::rhythms[i].name);
+            button->onClick = [this, i] { patternBox.setSelectedItemIndex (i, juce::sendNotificationSync); showMode(); };
+            addChildComponent (*button);
+            rhythmButtons.push_back (std::move (button));
+        }
         patternButton.setTooltip ("Pattern: the chord held in the Main zone plays the rhythm chosen below by itself, in time with Ableton");
         directButton.setTooltip ("Direct: a plain sampler, every note as it comes (the SoundFont as it is). A mode button turns it off");
         holdButton.setTooltip ("Hold: chords keep sounding after the keys are let go, until the next chord");
@@ -1349,6 +1358,7 @@ void SF2PlayerEditor::timerCallback()
         const int position = juce::roundToInt (player.parameters.getRawParameterValue ("chordPosition")->load());
         const bool chordMode = mode == GuitarEngine::chords || mode == GuitarEngine::bassAndChord || mode == GuitarEngine::bassAndPick;
         neck.setPosition (chordMode && ! directButton.getToggleState() && position < 4 ? position : -1);
+        neck.setPattern (patternButton.getToggleState() && chordMode && ! directButton.getToggleState() ? patternBox.getText() : juce::String());
     }
     neck.tick (1.0f / 20.0f);
     {
@@ -1547,6 +1557,17 @@ void SF2PlayerEditor::paint (juce::Graphics& g)
             g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
             g.drawText (juce::String (modeNames[mode]) + " OPTIONS", optionsFrame.getX() + 10, optionsFrame.getY() + 5, 240, 14,
                         juce::Justification::centredLeft);
+            if (! patternFrame.isEmpty())
+            {
+                const auto pattern = patternFrame.toFloat();
+                g.setColour (juce::Colours::black.withAlpha (0.18f));
+                g.fillRoundedRectangle (pattern, 6.0f);
+                g.setColour (juce::Colour (0xff6fe07a).withAlpha (0.18f));
+                g.drawRoundedRectangle (pattern.reduced (0.5f), 6.0f, 1.0f);
+                g.setColour (juce::Colour (0xffb8ab90));
+                g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
+                g.drawText ("PATTERN RHYTHM", patternFrame.getX() + 10, patternFrame.getY() + 5, 240, 14, juce::Justification::centredLeft);
+            }
         }
     }
 
@@ -1683,6 +1704,18 @@ void SF2PlayerEditor::resized()
         strum.label.setBounds (strum.slider.getX() - 44, guitarPanel.getY() + 4, 42, 21);
         auto inner = guitarPanel.reduced (6).withTrimmedTop (guitarHeader - 6);
         auto strip = inner.removeFromBottom (neckHeight() - 6);
+        if (patternBoxShown)   // Pattern's rhythms, under the mode's options
+        {
+            patternFrame = strip.removeFromBottom (patternBoxHeight).reduced (8, 0);
+            strip.removeFromBottom (6);
+            auto grid = patternFrame.reduced (10, 0).withTrimmedTop (22).withTrimmedBottom (10);
+            const int columns = 4, gap = 4;
+            const int width = (grid.getWidth() - gap * (columns - 1)) / columns;
+            for (int i = 0; i < (int) rhythmButtons.size(); ++i)
+                rhythmButtons[(size_t) i]->setBounds (grid.getX() + (i % columns) * (width + gap), grid.getY() + (i / columns) * (24 + 4), width, 24);
+        }
+        else
+            patternFrame = {};
         optionsFrame = strip.removeFromBottom (optionsHeight (optionRows)).reduced (8, 0);
         optionsArea = optionsFrame.reduced (8, 0).withTrimmedTop (22).withTrimmedBottom (8);
         strip.removeFromBottom (6);
@@ -1791,14 +1824,23 @@ void SF2PlayerEditor::refreshModeOptions()
         if (fx != GuitarEngine::veloMute) { add (r, fxTimeLabel, 30); add (r, fxTimeSlider, 104); }
         if (fx >= GuitarEngine::slideUp && fx <= GuitarEngine::reverseBend) { add (r, fxStepsLabel, 34); add (r, fxStepsSlider, 44); }
     };
-    if (rhythm)
+    // Pattern's own box: its rhythms, while it's on in a chord mode.
     {
-        const auto r = row (&rhythmLabel);
-        add (r, patternBox, 150);
-        if (fx == 0) { addRight (r, fxLabel, 72); addRight (r, velocityFxBox, 132); }
-        else { const auto f = row (&fxLabel); add (f, velocityFxBox, 150); fxDetails (f); }
+        const bool shown = rhythm && guitarShown;
+        if (shown != patternBoxShown)
+        {
+            patternBoxShown = shown;
+            juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<SF2PlayerEditor> (this)]
+                                             { if (safe != nullptr) { safe->applyHeight(); safe->resized(); safe->repaint(); } });
+        }
+        const int current = patternBox.getSelectedItemIndex();
+        for (int i = 0; i < (int) rhythmButtons.size(); ++i)
+        {
+            auto& button = *rhythmButtons[(size_t) i];
+            if (button.isVisible() != (shown && open)) button.setVisible (shown && open);
+            if (button.getToggleState() != (i == current)) button.setToggleState (i == current, juce::dontSendNotification);
+        }
     }
-    else
     {
         const auto f = row (&fxLabel);
         add (f, velocityFxBox, 150);

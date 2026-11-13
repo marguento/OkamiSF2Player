@@ -89,6 +89,14 @@ public:
     }
 
     // The Chord Position to shade on the board (0-3: I to IV; -1: none, as in Kbd or a non-chord mode).
+    // The rhythm Pattern plays (empty: Pattern off), shown at the display's foot.
+    void setPattern (const juce::String& rhythm)
+    {
+        if (rhythm == patternName) return;
+        patternName = rhythm;
+        repaint();
+    }
+
     void setPosition (int position)
     {
         if (position == shownPosition) return;
@@ -201,6 +209,13 @@ public:
                 g.setColour (cream.withAlpha (0.35f + 0.6f * glow));
                 g.drawText (text, r, juce::Justification::centredLeft);
             };
+            if (patternName.isNotEmpty())
+            {
+                g.setColour (juce::Colour (0xff6fe07a).withAlpha (0.85f));
+                g.setFont (juce::FontOptions (9.5f, juce::Font::bold));
+                g.drawFittedText ("PATTERN " + juce::String::fromUTF8 ("\xc2\xb7 ") + patternName,
+                                  lights.removeFromRight (lights.getWidth() * 0.62f).toNearestInt(), juce::Justification::centredRight, 1, 0.7f);
+            }
             light (lights, "PALM", colours.accent, palmGlow);   // the direction is the big arrow above
         }
 
@@ -364,4 +379,5 @@ private:
     std::array<float, 6> stringGlow {}, stringDelay {};
     std::array<bool, 6> stringPending {};
     int shownPosition = -1;
+    juce::String patternName;
 };

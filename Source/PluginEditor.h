@@ -230,6 +230,11 @@ private:
     // menu holds the parameter); Hold by the display.
     std::array<juce::TextButton, GuitarEngine::modeCount> modeButtons;
     LedButton patternButton { "Pattern" }, directButton { "Direct" }, holdButton { "Hold" };
+    // Pattern's rhythms, all in view in their own box while Pattern is on; one lit at a time.
+    std::vector<std::unique_ptr<LedButton>> rhythmButtons;
+    juce::Rectangle<int> patternFrame;
+    bool patternBoxShown = false;
+    static constexpr int patternBoxHeight = 22 + 3 * 24 + 2 * 4 + 10;
     juce::AudioProcessorValueTreeState::ButtonAttachment guitarPatternAttachment { player.parameters, "guitarPattern", patternButton },
                                                          directAttachment { player.parameters, "guitarDirect", directButton },
                                                          holdAttachment { player.parameters, "guitarHold", holdButton };
@@ -331,7 +336,7 @@ private:
     int optionRows = 3;   // the options box's rows, as laid out for the mode (and the controllers)
     static int optionsHeight (int rows) { return 24 * rows + 4 * (rows - 1) + 30; }
     // The neck, the mode buttons and the options box, under the knobs (the controllers' rows too when shown).
-    int neckHeight() const { return baseNeckHeight + optionsHeight (optionRows); }
+    int neckHeight() const { return baseNeckHeight + optionsHeight (optionRows) + (patternBoxShown ? patternBoxHeight + 6 : 0); }
     int heightOf (Section s) const
     {
         if (collapsed[(size_t) s] || (s == effectsSection && ! showEffectControls)) return collapsedHeight;
