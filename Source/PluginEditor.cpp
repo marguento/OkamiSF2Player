@@ -489,6 +489,7 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     for (auto* label : { &fxLabel, &fxVelocityLabel, &fxTimeLabel, &positionLabel, &stringsLabel, &stringsDash, &repeatStringsLabel,
                          &harmonyLabel, &addOnLabel, &rhythmLabel, &optionsNote, &fxStepsLabel, &permanentLabel, &legatoStepsLabel,
                          &legatoTimeLabel, &pedalLabel, &switchLabels[0], &switchLabels[1], &switchLabels[2], &switchLabels[3],
+                         &keySwitchesLabel, &wheelsLabel,
                          &curveLabel, &accentLabel, &releaseTimeLabel, &pbLabel, &mwLabel, &atLabel })
     {
         label->setFont (juce::FontOptions (12.0f));
@@ -1741,108 +1742,112 @@ void SF2PlayerEditor::refreshModeOptions()
     const int mode = guitarModeBox.getSelectedItemIndex();
     const bool open = guitarShown && ! collapsed[guitarSection];
     const bool chordMode = mode == GuitarEngine::chords || mode == GuitarEngine::bassAndChord || mode == GuitarEngine::bassAndPick;
-    std::vector<std::pair<juce::Component*, int>> first, second, third, fourth, fifth, sixth, seventh;   // a control and its width, per row
-    auto add = [] (auto& row, juce::Component& c, int width) { row.push_back ({ &c, width }); };
+    // A form: each row's name in the left column, its controls after it, extras at the right edge.
+    struct Row { juce::Label* label = nullptr; std::vector<std::pair<juce::Component*, int>> left, right; };
+    std::vector<Row> rows;
+    rows.reserve (12);
+    auto row = [&rows] (juce::Label* label) -> size_t { rows.push_back ({ label, {}, {} }); return rows.size() - 1; };
+    auto add = [&rows] (size_t r, juce::Component& c, int width) { rows[r].left.push_back ({ &c, width }); };
+    auto addRight = [&rows] (size_t r, juce::Component& c, int width) { rows[r].right.push_back ({ &c, width }); };
     const int fx = velocityFxBox.getSelectedItemIndex();
     const bool rhythm = patternButton.getToggleState() && chordMode;
-    if (rhythm) { add (first, rhythmLabel, 46); add (first, patternBox, 112); }
-    else add (first, fxLabel, 68);
-    add (first, velocityFxBox, rhythm ? 128 : 132);
-    if (fx > 0)
+    auto fxDetails = [&] (size_t r)
     {
-        add (first, fxVelocityLabel, 30);
-        add (first, fxVelocitySlider, 84);
-        if (fx != GuitarEngine::veloMute) { add (first, fxTimeLabel, 30); add (first, fxTimeSlider, fx >= GuitarEngine::slideUp ? 96 : 112); }
-        if (fx >= GuitarEngine::slideUp && fx <= GuitarEngine::reverseBend && ! rhythm) { add (first, fxStepsLabel, 34); add (first, fxStepsSlider, 44); }
+        add (r, fxVelocityLabel, 30);
+        add (r, fxVelocitySlider, 84);
+        if (fx != GuitarEngine::veloMute) { add (r, fxTimeLabel, 30); add (r, fxTimeSlider, 104); }
+        if (fx >= GuitarEngine::slideUp && fx <= GuitarEngine::reverseBend) { add (r, fxStepsLabel, 34); add (r, fxStepsSlider, 44); }
+    };
+    if (rhythm)
+    {
+        const auto r = row (&rhythmLabel);
+        add (r, patternBox, 150);
+        if (fx == 0) { addRight (r, fxLabel, 72); addRight (r, velocityFxBox, 132); }
+        else { const auto f = row (&fxLabel); add (f, velocityFxBox, 150); fxDetails (f); }
+    }
+    else
+    {
+        const auto f = row (&fxLabel);
+        add (f, velocityFxBox, 150);
+        if (fx > 0) fxDetails (f);
     }
     if (mode == GuitarEngine::solo)
     {
-        add (second, permanentLabel, 62);
-        add (second, soloFxBox, 72);
-        add (second, legatoStepsLabel, 34);
-        add (second, legatoStepsSlider, 44);
-        add (second, legatoTimeLabel, 30);
-        add (second, legatoTimeSlider, 96);
-        add (second, bassZoneToggle, 92);
-        add (second, bassZoneTopSlider, 48);
-        for (int i = 0; i < 4; ++i) { add (third, switchLabels[(size_t) i], i == 0 ? 22 : 26); add (third, switchBoxes[(size_t) i], 72); }
-        add (third, pedalLabel, 34);
-        add (third, pedalBox, 66);
+        const auto p = row (&permanentLabel);
+        add (p, soloFxBox, 72);
+        add (p, legatoStepsLabel, 34);
+        add (p, legatoStepsSlider, 44);
+        add (p, legatoTimeLabel, 30);
+        add (p, legatoTimeSlider, 96);
+        addRight (p, bassZoneToggle, 92);
+        addRight (p, bassZoneTopSlider, 44);
+        const auto k = row (nullptr);   // the key switches take the whole row
+        for (int i = 0; i < 4; ++i) { add (k, switchLabels[(size_t) i], i == 0 ? 22 : 28); add (k, switchBoxes[(size_t) i], 74); }
+        add (k, pedalLabel, 36);
+        add (k, pedalBox, 66);
     }
     else if (mode == GuitarEngine::harmony)
     {
-        add (second, harmonyLabel, 52);
-        add (second, harmonyBox, 140);
-        add (third, optionsNote, optionsArea.getWidth());
+        const auto h = row (&harmonyLabel);
+        add (h, harmonyBox, 150);
+        const auto n = row (nullptr);
+        add (n, optionsNote, optionsArea.getWidth());
         optionsNote.setText ("One note at a time with its interval; C5-C6 repeat it (black keys muted).", juce::dontSendNotification);
     }
     else
     {
-        add (second, positionLabel, 88);
-        for (auto& button : positionButtons) add (second, button, button.getButtonText() == "Kbd" ? 40 : 30);
+        const auto p = row (&positionLabel);
+        for (auto& button : positionButtons) add (p, button, button.getButtonText() == "Kbd" ? 40 : 30);
+        addRight (p, chordBassToggle, 104);
         if (mode == GuitarEngine::chords)
         {
-            add (second, stringsLabel, 50);
-            for (auto& button : stringButtons) add (second, button, 26);
+            const auto st = row (&stringsLabel);
+            for (auto& button : stringButtons) add (st, button, 26);
         }
-        if (mode == GuitarEngine::bassAndChord) { add (second, repeatStringsLabel, 58); add (second, repeatStringsSlider, 40); }
-        if (mode == GuitarEngine::bassAndPick) { add (second, addOnLabel, 72); add (second, addOnBox, 100); }
-        add (third, chordBassToggle, 100);
-        if (mode != GuitarEngine::chords) { add (third, alterBassToggle, 100); add (third, bassMonoToggle, 100); }
+        else
+        {
+            const auto t = mode == GuitarEngine::bassAndChord ? row (&repeatStringsLabel) : row (&addOnLabel);
+            if (mode == GuitarEngine::bassAndChord) add (t, repeatStringsSlider, 44);
+            else add (t, addOnBox, 100);
+            addRight (t, alterBassToggle, 98);
+            addRight (t, bassMonoToggle, 98);
+        }
     }
     if (showControllers)
     {
-        add (fourth, curveLabel, 64);
-        for (auto& button : curveButtons) add (fourth, button, 28);
-        add (fourth, accentLabel, 46);
-        add (fourth, accentSlider, 130);
-        add (fourth, releaseTimeLabel, 50);
-        add (fourth, releaseTimeSlider, 130);
+        const auto c = row (&curveLabel);
+        for (auto& button : curveButtons) add (c, button, 28);
+        addRight (c, accentLabel, 46);
+        addRight (c, accentSlider, 130);
+        const auto r = row (&releaseTimeLabel);
+        add (r, releaseTimeSlider, 150);
+        addRight (r, tuningLabel, 36);
+        addRight (r, tuningBox, 110);
+        const auto w = row (&wheelsLabel);
         for (auto [label, box, range] : { std::tuple { &pbLabel, &pbBox, &pbRangeSlider }, std::tuple { &mwLabel, &mwBox, &mwRangeSlider },
                                           std::tuple { &atLabel, &atBox, &atRangeSlider } })
         {
-            add (fifth, *label, 32);
-            add (fifth, *box, 94);
-            add (fifth, *range, 44);
+            add (w, *label, 28);
+            add (w, *box, 82);
+            add (w, *range, 28);
         }
-        add (sixth, doubleMix.label, 50);
-        add (sixth, doubleMix.slider, 140);
-        add (sixth, humanize.label, 64);
-        add (sixth, humanize.slider, 140);
-        add (sixth, tuningLabel, 36);
-        add (sixth, tuningBox, 110);
-        add (seventh, tremoloDepth.label, 56);
-        add (seventh, tremoloDepth.slider, 140);
-        add (seventh, tremoloRate.label, 36);
-        add (seventh, tremoloRate.slider, 140);
-        add (seventh, tremoloSyncBox, 80);
+        const auto d = row (&doubleMix.label);
+        add (d, doubleMix.slider, 150);
+        addRight (d, humanize.label, 64);
+        addRight (d, humanize.slider, 140);
+        const auto t = row (&tremoloDepth.label);
+        add (t, tremoloDepth.slider, 150);
+        addRight (t, tremoloRate.label, 36);
+        addRight (t, tremoloRate.slider, 120);
+        addRight (t, tremoloSyncBox, 74);
     }
     optionsNote.setColour (juce::Label::textColourId, SF2Look::dim);
 
-    // Use the room: a row that fits after another joins it (the on/off switches after the Velocity
-    // FX, say), and the box keeps only the rows it fills.
     {
-        const int gap = 6, width = optionsArea.getWidth();
-        auto widthOf = [gap] (const auto& row) { int w = 0; for (auto& item : row) w += item.second + gap; return w; };
-        for (auto* later : { &third, &second })
-            if (! later->empty() && widthOf (first) + 12 + widthOf (*later) <= width)
-            {
-                first.insert (first.end(), later->begin(), later->end());
-                later->clear();
-            }
-        if (! third.empty() && ! second.empty() && widthOf (second) + 12 + widthOf (third) <= width)
+        const int count = juce::jmax (1, (int) rows.size());
+        if (count != optionRows && guitarShown)
         {
-            second.insert (second.end(), third.begin(), third.end());
-            third.clear();
-        }
-    }
-    {
-        int rows = 0;
-        for (auto* row : { &first, &second, &third, &fourth, &fifth, &sixth, &seventh }) rows += row->empty() ? 0 : 1;
-        rows = juce::jmax (1, rows);
-        if (rows != optionRows && guitarShown)
-        {
-            optionRows = rows;
+            optionRows = count;
             // The box changed size: the window follows, once this layout is over.
             juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<SF2PlayerEditor> (this)]
                                              { if (safe != nullptr) { safe->applyHeight(); safe->resized(); safe->repaint(); } });
@@ -1857,7 +1862,8 @@ void SF2PlayerEditor::refreshModeOptions()
                                         &pbRangeSlider, &mwRangeSlider, &atRangeSlider, &pbBox, &mwBox, &atBox, &curveLabel, &accentLabel,
                                         &releaseTimeLabel, &pbLabel, &mwLabel, &atLabel, &doubleMix.label, &doubleMix.slider,
                                         &humanize.label, &humanize.slider, &tuningLabel, &tuningBox, &tremoloDepth.label,
-                                        &tremoloDepth.slider, &tremoloRate.label, &tremoloRate.slider, &tremoloSyncBox };
+                                        &tremoloDepth.slider, &tremoloRate.label, &tremoloRate.slider, &tremoloSyncBox,
+                                        &keySwitchesLabel, &wheelsLabel };
     for (auto& box : switchBoxes) all.push_back (&box);
     for (auto& label : switchLabels) all.push_back (&label);
     for (auto& button : curveButtons) all.push_back (&button);
@@ -1865,26 +1871,48 @@ void SF2PlayerEditor::refreshModeOptions()
     for (auto& button : positionButtons) all.push_back (&button);
     for (auto* c : all)
     {
-        const auto inRow = [c] (const auto& row) { return std::any_of (row.begin(), row.end(), [c] (auto& item) { return item.first == c; }); };
-        const bool shown = open && (inRow (first) || inRow (second) || inRow (third) || inRow (fourth) || inRow (fifth)
-                                    || inRow (sixth) || inRow (seventh));
+        bool shown = false;
+        for (const auto& r : rows)
+        {
+            shown = shown || r.label == c;
+            for (auto& item : r.left) shown = shown || item.first == c;
+            for (auto& item : r.right) shown = shown || item.first == c;
+        }
+        shown = shown && open;
         if (c->isVisible() != shown) c->setVisible (shown);
     }
-    auto place = [] (const auto& row, juce::Rectangle<int> area)
+    constexpr int labelColumn = 104;
+    auto setBounds = [] (juce::Component* c, juce::Rectangle<int> bounds) { if (c->getBounds() != bounds) c->setBounds (bounds); };
+    auto area = optionsArea;
+    for (const auto& r : rows)
     {
-        for (auto [component, width] : row)
+        auto line = area.removeFromTop (24);
+        area.removeFromTop (4);
+        if (r.label != nullptr)
         {
-            const auto bounds = area.removeFromLeft (juce::jmin (width, area.getWidth())).reduced (0, 1);
-            if (component->getBounds() != bounds) component->setBounds (bounds);
-            area.removeFromLeft (dynamic_cast<juce::TextButton*> (component) != nullptr ? 3 : 6);
+            r.label->setJustificationType (juce::Justification::centredLeft);
+            setBounds (r.label, line.removeFromLeft (labelColumn));
         }
-    };
-    auto rows = optionsArea;
-    for (auto* row : { &first, &second, &third, &fourth, &fifth, &sixth, &seventh })
-    {
-        if (row->empty()) continue;
-        place (*row, rows.removeFromTop (24));
-        rows.removeFromTop (4);
+        if (! r.right.empty())   // at the right edge, read left to right
+        {
+            int total = -6;
+            for (auto& item : r.right) total += item.second + 6;
+            auto right = line.removeFromRight (juce::jmin (total, line.getWidth()));
+            line.removeFromRight (6);
+            for (auto [component, width] : r.right)
+            {
+                if (auto* label = dynamic_cast<juce::Label*> (component)) label->setJustificationType (juce::Justification::centredRight);
+                setBounds (component, right.removeFromLeft (juce::jmin (width, right.getWidth())).reduced (0, 1));
+                right.removeFromLeft (6);
+            }
+        }
+        for (auto [component, width] : r.left)
+        {
+            if (auto* label = dynamic_cast<juce::Label*> (component); label != nullptr && component != &optionsNote)
+                label->setJustificationType (juce::Justification::centredRight);
+            setBounds (component, line.removeFromLeft (juce::jmin (width, line.getWidth())).reduced (0, 1));
+            line.removeFromLeft (dynamic_cast<juce::TextButton*> (component) != nullptr ? 3 : 5);
+        }
     }
     controllersButton.setButtonText (juce::String::fromUTF8 (showControllers ? "\xe2\x96\xbe Controllers" : "\xe2\x96\xb8 Controllers"));
     controllersButton.setVisible (open);

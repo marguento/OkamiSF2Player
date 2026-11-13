@@ -264,6 +264,7 @@ private:
                  legatoTimeSlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight },
                  bassZoneTopSlider { juce::Slider::LinearBar, juce::Slider::TextBoxLeft };
     LedButton bassZoneToggle { "Bass Zone" };
+    juce::Label keySwitchesLabel { {}, "Key switches" }, wheelsLabel { {}, "Wheels" };   // row labels in the options box
     juce::Label fxStepsLabel { {}, "Steps" }, permanentLabel { {}, "Permanent" }, legatoStepsLabel { {}, "Steps" },
                 legatoTimeLabel { {}, "Time" }, pedalLabel { {}, "Pedal" };
     std::array<juce::Label, 4> switchLabels;
