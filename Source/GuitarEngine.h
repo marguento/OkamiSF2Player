@@ -115,7 +115,6 @@ public:
         int accent = 64;
         bool hold = false;              // chords keep sounding after the keys are let go
         // True when nothing would change: the processor then plays notes directly.
-        bool isNeutral() const { return direct; }
     };
 
     struct Event

@@ -583,8 +583,8 @@ void SF2PlayerProcessor::playDeferredMidi (const GuitarEngine::Settings* guitarS
     // Collapsed controllers: the wheels go through the guitar when it gives them a job.
     auto send = [&] (const juce::MidiMessage& m, int channel)
     {
-        noteWheelPosition (m);
-        if (guitarSettings != nullptr && channel < numMidiChannels && guitarController (m, *guitarSettings, channel, at)) return;
+        if (guitarSettings == nullptr) noteWheelPosition (m);
+        else if (guitarController (m, *guitarSettings, channel, at)) return;   // it notes the position itself
         handleMidi (m);
     };
     for (int channel = 0; channel < 16 && anyCollapsed; ++channel)
@@ -987,14 +987,6 @@ void SF2PlayerProcessor::flushGuitar()
         }
     });
     guitarEngaged = false;
-    // The wheels' jobs end with the guitar: the synth takes them back where they are.
-    for (int channel = 0; channel < 16; ++channel)
-    {
-        if (lastPbAssign != 0)
-            handleMidi (juce::MidiMessage::pitchWheel (channel + 1, juce::jlimit (0, 16383, 8192 + juce::roundToInt (wheelBend[(size_t) channel] * 8192.0f))));
-        if (lastMwAssign != 0)
-            handleMidi (juce::MidiMessage::controllerEvent (channel + 1, 1, juce::roundToInt (wheelMod[(size_t) channel] * 127.0f)));
-    }
     clearWheels();
 }
 
@@ -1198,6 +1190,7 @@ void SF2PlayerProcessor::noteWheelPosition (const juce::MidiMessage& m)
     if (m.isPitchWheel()) wheelBend[(size_t) channel] = (float) (m.getPitchWheelValue() - 8192) / 8192.0f;
     else if (m.isController() && m.getControllerNumber() == 1) wheelMod[(size_t) channel] = (float) m.getControllerValue() / 127.0f;
     else if (m.isChannelPressure()) wheelPressure[(size_t) channel] = (float) m.getChannelPressureValue() / 127.0f;
+    else if (m.isResetAllControllers()) { wheelBend[(size_t) channel] = wheelMod[(size_t) channel] = wheelPressure[(size_t) channel] = 0.0f; }
 }
 
 // The wheels' offsets from their last positions and today's assignments, every channel: so an
@@ -1207,14 +1200,15 @@ void SF2PlayerProcessor::refreshWheelOffsets()
     auto value = [this] (const char* id) { return juce::roundToInt (parameters.getRawParameterValue (id)->load()); };
     const int pb = value ("pbAssign"), mw = value ("mwAssign"), at2 = value ("atAssign");
     const int pbRange = value ("pbRange"), mwRange = value ("mwRange"), atRange = value ("atRange");
-    // A wheel's job changing hands: given to the guitar, the synth's own bend or modulation goes
-    // back to rest (so it doesn't count twice); given back, the synth takes the wheel where it is.
-    if ((pb != 0) != (lastPbAssign != 0))
-        for (int channel = 0; channel < 16; ++channel)
-            handleMidi (juce::MidiMessage::pitchWheel (channel + 1, pb != 0 ? 8192 : juce::jlimit (0, 16383, 8192 + juce::roundToInt (wheelBend[(size_t) channel] * 8192.0f))));
-    if ((mw != 0) != (lastMwAssign != 0))
-        for (int channel = 0; channel < 16; ++channel)
-            handleMidi (juce::MidiMessage::controllerEvent (channel + 1, 1, mw != 0 ? 0 : juce::roundToInt (wheelMod[(size_t) channel] * 127.0f)));
+    // A wheel given to the guitar: the synth's own bend, modulation or pressure from it goes back
+    // to rest, so it doesn't count twice. Given back, the synth takes it at its next move.
+    if (pb != 0 && lastPbAssign == 0)
+        for (int channel = 0; channel < 16; ++channel) handleMidi (juce::MidiMessage::pitchWheel (channel + 1, 8192));
+    if (mw != 0 && lastMwAssign == 0)
+        for (int channel = 0; channel < 16; ++channel) handleMidi (juce::MidiMessage::controllerEvent (channel + 1, 1, 0));
+    if (at2 == 1 && lastAtAssign != 1)
+        for (int channel = 0; channel < 16; ++channel) handleMidi (juce::MidiMessage::channelPressureChange (channel + 1, 0));
+    lastAtAssign = at2;
     lastPbAssign = pb;
     lastMwAssign = mw;
     for (int channel = 0; channel < 16; ++channel)
@@ -1238,10 +1232,13 @@ void SF2PlayerProcessor::refreshWheelOffsets()
 
 void SF2PlayerProcessor::clearWheels()
 {
-    channelCents.fill (0.0f);   // the wheels stay where they are; their offsets come back with refreshWheelOffsets
+    wheelBend.fill (0.0f);   // at rest until they move again (the synth's own are at rest too, or follow their next move)
+    wheelMod.fill (0.0f);
+    wheelPressure.fill (0.0f);
+    channelCents.fill (0.0f);
     monoCents.fill (0.0f);
     appliedPitch.fill ({});
-    lastPbAssign = lastMwAssign = 0;   // a wheel with a job re-centres the (new) synth's own
+    lastPbAssign = lastMwAssign = lastAtAssign = 0;   // a wheel with a job re-centres the (new) synth's own
 }
 
 // Sixteenth-note steps: on the host's grid while it plays (so a pattern lines up with the clip),
@@ -1300,15 +1297,13 @@ void SF2PlayerProcessor::applyTremolo (int numSamples)
     static constexpr double beatsPerCycle[] = { 0.0, 2.0, 1.0, 0.5, 0.25, 2.0 / 3.0, 1.0 / 3.0 };
     const int sync = juce::jlimit (0, 6, juce::roundToInt (parameters.getRawParameterValue ("tremoloSync")->load()));
     double hz = parameters.getRawParameterValue ("tremoloRate")->load();
-    if (sync > 0)
-        if (auto* head = getPlayHead())
-            if (const auto position = head->getPosition())
-                if (const auto bpm = position->getBpm())
-                {
-                    hz = *bpm / 60.0 / beatsPerCycle[sync];
-                    if (const auto ppq = position->getPpqPosition(); ppq && position->getIsPlaying())
-                        tremoloPhase = juce::MathConstants<double>::twoPi * std::fmod (*ppq / beatsPerCycle[sync], 1.0);
-                }
+    if (sync > 0 && blockPosition)
+        if (const auto bpm = blockPosition->getBpm())
+        {
+            hz = *bpm / 60.0 / beatsPerCycle[sync];
+            if (const auto ppq = blockPosition->getPpqPosition(); ppq && blockPosition->getIsPlaying())
+                tremoloPhase = juce::MathConstants<double>::twoPi * std::fmod (*ppq / beatsPerCycle[sync], 1.0);
+        }
     const double step = juce::MathConstants<double>::twoPi * hz / sampleRate;
     auto* left = work.getWritePointer (0);
     auto* right = work.getWritePointer (1);
@@ -1334,6 +1329,9 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     // read from a copy without it (into a buffer reserved in prepareToPlay, never swapped away)
     // by everything below, the on-screen keyboard included (JUCE's helper builds a message per
     // event).
+    blockPosition = {};   // the playhead, asked once a block (the transport, Pattern, the tremolo)
+    if (auto* head = getPlayHead())
+        blockPosition = head->getPosition();
     bool hasSysex = false;
     for (const auto metadata : hostMidi)
         hasSysex = hasSysex || metadata.numBytes > 3;
@@ -1379,20 +1377,18 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         // The transport, every block: Ableton stopping lets a chord Hold kept go (its note-offs
         // don't end it, and no all-notes-off comes). Played with it stopped, a pattern runs on its own.
         bool transportStopped = false;
-        juce::Optional<juce::AudioPlayHead::PositionInfo> hostPosition;   // asked once a block (runPattern uses it too)
-        if (auto* head = getPlayHead())
-            hostPosition = head->getPosition();
-        if (hostPosition)
+        if (blockPosition)
         {
-            transportStopped = hostWasPlaying && ! hostPosition->getIsPlaying();
-            hostWasPlaying = hostPosition->getIsPlaying();
+            transportStopped = hostWasPlaying && ! blockPosition->getIsPlaying();
+            hostWasPlaying = blockPosition->getIsPlaying();
         }
 
         // The Guitar panel's notes go through its engine (strummed, voiced, humanized), unless
-        // every control is neutral: then the notes play exactly as they come.
+        // it's in Direct: then the notes play exactly as they come. One reading of the parameters
+        // for the block (the editor's guitarPlaying() asks the same).
         const auto guitarSettings = currentGuitarSettings();
-        const bool useGuitar = guitarPlaying();   // the one test: the editor asks the same
         const bool panelShown = guitarPanelActive();
+        const bool useGuitar = panelShown && ! guitarSettings.direct;
         if (! useGuitar && guitarEngaged)
             flushGuitar();
         if (! useGuitar)   // asked for the guitar as it stopped playing: dropped, never played late
@@ -1468,7 +1464,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                     if (count >= maxItems)   // past the list (a flood): played after it, at the block's end, in order
                     {
                         if (overflowCount < (int) overflowIndices.size()) overflowIndices[(size_t) overflowCount++] = index;
-                        else handleMidi (message);   // past even that: now, rather than lost
+                        else if (message.isNoteOff()) handleMidi (message);   // past even that: a note still ends (now)
                         continue;
                     }
                     Item item { juce::jlimit (0, numSamples, metadata.samplePosition), order++, {}, metadata.numBytes, {}, false };
@@ -1495,7 +1491,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                 guitar.audition (guitarSettings, 0, &note, 1, 100, blockStart, (juce::int64) (sampleRate * 0.7));
             }
             if (guitarSettings.pattern && guitarSettings.mode != GuitarEngine::solo && guitarSettings.mode != GuitarEngine::harmony)
-                runPattern (guitarSettings, hostPosition, blockStart, numSamples);
+                runPattern (guitarSettings, blockPosition, blockStart, numSamples);
             GuitarEngine::Event due;
             while (count < maxItems && guitar.pop (blockEnd, due))
                 items[(size_t) count++] = { (int) juce::jlimit ((juce::int64) 0, (juce::int64) numSamples - 1, due.time - blockStart),
@@ -1550,7 +1546,8 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                     tweakNewVoices (note.isDouble ? twinChannel : note.channel, note.detuneCents, note.palmMuted, pan, attenuation, before);
                 applyPitch (blockStart + item.position, before);   // a slide or bend starts with the note
             }
-            // A flood's messages past the list: after the ones before them, so the last value sent stays.
+            // A flood's messages past the list: after the ones before them (so the last value sent
+            // stays), each at its own sample when that's still ahead.
             if (overflowCount > 0)
             {
                 int i = 0, next = 0;
@@ -1559,6 +1556,8 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                     if (next >= overflowCount) break;
                     if (i++ != overflowIndices[(size_t) next]) continue;
                     ++next;
+                    const int at = juce::jlimit (0, numSamples, metadata.samplePosition);
+                    if (at > position) { render (position, at); position = at; }
                     handleMidi (juce::MidiMessage (metadata.data, metadata.numBytes));
                 }
             }
@@ -1693,8 +1692,13 @@ void SF2PlayerProcessor::setStateInformation (const void* data, int sizeInBytes)
     auto xml = getXmlFromBinary (data, sizeInBytes);
     if (xml == nullptr || ! xml->hasTagName (parameters.state.getType()))
         return;
-    const juce::ScopedLock startLocked (startLock);   // the editor's first-try start can't land on top of it
-    stateRestored = true;   // a saved project: its own settings, never the first-try start
+    {
+        // A saved project: its own settings, never the first-try start. The lock waits for a start
+        // being given (its edits then land before this state replaces them) and is let go at once,
+        // never held through the load.
+        const juce::ScopedLock startLocked (startLock);
+        stateRestored = true;
+    }
 
     auto state = juce::ValueTree::fromXml (*xml);
     // The writer first, the parameters only once this project's file is published: a save

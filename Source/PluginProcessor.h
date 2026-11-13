@@ -116,8 +116,8 @@ public:
     // saved before they existed plays as it did. Only while the panel hasn't played yet (a start
     // given later would change what was recorded). Atomics: hosts restore state on any thread.
     std::atomic<bool> stateRestored { false }, guitarStartGiven { false };
-    std::atomic<bool> playedGuitar { false };
-    juce::CriticalSection startLock;   // the start's check and edits vs. a state being restored (never the audio thread)   // the panel already played notes: too late for the start
+    std::atomic<bool> playedGuitar { false };   // the panel already played notes: too late for the start
+    juce::CriticalSection startLock;   // the start's check and edits vs. a state being restored (never the audio thread)
     // The Guitar panel is playing (shown and not Direct): what the processor's blocks go by.
     bool guitarPlaying() const { return guitarPanelActive() && parameters.getRawParameterValue ("guitarDirect")->load() < 0.5f; }
 
@@ -221,8 +221,9 @@ private:
     void refreshWheelOffsets();
     void clearWheels();
     void noteWheelPosition (const juce::MidiMessage&);
-    int lastPbAssign = 0, lastMwAssign = 0;   // refreshWheelOffsets: an assignment just taken resets the synth's own wheel
+    int lastPbAssign = 0, lastMwAssign = 0, lastAtAssign = 0;   // refreshWheelOffsets: an assignment just taken resets the synth's own wheel
     bool hostWasPlaying = false;   // the transport's state at the last block (audio thread)
+    juce::Optional<juce::AudioPlayHead::PositionInfo> blockPosition;   // this block's playhead (audio thread)
     // A guitar block's events (the clip's and the engine's), sorted by time. Audio thread.
     struct GuitarItem { int position, order; juce::uint8 bytes[3]; int size; GuitarEngine::Event note; bool fromGuitar; };
     std::array<GuitarItem, 2048> guitarItems;
