@@ -151,6 +151,7 @@ void RangeKeyboard::drawWhiteNote (int note, juce::Graphics& g, juce::Rectangle<
     g.fillRect (key);
     g.setColour (SF2Look::background);
     g.drawVerticalLine ((int) area.getRight(), area.getY(), area.getBottom());
+    if (isSounding (note)) drawSoundingDot (g, area, true);
     // Its name at the bottom: every white key's letter, each C with its octave (C3 is middle C, as in Ableton).
     if (area.getWidth() >= 9.0f)
     {
@@ -177,6 +178,23 @@ void RangeKeyboard::drawBlackNote (int note, juce::Graphics& g, juce::Rectangle<
     else
         g.setColour (fill);
     g.fillRoundedRectangle (area, 1.5f);
+    if (isSounding (note)) drawSoundingDot (g, area, false);
+}
+
+// The neck's green dot on a key the guitar sounds: low on a white key (above its name), near the
+// tip of a black one.
+void RangeKeyboard::drawSoundingDot (juce::Graphics& g, juce::Rectangle<float> key, bool white) const
+{
+    const float size = juce::jlimit (5.0f, 9.0f, key.getWidth() - 3.0f);
+    const auto centre = juce::Point<float> (key.getCentreX(), white ? key.getBottom() - 19.0f : key.getBottom() - size);
+    const auto dot = juce::Rectangle<float> (size, size).withCentre (centre);
+    const juce::Colour green (0xff62d86e);
+    g.setColour (green.withAlpha (0.35f * soundingAlpha));
+    g.fillEllipse (dot.expanded (2.5f));
+    g.setColour (green.withAlpha (soundingAlpha));
+    g.fillEllipse (dot);
+    g.setColour (juce::Colours::black.withAlpha (0.4f * soundingAlpha));
+    g.drawEllipse (dot, 0.8f);
 }
 
 // ---------------------------------------------------------------------------- knobs
@@ -1309,6 +1327,21 @@ void SF2PlayerEditor::timerCallback()
         neck.show (notes.data(), view.count.load(), view.pitchClasses.load(), view.bass.load(), view.up.load(),
                    view.strummed.load(), view.palm.load(), positionFret[juce::jlimit (0, 4, juce::roundToInt (player.parameters.getRawParameterValue ("chordPosition")->load()))],
                    GuitarEngine::tuningOf (player.guitarTuning()));
+        // The keyboard marks the same notes, in the neck's green.
+        const int count = juce::jlimit (0, 6, view.count.load());
+        for (int i = 0; i < 6; ++i) keyboard.sounding[(size_t) i] = i < count ? notes[(size_t) i] : -1;
+        soundingAge = 0.0f;
+    }
+    {
+        // Bright for the neck's three seconds, then fading out over one (only with the Guitar panel playing).
+        soundingAge += 1.0f / 20.0f;
+        const float alpha = ! guitarShown || directButton.getToggleState() ? 0.0f
+                          : soundingAge < 3.0f ? 1.0f : juce::jmax (0.0f, 1.0f - (soundingAge - 3.0f));
+        if (std::abs (alpha - keyboard.soundingAlpha) > 0.01f)
+        {
+            keyboard.soundingAlpha = alpha;
+            keyboard.repaint();
+        }
     }
     {
         // The board shades the Chord Position while a chord mode plays (not Kbd, not Direct).

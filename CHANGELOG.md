@@ -52,6 +52,8 @@ release bumps it and adds an entry here: one line per change a player would noti
 - **Help built in:** the ? button opens a guide (Start, Guitar, Controls) and About; the header
   explains whatever control the mouse is over (turn it off in the ? menu).
 - Reverb preset "Short Room" and chorus preset "Bright", for acoustic guitar.
+- The keyboard follows the neck: the notes the guitar sounds get the neck's green dots on their keys
+  (the keys you press stay orange).
 - The keyboard names its keys (each C with its octave, as Ableton counts them), lights the keys played,
   shows the notes held and their chord in its title, and with a guitar names its zones over them.
 - A compact on-screen keyboard in its own **PIANO** section, folding to its title (it shows what's

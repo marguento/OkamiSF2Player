@@ -72,6 +72,11 @@ struct RangeKeyboard : juce::MidiKeyboardComponent
     int lowKey = 0, highKey = 127;
     int splitKey = -1;   // Split: the keys below it play the second instrument (tinted)
     bool repeatZones = false;   // the Guitar panel's Repeat zones (C1-D#1, C5-C6), tinted
+    // What the guitar sounds (the notes on the neck), marked with the neck's green dots, fading as it does.
+    std::array<int, 6> sounding { -1, -1, -1, -1, -1, -1 };
+    float soundingAlpha = 0.0f;
+    bool isSounding (int note) const { return soundingAlpha > 0.0f && std::find (sounding.begin(), sounding.end(), note) != sounding.end(); }
+    void drawSoundingDot (juce::Graphics&, juce::Rectangle<float> key, bool white) const;
 
     void drawWhiteNote (int note, juce::Graphics&, juce::Rectangle<float> area, bool isDown, bool isOver,
                         juce::Colour lineColour, juce::Colour textColour) override;
@@ -334,6 +339,7 @@ private:
     }
     GuitarNeck neck { { SF2Look::text, SF2Look::dim, SF2Look::accent, SF2Look::panel, SF2Look::line.brighter (0.35f) } };
     int shownGuitarSequence = 0;
+    float soundingAge = 99.0f;   // seconds since the guitar's last notes, for the keyboard's dots
     std::array<int, 6> auditionNotes {};   // the drawn chord, played by a click on its name
     int auditionCount = 0, auditionTicks = 0;
     void stopAudition();
