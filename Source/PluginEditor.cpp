@@ -156,9 +156,9 @@ void RangeKeyboard::drawWhiteNote (int note, juce::Graphics& g, juce::Rectangle<
     {
         const bool c = note % 12 == 0;
         const auto name = c ? juce::MidiMessage::getMidiNoteName (note, true, true, 3) : juce::MidiMessage::getMidiNoteName (note, true, false, 3);
-        g.setColour (juce::Colours::black.withAlpha (isDown ? 0.75f : c ? 0.6f : 0.28f));
-        g.setFont (juce::FontOptions (c ? 9.5f : 8.5f, c ? juce::Font::bold : juce::Font::plain));
-        g.drawFittedText (name, key.withTop (key.getBottom() - 13.0f).toNearestInt(), juce::Justification::centred, 1, 0.7f);
+        g.setColour (juce::Colours::black.withAlpha (isDown ? 0.75f : c ? 0.62f : 0.22f));
+        g.setFont (juce::FontOptions (c ? 8.5f : 7.5f));
+        g.drawFittedText (name, key.withTop (key.getBottom() - 12.0f).toNearestInt(), juce::Justification::centred, 1, 0.55f);
     }
 }
 
