@@ -99,6 +99,30 @@ struct FolderTab : juce::TextButton
     }
 };
 
+// The presets' menu: opened, it ticks and highlights the preset in use, even edited since
+// (nothing is selected then, so a plain ComboBox would mark none).
+struct PresetBox : juce::ComboBox
+{
+    int markedId = 0;   // the preset the controls came from
+    void showPopup() override
+    {
+        auto menu = *getRootMenu();
+        const int current = getSelectedId() != 0 ? getSelectedId() : markedId;
+        for (juce::PopupMenu::MenuItemIterator it (menu, true); it.next();)
+            if (auto& item = it.getItem(); item.itemID != 0) item.isTicked = item.itemID == current;
+        menu.setLookAndFeel (&getLookAndFeel());
+        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withItemThatMustBeVisible (current)
+                                .withInitiallySelectedItem (current).withMinimumWidth (getWidth()).withMaximumNumColumns (1)
+                                .withStandardItemHeight (juce::jmax (18, getHeight())),
+                            [safe = juce::Component::SafePointer<PresetBox> (this)] (int result)
+                            {
+                                if (safe == nullptr) return;
+                                safe->hidePopup();
+                                if (result != 0) safe->setSelectedId (result, juce::sendNotificationSync);
+                            });
+    }
+};
+
 struct RangeKeyboard : juce::MidiKeyboardComponent, juce::TooltipClient
 {
     using MidiKeyboardComponent::MidiKeyboardComponent;
@@ -260,7 +284,7 @@ private:
     juce::ComboBox guitarPanelBox, guitarModeBox, strumDirectionBox, tremoloSyncBox, patternBox, tuningBox;
     juce::ToggleButton velocityStringsToggle { "Velocity strings" };
     // Starting points for the Guitar panel: they set its controls (Off: all neutral).
-    juce::ComboBox guitarPresets;
+    PresetBox guitarPresets;
     // Presets: the built-in ones, then the user's (kept in the settings), Save current as..., Delete.
     std::vector<GuitarPresets::Preset> userPresets;
     static constexpr int builtInPresetId = 1, userPresetId = 200, savePresetId = 900, deletePresetId = 1000;

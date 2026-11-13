@@ -1296,9 +1296,13 @@ void SF2PlayerEditor::showGuitarPreset()
         if (guitarPresets.getSelectedId() != found) guitarPresets.setSelectedId (found, juce::dontSendNotification);
         // Off (Direct) is where every panel starts: leaving it isn't editing it.
         lastPresetName = found == builtInPresetId ? juce::String() : guitarPresets.getItemText (guitarPresets.indexOfItemId (found));
+        guitarPresets.markedId = found;
         return;
     }
-    // Changed since: the preset it came from, marked edited (save it to keep it).
+    // Changed since: the preset it came from, marked edited (save it to keep it), and ticked in the menu.
+    guitarPresets.markedId = 0;
+    for (int i = 0; i < guitarPresets.getNumItems() && lastPresetName.isNotEmpty(); ++i)
+        if (guitarPresets.getItemText (i) == lastPresetName) guitarPresets.markedId = guitarPresets.getItemId (i);
     const auto text = lastPresetName.isNotEmpty() ? lastPresetName + " (edited)" : juce::String::fromUTF8 ("Presets\xe2\x80\xa6");
     if (guitarPresets.getSelectedId() != 0 || guitarPresets.getTextWhenNothingSelected() != text)
     {
