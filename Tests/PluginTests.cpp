@@ -1136,6 +1136,23 @@ int main()
             expect (bent && soft && curved && zone, "Velocity FX Bend, the velocity curve, and the bass zone");
         }
 
+        // A chord held while the position changes (a pattern playing): the next stroke takes the new shape.
+        {
+            GuitarEngine g;
+            g.prepare (rate);
+            auto s = chordSettings (GuitarEngine::chords);
+            s.pattern = true;
+            take (g, s, { 50, 54, 57 }, 0);   // D, held
+            g.stroke (s, 0, GuitarEngine::strokeDown, 100, second);
+            const auto first = notesOf (drain (g, second * 2));
+            s.position = 3;
+            g.advance (s, second * 2);
+            g.stroke (s, 0, GuitarEngine::strokeDown, 100, second * 2);
+            const auto second2 = notesOf (drain (g, second * 3));
+            expect (! first.empty() && ! second2.empty() && first != second2 && second2.back() > first.back(),
+                    "Chords: changing the position while a chord is held reshapes the next strokes");
+        }
+
         // Hold: the chord rings after the keys are let go, until the next chord.
         {
             GuitarEngine g;

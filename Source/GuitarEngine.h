@@ -360,6 +360,18 @@ public:
                 c.latched = false;
                 c.voicing = {};
             }
+            // The position, tuning or Chord/Bass changed under a chord still held (a pattern
+            // playing, say): the next strokes take the new shape.
+            if (chordMode && c.voicing.valid() && c.chordKeys.count > 0
+                && (s.position != c.voicedPosition || s.tuning != c.voicedTuning || s.chordBass != c.voicedChordBass))
+            {
+                const auto chord = recognize (c.chordKeys.keys.data(), c.chordKeys.count, s.chordBass);
+                c.voicing = voiceChord (chord, s.position, c.chordKeys.keys[0], tuningOf (s.tuning));
+                c.voicedPosition = s.position;
+                c.voicedTuning = s.tuning;
+                c.voicedChordBass = s.chordBass;
+                showVoicing (c.voicing, false, false);
+            }
             if (c.triggerAt < 0 || c.triggerAt > until)
                 continue;
             const auto at = c.triggerAt;
@@ -769,6 +781,9 @@ private:
         juce::int64 triggerAt = -1;   // when the gathering window closes (-1: none)
         bool releaseAfterTrigger = false, latched = false, chordMode = false, hold = false, patternRunning = false;
         Voicing voicing;         // the chord held, as played
+        Keys chordKeys;          // its keys, low to high, and what it was voiced with
+        int voicedPosition = -1, voicedTuning = -1;
+        bool voicedChordBass = false;
         int lastChordMask = -1;  // Alter Bass: the previous chord, and whether its Bass II came last
         bool lastWasBassTwo = false;
         std::array<StringNote, 6> strings {};
@@ -941,6 +956,10 @@ private:
         std::sort (keys.keys.begin(), keys.keys.begin() + keys.count);
         const auto chord = recognize (keys.keys.data(), keys.count, s.chordBass);
         c.voicing = voiceChord (chord, s.position, keys.keys[0], tuningOf (s.tuning));
+        c.chordKeys = keys;
+        c.voicedPosition = s.position;
+        c.voicedTuning = s.tuning;
+        c.voicedChordBass = s.chordBass;
         if (s.pattern && ! c.patternRunning) { c.since = time; c.patternRunning = true; }   // the rhythm starts with the chord
         if (! c.voicing.valid() || s.pattern) { showVoicing (c.voicing, false, false); return; }
         const int velocity = c.velocity;
