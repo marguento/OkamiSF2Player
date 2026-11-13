@@ -680,6 +680,18 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     refreshPanelButton();
     neck.setShape (player.guitarShapeFrets(), GuitarEngine::tuningOf (player.guitarTuning()));
     showGuitarPreset();
+    // A value beside a slider is shown, not typed into (a box that took a click for a text field
+    // only confused); a double-click on the slider takes it back to neutral.
+    for (auto* child : getChildren())
+        if (auto* slider = dynamic_cast<juce::Slider*> (child))
+        {
+            slider->setTextBoxIsEditable (false);
+            if (slider->getSliderStyle() == juce::Slider::LinearHorizontal)
+                slider->setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+        }
+    gainSlider.setDoubleClickReturnValue (true, 0.0);
+    toneSlider.setDoubleClickReturnValue (true, toneSlider.getMaximum());
+    layerLevelSlider.setDoubleClickReturnValue (true, 0.0);
     juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<SF2PlayerEditor> (this)]
                                      { if (safe != nullptr) safe->fitToScreen(); });
 }
