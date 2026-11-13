@@ -173,7 +173,7 @@ private:
                 { "Bass & Chord", "The chord's bass plays. C5: the bass, D5: the second bass (the fifth), the other Repeat keys strum the upper strings." },
                 { "Bass & Pick", "The chord's bass plays. C5 and D5 the basses, E5, F5, G5 and A5 pick the 4th to the 1st string; C1 to D#1 strum the upper four." },
                 { "Pattern", "With the chord held in the Main zone, the rhythm chosen in the options plays by itself, in time with Ableton." },
-                { "Direct", "A plain sampler: every note as it comes, the SoundFont as it is. It's on until you choose a mode." },
+                { "Direct", "A plain sampler: every note as it comes, the SoundFont as it is. A new guitar starts in Chords with Pattern and Hold on instead; choosing a mode turns Direct off." },
                 { "Hold", "Chords keep sounding after the keys are let go, until the next chord." },
                 { "Options (the box under the modes)", "" },
                 { "Velocity FX", "What a note gets from a velocity (90 by default; hit hard): a slow strum, a slide into it from below or from above, a bend up to it, a reverse bend (pre-bent, released to it); under a velocity (45): a slow strum, or muted (Velo Mute). Time and Steps set how long and how far. The display names it when it fires." },

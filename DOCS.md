@@ -144,8 +144,19 @@ MIDI programs 24-31, or an instrument named "guitar" or "gtr"). The button besid
 says what it got, **Guitar** or **Standard** (with "· auto" when detected). For a SoundFont that doesn't follow General MIDI (a
 guitar on program 0, a piano named "Gtr"), click it and choose **Guitar panel** or **Standard**;
 **Automatic** goes back to detecting. The choice is remembered for that instrument of that SoundFont, in every
-project. The panel starts in **Direct**: every note as it comes, the SoundFont exactly as it is.
-Choosing a mode turns Direct off.
+project. A new guitar starts ready to try: **Chords** with **Pattern** (Folk) and **Hold** on, so a
+chord in the Main zone keeps strumming by itself. **Direct** (in the title bar) turns the panel
+into a plain sampler: every note as it comes, the SoundFont exactly as it is; choosing a mode turns
+it off. What you set is saved with the project.
+
+**The neck and the keyboard follow what the guitar plays:** each stroke lights the strings on the
+neck and, for a moment, the keys it sounds on the keyboard below (green dots stay on them while
+the chord rings).
+
+A guitar SoundFont to try it with:
+[MusicLab RealGuitar Acoustic Guitars](https://musical-artifacts.com/artifacts/3655) (Simone
+Piervergili, 50 MB, steel and nylon guitars). Its license there is "gray": it was sampled from a
+commercial instrument, so check that its use is fine for you.
 
 **Zones.** The **Main zone** (E1-B4, MIDI 40-83: the guitar's own range) plays notes or takes
 chords. The **Repeat zones** (C1-D#1 and C5-C6, tinted on the keyboard) repeat what the Main zone

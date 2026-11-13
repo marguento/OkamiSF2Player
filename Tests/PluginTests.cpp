@@ -1105,6 +1105,32 @@ int main()
                     juce::String ((int) picked.ons.size()) + " tremolo picks, slide at " + juce::String (mid));
         }
 
+        // Slow if Hard on Pattern's strokes: a hard chord's strokes take Time, a soft one's don't.
+        {
+            auto spread = [&] (int velocity)
+            {
+                GuitarEngine g;
+                g.prepare (rate);
+                auto p = chordSettings (GuitarEngine::chords);
+                p.pattern = true;
+                p.strumMs = 30.0f;
+                p.velocityFx = GuitarEngine::slowStrumHigh;
+                p.fxVelocity = 90;
+                p.fxTimeMs = 150.0f;
+                take (g, p, { 60, 64, 67 }, 0, velocity);
+                drain (g, second);
+                g.stroke (p, 0, GuitarEngine::strokeDown, g.heldVelocity (0), second);
+                const auto h = drain (g, second * 2);
+                juce::int64 low = std::numeric_limits<juce::int64>::max(), high = 0;
+                for (auto [t, n] : h.ons) { low = juce::jmin (low, t); high = juce::jmax (high, t); }
+                std::printf ("    velocity %d: %d notes over %.0f ms\n", velocity, (int) h.ons.size(), (double) (high - low) * 1000.0 / rate);
+                return (double) (high - low) * 1000.0 / rate;
+            };
+            const double hard = spread (120), soft = spread (60);
+            expect (hard > 100.0 && soft < 60.0, "Slow if Hard slows Pattern's strokes of a hard chord only",
+                    juce::String (hard, 0) + " ms vs " + juce::String (soft, 0) + " ms");
+        }
+
         // Velocity FX in the chord modes: Velo Mute mutes a soft chord (not a hard one), Slide Down
         // comes into the note from above, fret by fret; and leaving the chord modes lets a chord
         // latched by Hold go.
@@ -1255,6 +1281,8 @@ int main()
             Player patterned (testFont);
             patterned.set ("guitarPanel", 1);
             patterned.set ("guitarDirect", 0);
+            patterned.set ("guitarPattern", 0);   // the panel starts with Pattern and Hold on
+            patterned.set ("guitarHold", 0);
             patterned.set ("guitarMode", 2);
             patterned.set ("guitarPattern", 1);
             patterned.set ("strumPattern", 0);   // Down Eighths
@@ -1280,9 +1308,12 @@ int main()
             });
         };
         Player plain (testFont), neutral (testFont), strummed (testFont);
-        neutral.set ("guitarPanel", 1);   // Direct, as it starts
+        neutral.set ("guitarPanel", 1);
+        neutral.set ("guitarDirect", 1);   // Direct
         strummed.set ("guitarPanel", 1);
         strummed.set ("guitarDirect", 0);
+        strummed.set ("guitarPattern", 0);   // the panel starts with Pattern and Hold on
+        strummed.set ("guitarHold", 0);
         strummed.set ("strum", 60);
         const auto a = chord (plain), b = chord (neutral), c = chord (strummed);
         expect (a == b, "Guitar: the panel on in Direct changes nothing (bit for bit)");
@@ -1296,6 +1327,8 @@ int main()
             Player doubled (testFont);
             doubled.set ("guitarPanel", 1);
             doubled.set ("guitarDirect", 0);
+            doubled.set ("guitarPattern", 0);   // the panel starts with Pattern and Hold on
+            doubled.set ("guitarHold", 0);
             doubled.set ("guitarMode", 0);   // Solo: the note as it comes, and its twin
             doubled.set ("doubleMix", 1.0f);
             juce::AudioBuffer<float> buffer (6, block);

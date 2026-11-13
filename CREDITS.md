@@ -20,6 +20,19 @@ brass and woodwinds shaped a lot of music, ours included. Okami SF2 Player isn't
 or endorsed by Roland, contains none of its software or samples, and doesn't run the original
 plugin: it plays SoundFonts. Edirol and Roland are trademarks of Roland Corporation.
 
+## MusicLab RealGuitar
+
+The Guitar panel plays SoundFonts the way **MusicLab RealGuitar** plays its guitars: its modes
+(Solo, Harmony, Chords, Bass & Chord, Bass & Pick), its keyboard zones, Chord Position, Velocity
+Switch FX and Pattern follow RealGuitar's design, written anew from its public manual. No code,
+samples or artwork come from it, and Okami SF2 Player isn't affiliated with or endorsed by
+MusicLab. MusicLab and RealGuitar are trademarks of MusicLab, Inc.
+
+A guitar SoundFont to try the panel with, not part of this project:
+[MusicLab RealGuitar Acoustic Guitars](https://musical-artifacts.com/artifacts/3655), shared by
+Simone Piervergili on musical-artifacts.com, where its license is marked "gray" (sampled from a
+commercial instrument).
+
 ## The HQ Orchestral SoundFont Collection
 
 Okami SF2 Player was made to play the

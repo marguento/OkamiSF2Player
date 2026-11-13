@@ -640,6 +640,8 @@ public:
         int fx = fxOff;              // the Velocity Switch FX it fired, if any
     };
     const LastPlayed& lastPlayed() const { return last; }
+    // A velocity as the engine hears it (after Accent and the curve): what Velocity FX compare.
+    static int heardVelocity (const Settings& s, int velocity) { return shapeVelocity (s, velocity); }
 
     // A chord is held (or kept by Hold) on `channel`: since when (-1: none) and how hard.
     juce::int64 heldSince (int channel) const

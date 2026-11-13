@@ -140,6 +140,7 @@ struct RangeKeyboard : juce::MidiKeyboardComponent, juce::TooltipClient
     // What the guitar sounds (the notes on the neck), marked with the neck's green dots, fading as it does.
     std::array<int, 6> sounding { -1, -1, -1, -1, -1, -1 };
     float soundingAlpha = 0.0f;
+    float strikeAlpha = 0.0f;   // each stroke lights the keys it plays, briefly, as if pressed
     bool isSounding (int note) const { return soundingAlpha > 0.0f && std::find (sounding.begin(), sounding.end(), note) != sounding.end(); }
     void drawSoundingDot (juce::Graphics&, juce::Rectangle<float> key, bool white) const;
 
@@ -327,6 +328,7 @@ private:
     std::array<juce::TextButton, 6> stringButtons;
     void clickString (int index);
     LedButton chordBassToggle { "Chord/Bass" }, alterBassToggle { "Alter Bass" }, bassMonoToggle { "Bass Mono" };
+    juce::Label lastVelocityLabel;   // the last note's velocity, lit when it sets the FX off
     juce::Label fxLabel { {}, "Velocity FX" }, fxVelocityLabel { {}, "Velo" }, fxTimeLabel { {}, "Time" },
                 positionLabel { {}, "Chord Position" }, stringsLabel { {}, "Strings" }, stringsDash { {}, "-" },
                 repeatStringsLabel { {}, "Strings #" }, harmonyLabel { {}, "Interval" }, addOnLabel { {}, "Add-on keys" },

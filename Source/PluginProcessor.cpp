@@ -90,11 +90,11 @@ static juce::AudioProcessorValueTreeState::ParameterLayout makeLayout()
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "guitarPanel", 6 }, "Guitar Panel",
                                                               juce::StringArray { "Auto", "On", "Off" }, 0));
     // Direct: a plain sampler, the guitar engine off (the default: the SoundFont as it is).
-    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "guitarDirect", 6 }, "Guitar Direct", true));
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "guitarDirect", 6 }, "Guitar Direct", false));   // a new guitar starts playing: Chords, Pattern, Hold
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "guitarMode", 6 }, "Guitar Mode",
                                                               juce::StringArray { "Solo", "Harmony", "Chords", "Bass & Chord", "Bass & Pick" }, 2));
-    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "guitarPattern", 6 }, "Guitar Pattern", false));
-    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "guitarHold", 6 }, "Guitar Hold", false));
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "guitarPattern", 6 }, "Guitar Pattern", true));
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "guitarHold", 6 }, "Guitar Hold", true));
     {
         juce::StringArray names;
         for (const char* name : GuitarEngine::positionNames) names.add (name);

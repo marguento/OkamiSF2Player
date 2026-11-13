@@ -29,7 +29,10 @@ release bumps it and adds an entry here: one line per change a player would noti
     own, Harmony's intervals as switches, and VELOCITY FX beside them.
   - Pattern and Hold dim in Solo and Harmony (they play a held chord); switching to those modes
     lets a held chord go.
-  - A preset changed after it was chosen reads "(edited)".
+  - A preset changed after it was chosen reads "(edited)", and the menu ticks it.
+  - A new guitar starts in **Chords** with **Pattern** and **Hold** on, ready to try (saved
+    projects keep their own settings).
+  - Each stroke lights the keys it plays on the keyboard, not only the neck.
   - Hints for the keyboard (each key's zone and job), the zones and the section titles; PLAY says
     what it changes ("changes nothing" at its defaults); a very-soft-notes warning no longer
     covers the zones' names.

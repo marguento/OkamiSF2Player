@@ -23,7 +23,14 @@ struct EditorTestAccess
     static void zones (SF2PlayerEditor& editor) { editor.keyboard.repeatZones = true; editor.player.keyboardState.noteOn (1, 60, 0.8f); editor.player.keyboardState.noteOn (1, 64, 0.8f); editor.player.keyboardState.noteOn (1, 67, 0.8f); editor.timerCallback(); editor.keyboard.repeatZones = true; }
     static void settle (SF2PlayerEditor& editor) { for (int i = 0; i < 2; ++i) { editor.resized(); editor.applyHeight(); } editor.resized(); }
     static void sounding (SF2PlayerEditor& editor) { editor.keyboard.sounding = { 48, 52, 55, 60, 64, 58 }; editor.keyboard.soundingAlpha = 1.0f; }
-    static void foldSound (SF2PlayerEditor& editor) { if (! editor.soundFolded) editor.toggleSound(); }
+    // SOUNDFONT folded or open for this snapshot only (not saved in the settings).
+    static void foldSound (SF2PlayerEditor& editor, bool folded)
+    {
+        editor.soundFolded = folded;
+        editor.showSoundContents();
+        editor.applyHeight();
+        editor.resized();
+    }
     // Picks a preset and prints what the menu shows, and any control that doesn't match it.
     static void preset (SF2PlayerEditor& e, int id)
     {
@@ -189,8 +196,8 @@ int main (int argc, char** argv)
             EditorTestAccess::guide (*dynamic_cast<SF2PlayerEditor*> (editor.get()), std::atoi (page));
         if (const char* hint = std::getenv ("HINT"))
             EditorTestAccess::hint (*dynamic_cast<SF2PlayerEditor*> (editor.get()), juce::String (hint));
-        if (std::getenv ("SOUNDFOLD") != nullptr)
-            if (auto* e = dynamic_cast<SF2PlayerEditor*> (editor.get())) EditorTestAccess::foldSound (*e);
+        if (auto* e = dynamic_cast<SF2PlayerEditor*> (editor.get()))   // open unless SOUNDFOLD, whatever the settings say
+            EditorTestAccess::foldSound (*e, std::getenv ("SOUNDFOLD") != nullptr);
         if (const char* id = std::getenv ("PRESETPICK"))
             if (auto* e = dynamic_cast<SF2PlayerEditor*> (editor.get())) EditorTestAccess::preset (*e, std::atoi (id));
         if (std::getenv ("GENERALFOLD") != nullptr)

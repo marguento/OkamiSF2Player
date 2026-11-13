@@ -38,7 +38,15 @@ struct Preset
     bool user = false;
 };
 
-// The built-in presets, each a different way to play: only what differs from the defaults.
+// What a preset that doesn't name them sets: Direct, Pattern and Hold off (their defaults are on,
+// for a first try, but a preset is a sound of its own).
+inline const std::map<juce::String, float>& base()
+{
+    static const std::map<juce::String, float> values { { "guitarDirect", 0 }, { "guitarPattern", 0 }, { "guitarHold", 0 } };
+    return values;
+}
+
+// The built-in presets, each a different way to play: only what differs from base() and the defaults.
 inline const std::vector<Preset>& builtIns()
 {
     using E = GuitarEngine;

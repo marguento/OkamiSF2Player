@@ -15,11 +15,21 @@ not included:** download it separately from that page and open it in the plugin.
 **It plays any SoundFont**, not only that one: any General MIDI set, piano, drum kit or synth
 in .sf2 or .sf3 (thousands are free on musical-artifacts.com and elsewhere).
 
+**Guitars play like a guitarist** (new in 1.3): with a guitar loaded, the **Guitar panel** turns
+the keyboard into a guitar the way MusicLab RealGuitar does. Chords taken in the Main zone are
+voiced on a real neck and strummed (or played by a rhythm Pattern, in time with Ableton); Repeat
+keys strum them up and down; Solo, Harmony, Bass & Chord and Bass & Pick modes, Velocity FX
+(slow strums, slides, bends, mutes), presets of your own. Try it with
+[MusicLab RealGuitar Acoustic Guitars](https://musical-artifacts.com/artifacts/3655) (free on
+musical-artifacts.com, license marked "gray" there; not included).
+
 How to use it: [DOCS.md](DOCS.md). Versions: [CHANGELOG.md](CHANGELOG.md). Credits and
 licenses: [CREDITS.md](CREDITS.md). What each HQ Orchestral instrument sends to the reverb and
 chorus: [docs/HQ-Orchestral-sends.md](docs/HQ-Orchestral-sends.md).
 
 ![Okami SF2 Player playing the HQ Orchestral collection's violin](docs/screenshot.png)
+
+![The Guitar panel strumming a C chord with the Folk pattern](docs/guitar.png)
 
 ## Download and install
 
@@ -97,7 +107,8 @@ or credential file, or a personal pattern (listed in the ignored `scripts/releas
 | `Source/PluginProcessor.h/.cpp` | parameters, the FluidSynth engine (created, swapped under a lock), MIDI routing (transpose, velocity curve, layer/split, program changes), MIDI kept while the engine is busy, rendering into six channels, tone filter, gain, outputs, saved state, missing-file handling |
 | `Source/PluginEditor.h/.cpp` | the look (`SF2Look`), the keyboard with key ranges and the split tint, every control, instrument lists by family with favorites, effect presets, preview |
 | `Source/ChordName.h` | chord names from pitch classes (about 45 types, partial chords, slash chords) |
-| `Source/GuitarNeck.h` | the Guitar panel's strip: chord name, six-string neck, strum arrow, palm light |
+| `Source/GuitarNeck.h` | the Guitar panel's strip: chord name, six-string neck, strum arrow, palm and FX lights, the pattern's name |
+| `Source/GuitarPresets.h` | the Guitar panel's presets: every control it holds, the built-in ones, the user's (as XML in the settings) |
 | `Source/GuitarEngine.h` | the Guitar panel's engine: keyboard zones, modes, chords recognized and voiced by position, strums, basses and strings, palm-muted, humanized, doubled; fixed arrays, audio thread only |
 | `Source/Guide.h` | the ? button's guide and About |
 | `Source/SoundFontInfo.h` | what FluidSynth doesn't expose, read from the file itself: name, author, comment, each preset's key range and reverb/chorus sends (bounded against hostile files) |
@@ -221,7 +232,7 @@ Settings file `~/Library/Application Support/SF2 Player/SF2 Player.settings`: `r
 
 ## Tests
 
-`ctest` runs `PluginTests` (64 checks). Each renders through the real processor and fails on a
+`ctest` runs `PluginTests` (68 checks). Each renders through the real processor and fails on a
 wrong result:
 
 - **Fidelity:** bit-identical output to FluidSynth at the defaults.
@@ -234,7 +245,7 @@ wrong result:
 - **State and files:** the saved state (file, instruments, knobs), saving without waiting for a
   load, a missing file kept, a file lost during a rate change reported then reloaded, a failed
   rebuild not undoing a newer file, global key ranges, hostile files refused quickly.
-- **Guitar panel:** chord recognition and Chord Position voicings, each mode's keys (Repeat strums, basses, picked strings, Harmony's intervals, Solo's repeats, Velo Mute, Hold, Strings, slow strums), strum order and timing, every string ended on release, Direct bit-identical, chord names (full, partial, intervals), notes never left on by a release mid-strum or a palm cut, strumming spreading a chord's start, Double's twin later on the right, tremolo swinging, chord names and the neck's string placement.
+- **Guitar panel:** chord recognition and Chord Position voicings, each mode's keys (Repeat strums, basses, picked strings, Harmony's intervals, Solo's repeats, Velo Mute, Hold, Strings, slow strums), Velocity FX in every mode (Velo Mute on soft chords, Slide Down from above, Slow if Hard on Pattern's strokes), a held chord let go when the mode leaves the chord modes, presets (real parameters, each different, the user's kept through the settings), strum order and timing, every string ended on release, Direct bit-identical, chord names (full, partial, intervals), notes never left on by a release mid-strum or a palm cut, strumming spreading a chord's start, Double's twin later on the right, tremolo swinging, chord names and the neck's string placement.
 - **CPU:** 64 string notes under 30 % of a 128-sample block (reported, not judged, under
   Rosetta).
 
@@ -243,7 +254,9 @@ collection (195 instruments, 125 with reverb sends, 47 with chorus).
 
 `TailTest` tools: `<file> <preset> wav <out.wav> <key> [tone Hz]` (`EFFECTS=1` keeps the reverb
 and a 15 ms chorus on), `<file> <preset> perf` (`INTERP=4..7` picks the interpolation),
-`<file> sends`, `<file> <preset> snap <out.png> [sends]` (`LAYER=2` for split).
+`<file> sends`, `<file> <preset> snap <out.png> [sends]` (`LAYER=2` for split; for the Guitar
+panel `MODE`, `PATTERN`, `VFX`, `CHORD`, `SHAPE`, `CONTROLLERS`, `ZONES`, `SOUNDING`, `SOUNDFOLD`,
+`GENERALFOLD`, `PRESETPICK`, `GUIDE`, `HINT`).
 
 ## Releasing
 

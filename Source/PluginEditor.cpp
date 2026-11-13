@@ -132,6 +132,13 @@ void RangeKeyboard::drawWhiteNote (int note, juce::Graphics& g, juce::Rectangle<
     else
         g.setColour (fill);
     g.fillRect (key);
+    if (! isDown && strikeAlpha > 0.0f && isSounding (note))   // struck just now by the guitar: the whole key lights
+    {
+        const juce::Colour green (0xff62d86e);
+        g.setGradientFill (juce::ColourGradient::vertical (green.brighter (0.4f).withAlpha (0.9f * strikeAlpha), key.getY(),
+                                                           green.withAlpha (0.9f * strikeAlpha), key.getBottom()));
+        g.fillRect (key);
+    }
     g.setColour (SF2Look::background);
     g.drawVerticalLine ((int) area.getRight(), area.getY(), area.getBottom());
     if (isSounding (note)) drawSoundingDot (g, area, true);
@@ -161,6 +168,11 @@ void RangeKeyboard::drawBlackNote (int note, juce::Graphics& g, juce::Rectangle<
     else
         g.setColour (fill);
     g.fillRoundedRectangle (area, 1.5f);
+    if (! isDown && strikeAlpha > 0.0f && isSounding (note))
+    {
+        g.setColour (juce::Colour (0xff62d86e).withAlpha (0.95f * strikeAlpha));
+        g.fillRoundedRectangle (area, 1.5f);
+    }
     if (isSounding (note)) drawSoundingDot (g, area, false);
 }
 
@@ -641,6 +653,12 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     addAndMakeVisible (keysButton);
     neck.setTooltip ("Click a string at a fret to draw a chord and see its name; click the name to hear it");
     keyboard.describe = [this] (int note) { return keyHint (note); };
+    lastVelocityLabel.setText ("play a note", juce::dontSendNotification);
+    lastVelocityLabel.setColour (juce::Label::textColourId, SF2Look::dim);
+    lastVelocityLabel.setFont (juce::FontOptions (12.0f));
+    lastVelocityLabel.setJustificationType (juce::Justification::centredRight);
+    lastVelocityLabel.setTooltip ("The velocity of the last note you played, as the guitar hears it (after Accent and the curve); a tick when it sets the Velocity FX off");
+    addChildComponent (lastVelocityLabel);
     neck.onShapeChanged = [this] (const std::array<int, 6>& frets) { player.setGuitarShape (frets); };
     neck.onAudition = [this]
     {
@@ -1233,6 +1251,7 @@ void SF2PlayerEditor::choosePresetItem (int id)
 float SF2PlayerEditor::presetValue (const GuitarPresets::Preset& preset, const juce::String& id) const
 {
     if (const auto found = preset.values.find (id); found != preset.values.end()) return found->second;
+    if (const auto found = GuitarPresets::base().find (id); found != GuitarPresets::base().end()) return found->second;
     if (auto* parameter = player.parameters.getParameter (id)) return parameter->convertFrom0to1 (parameter->getDefaultValue());
     return 0.0f;
 }
@@ -1469,6 +1488,12 @@ void SF2PlayerEditor::timerCallback()
         const int count = juce::jlimit (0, 6, view.count.load());
         for (int i = 0; i < 6; ++i) keyboard.sounding[(size_t) i] = i < count ? notes[(size_t) i] : -1;
         soundingAge = 0.0f;
+        keyboard.strikeAlpha = count > 0 ? 1.0f : 0.0f;   // this stroke presses its keys
+    }
+    if (keyboard.strikeAlpha > 0.0f)
+    {
+        keyboard.strikeAlpha = juce::jmax (0.0f, keyboard.strikeAlpha - 0.18f);   // gone in about a third of a second
+        keyboard.repaint();
     }
     {
         // Bright for the neck's three seconds, then fading out over one (only with the Guitar panel playing).
@@ -1531,6 +1556,21 @@ void SF2PlayerEditor::timerCallback()
     else if (midiFlash > 0)
         --midiFlash;
 
+    // Velocity FX: the last note's velocity as the engine hears it, lit when it sets the FX off.
+    if (lastVelocityLabel.isVisible())
+    {
+        const auto settings = player.guitarSettingsNow();
+        const int raw = player.lastVelocity.load();
+        const int heard = raw > 0 ? GuitarEngine::heardVelocity (settings, raw) : 0;
+        const bool below = settings.velocityFx == GuitarEngine::slowStrumLow || settings.velocityFx == GuitarEngine::veloMute;
+        const bool fires = heard > 0 && (below ? heard < settings.fxVelocity : heard >= settings.fxVelocity);
+        const auto text = heard > 0 ? "last note " + juce::String (heard) + (fires ? juce::String::fromUTF8 (" \xe2\x9c\x93") : juce::String()) : juce::String ("play a note");
+        if (lastVelocityLabel.getText() != text)
+        {
+            lastVelocityLabel.setText (text, juce::dontSendNotification);
+            lastVelocityLabel.setColour (juce::Label::textColourId, fires ? juce::Colour (0xff6fe07a) : SF2Look::dim);
+        }
+    }
     // PLAY's summary: the controls away from their defaults (none: it changes nothing).
     {
         juce::StringArray changes;
@@ -2167,6 +2207,7 @@ void SF2PlayerEditor::refreshModeOptions()
         flow (r, fxVelocitySlider, 84);
         if (fx != GuitarEngine::veloMute) { label (fxTimeLabel, "Time", true); flow (r, fxTimeLabel, 36); flow (r, fxTimeSlider, 110); }
         if (fx >= GuitarEngine::slideUp && fx <= GuitarEngine::reverseBend) { label (fxStepsLabel, "Steps", true); flow (r, fxStepsLabel, 40); flow (r, fxStepsSlider, 44); }
+        if (r.getWidth() > 60) put (lastVelocityLabel, r);   // what you played, at the row's end
     }
     if (mode == GuitarEngine::solo)
     {
@@ -2205,6 +2246,7 @@ void SF2PlayerEditor::refreshModeOptions()
                                         &chordBassToggle, &alterBassToggle, &bassMonoToggle, &soloFxBox, &pedalBox, &fxStepsSlider,
                                         &legatoStepsSlider, &legatoTimeSlider, &bassZoneTopSlider, &bassZoneToggle, &fxStepsLabel,
                                         &permanentLabel, &legatoStepsLabel, &legatoTimeLabel, &pedalLabel, &keySwitchesLabel };
+    all.push_back (&lastVelocityLabel);
     for (auto& button : fxButtons) all.push_back (button.get());
     for (auto& button : intervalButtons) all.push_back (button.get());
     for (auto& box : switchBoxes) all.push_back (&box);
