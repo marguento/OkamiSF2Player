@@ -1361,14 +1361,16 @@ void SF2PlayerEditor::refreshGuitarPanel()
     if (show)   // a guitar: what's played with comes first, the effects and PLAY fold away
     {
         // A new instance's first guitar: ready to try (Chords, a Folk pattern, Hold).
-        const auto startLock = player.guitarStartGiven.load() ? nullptr
-                             : std::make_unique<juce::ScopedLock> (player.startLock);   // a state restore can't land in between
-        if (startLock != nullptr && ! player.stateRestored.load() && ! player.playedGuitar.load() && ! player.guitarStartGiven.exchange (true))
+        if (! player.guitarStartGiven.load())
         {
-            for (auto [id, value] : { std::pair { "guitarDirect", 0.0f }, std::pair { "guitarMode", (float) GuitarEngine::chords },
-                                      std::pair { "guitarPattern", 1.0f }, std::pair { "guitarHold", 1.0f } })
-                if (auto* parameter = player.parameters.getParameter (id))
-                    editParameter (*parameter, parameter->convertTo0to1 (value));
+            const juce::ScopedLock lock (player.startLock);   // a state restore can't land in between
+            if (! player.stateRestored.load() && ! player.playedGuitar.load() && ! player.guitarStartGiven.exchange (true))
+            {
+                for (auto [id, value] : { std::pair { "guitarDirect", 0.0f }, std::pair { "guitarMode", (float) GuitarEngine::chords },
+                                          std::pair { "guitarPattern", 1.0f }, std::pair { "guitarHold", 1.0f } })
+                    if (auto* parameter = player.parameters.getParameter (id))
+                        editParameter (*parameter, parameter->convertTo0to1 (value));
+            }
         }
         // The layer has no place on a guitar (its zones take the keyboard): it goes off.
         if (auto* layer = player.parameters.getParameter ("layerMode"); layer != nullptr && layer->getValue() > 0.0f)
@@ -2527,11 +2529,19 @@ void SF2PlayerEditor::applyPanelChoice (const SF2PlayerProcessor::State& st)
     if (! panelKeyPrimed)
     {
         // The first instrument this window sees is the project's own: its saved choice stands. A
-        // project's SoundFont still loading hasn't shown it yet: wait for it.
-        if (key.isEmpty() && st.file != juce::File()) return;   // loading (a missing file primes: what's loaded next is new)
+        // SoundFont still loading hasn't shown it yet; a missing one may come back (the same file
+        // is the project's own again, another one is new).
+        if (key.isEmpty())
+        {
+            if (st.file != juce::File()) return;                         // loading
+            if (st.missing != juce::File()) { missingAtOpening = st.missing; return; }
+            panelKeyPrimed = true;                                         // nothing loaded: what comes next is new
+            panelKey = {};
+            return;
+        }
         panelKeyPrimed = true;
-        panelKey = key;
-        return;
+        const bool projectsOwn = missingAtOpening == juce::File() || st.file == missingAtOpening;
+        if (projectsOwn) { panelKey = key; return; }
     }
     if (key.isEmpty() || key == panelKey) return;
     panelKey = key;

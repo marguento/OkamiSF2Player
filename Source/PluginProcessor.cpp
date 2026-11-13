@@ -395,7 +395,7 @@ static float timecents (float multiplier)
     return (float) juce::roundToInt (1200.0f * std::log2 (multiplier));
 }
 
-SF2PlayerProcessor::PlaySettings SF2PlayerProcessor::currentPlaySettings() const
+SF2PlayerProcessor::PlaySettings SF2PlayerProcessor::currentPlaySettings (bool guitarPlays) const
 {
     auto value = [this] (const char* id) { return parameters.getRawParameterValue (id)->load(); };
     PlaySettings s;
@@ -407,7 +407,7 @@ SF2PlayerProcessor::PlaySettings SF2PlayerProcessor::currentPlaySettings() const
     s.glide = juce::roundToInt (value ("glide"));
     // The Guitar panel playing (not Direct) strums chords on one channel and slides by itself:
     // Mono or Legato would keep one note of each chord, and Glide would slide string into string.
-    if (guitarPlaying())
+    if (guitarPlays)
     {
         s.mode = 0;
         s.glide = 0;
@@ -420,9 +420,9 @@ SF2PlayerProcessor::PlaySettings SF2PlayerProcessor::currentPlaySettings() const
 // top (SF2's real-time generator offsets, the same as NRPN), so at their defaults nothing changes.
 // Only what changed is sent: the bend range and glide are also MIDI state a clip may set
 // (RPN 0, CC65 / CC5), which moving Attack must not overwrite.
-void SF2PlayerProcessor::applyPlaySettings (bool force)
+void SF2PlayerProcessor::applyPlaySettings (bool force, bool guitarPlays)
 {
-    const auto s = currentPlaySettings();
+    const auto s = currentPlaySettings (guitarPlays);
     if (! force && playApplied && s == appliedPlay)
         return;
     const bool all = force || ! playApplied;
@@ -540,7 +540,7 @@ void SF2PlayerProcessor::deferMidi (const juce::MidiBuffer& midi)
         }
         // What changes lasting state goes in up to the full capacity: note-offs, pedals, bank
         // and program changes, parameter numbers and data, resets.
-        const bool lasting = m.isNoteOff() || m.isProgramChange() || rpn || (cc >= 0 && keptInOrder (cc));
+        const bool lasting = changesLastingState (m);
         if (numDeferred < (lasting ? deferredCapacity : deferredNormal))
         {
             deferredEvents[(size_t) numDeferred++] = m;
@@ -556,6 +556,15 @@ void SF2PlayerProcessor::deferMidi (const juce::MidiBuffer& midi)
             }
         }
     }
+}
+
+// Note-offs, pedals, bank and program changes, parameter numbers and data, resets: what a flood
+// must never lose (a continuous value's next one replaces it).
+bool SF2PlayerProcessor::changesLastingState (const juce::MidiMessage& m)
+{
+    const int cc = m.isController() ? m.getControllerNumber() : -1;
+    const bool rpn = cc == 6 || cc == 38 || (cc >= 96 && cc <= 101);
+    return m.isNoteOff() || m.isProgramChange() || rpn || (cc >= 0 && keptInOrder (cc));
 }
 
 void SF2PlayerProcessor::playDeferredMidi (const GuitarEngine::Settings* guitarSettings, juce::int64 at)
@@ -730,7 +739,7 @@ void SF2PlayerProcessor::swapEngine (std::unique_ptr<Engine> fresh)
         if (engine != nullptr)
         {
             applyEffectSettings (true);
-            applyPlaySettings (true);
+            applyPlaySettings (true, guitarPlaying());
         }
     }
     // `fresh` now holds the old engine: freed here, outside the lock.
@@ -987,6 +996,16 @@ void SF2PlayerProcessor::flushGuitar()
         }
     });
     guitarEngaged = false;
+    // The guitar stops (Direct, the panel hidden): the synth takes every wheel back where it is.
+    for (int channel = 0; channel < 16; ++channel)
+    {
+        if (lastPbAssign != 0)
+            handleMidi (juce::MidiMessage::pitchWheel (channel + 1, juce::jlimit (0, 16383, 8192 + juce::roundToInt (wheelBend[(size_t) channel] * 8192.0f))));
+        if (lastMwAssign != 0 || lastAtAssign == 2)   // the mod wheel, or the CC1 pressure drove
+            handleMidi (juce::MidiMessage::controllerEvent (channel + 1, 1, juce::roundToInt (wheelMod[(size_t) channel] * 127.0f)));
+        if (lastAtAssign != 0)
+            handleMidi (juce::MidiMessage::channelPressureChange (channel + 1, juce::roundToInt (wheelPressure[(size_t) channel] * 127.0f)));
+    }
     clearWheels();
 }
 
@@ -1162,7 +1181,7 @@ bool SF2PlayerProcessor::guitarController (const juce::MidiMessage& m, const Gui
         guitar.pedal (channel, m.isSustainPedalOn(), at);
         return true;
     }
-    const int pb = value ("pbAssign"), mw = value ("mwAssign"), at2 = value ("atAssign");
+    const int pb = blockPb, mw = blockMw, at2 = blockAt;   // read once a block
     bool taken = false;
     noteWheelPosition (m);   // kept whatever the wheel's job
     if (m.isPitchWheel() && pb != 0)
@@ -1198,15 +1217,16 @@ void SF2PlayerProcessor::noteWheelPosition (const juce::MidiMessage& m)
 void SF2PlayerProcessor::refreshWheelOffsets()
 {
     auto value = [this] (const char* id) { return juce::roundToInt (parameters.getRawParameterValue (id)->load()); };
-    const int pb = value ("pbAssign"), mw = value ("mwAssign"), at2 = value ("atAssign");
+    const int pb = blockPb, mw = blockMw, at2 = blockAt;   // as read once this block (guitarController went by them)
     const int pbRange = value ("pbRange"), mwRange = value ("mwRange"), atRange = value ("atRange");
     // A wheel given to the guitar: the synth's own bend, modulation or pressure from it goes back
-    // to rest, so it doesn't count twice. Given back, the synth takes it at its next move.
+    // to rest, so it doesn't count twice. Given back while the guitar plays, the synth takes it at
+    // its next move; when the guitar stops, flushGuitar hands every wheel back where it is.
     if (pb != 0 && lastPbAssign == 0)
         for (int channel = 0; channel < 16; ++channel) handleMidi (juce::MidiMessage::pitchWheel (channel + 1, 8192));
     if (mw != 0 && lastMwAssign == 0)
         for (int channel = 0; channel < 16; ++channel) handleMidi (juce::MidiMessage::controllerEvent (channel + 1, 1, 0));
-    if (at2 == 1 && lastAtAssign != 1)
+    if (at2 != 0 && lastAtAssign == 0)
         for (int channel = 0; channel < 16; ++channel) handleMidi (juce::MidiMessage::channelPressureChange (channel + 1, 0));
     lastAtAssign = at2;
     lastPbAssign = pb;
@@ -1232,10 +1252,7 @@ void SF2PlayerProcessor::refreshWheelOffsets()
 
 void SF2PlayerProcessor::clearWheels()
 {
-    wheelBend.fill (0.0f);   // at rest until they move again (the synth's own are at rest too, or follow their next move)
-    wheelMod.fill (0.0f);
-    wheelPressure.fill (0.0f);
-    channelCents.fill (0.0f);
+    channelCents.fill (0.0f);   // the wheels stay where they are (Reset All Controllers rests them)
     monoCents.fill (0.0f);
     appliedPitch.fill ({});
     lastPbAssign = lastMwAssign = lastAtAssign = 0;   // a wheel with a job re-centres the (new) synth's own
@@ -1370,7 +1387,6 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
             lastPinRequest.fill (-1);
         }
         applyEffectSettings (false);
-        applyPlaySettings (false);
         sendOutputs = appliedEffects.sendOutputs;
 
 
@@ -1389,6 +1405,10 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         const auto guitarSettings = currentGuitarSettings();
         const bool panelShown = guitarPanelActive();
         const bool useGuitar = panelShown && ! guitarSettings.direct;
+        applyPlaySettings (false, useGuitar);   // the same reading: Mono and Glide stand aside exactly when the guitar plays
+        blockPb = juce::roundToInt (parameters.getRawParameterValue ("pbAssign")->load());   // the wheels' jobs, once a block
+        blockMw = juce::roundToInt (parameters.getRawParameterValue ("mwAssign")->load());
+        blockAt = juce::roundToInt (parameters.getRawParameterValue ("atAssign")->load());
         if (! useGuitar && guitarEngaged)
             flushGuitar();
         if (! useGuitar)   // asked for the guitar as it stopped playing: dropped, never played late
@@ -1464,7 +1484,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                     if (count >= maxItems)   // past the list (a flood): played after it, at the block's end, in order
                     {
                         if (overflowCount < (int) overflowIndices.size()) overflowIndices[(size_t) overflowCount++] = index;
-                        else if (message.isNoteOff()) handleMidi (message);   // past even that: a note still ends (now)
+                        else if (changesLastingState (message)) handleMidi (message);   // past even that: what lasts still plays (now)
                         continue;
                     }
                     Item item { juce::jlimit (0, numSamples, metadata.samplePosition), order++, {}, metadata.numBytes, {}, false };

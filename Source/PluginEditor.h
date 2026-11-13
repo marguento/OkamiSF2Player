@@ -392,7 +392,8 @@ private:
     // SoundFont doesn't follow General MIDI), remembered for each instrument of each SoundFont.
     juce::TextButton panelButton;
     juce::String panelKey;   // the instrument the choice was last applied for
-    bool panelKeyPrimed = false;   // applyPanelChoice ran once (at opening, the saved choice stands)
+    bool panelKeyPrimed = false;
+    juce::File missingAtOpening;   // the project's SoundFont, missing when the window opened   // applyPanelChoice ran once (at opening, the saved choice stands)
     void showPanelMenu();
     void applyPanelChoice (const SF2PlayerProcessor::State&);
     void refreshPanelButton();

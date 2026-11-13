@@ -119,7 +119,7 @@ public:
     std::atomic<bool> playedGuitar { false };   // the panel already played notes: too late for the start
     juce::CriticalSection startLock;   // the start's check and edits vs. a state being restored (never the audio thread)
     // The Guitar panel is playing (shown and not Direct): what the processor's blocks go by.
-    bool guitarPlaying() const { return guitarPanelActive() && parameters.getRawParameterValue ("guitarDirect")->load() < 0.5f; }
+    bool guitarPlaying() const { return guitarPanelActive() && ! (parameters.getRawParameterValue ("guitarDirect")->load() > 0.5f); }   // as processBlock reads it
 
     // The chord drawn on the neck (Shape mode): a fret per string from the low E, -1 not played.
     // Saved with the project. Message thread sets it; the audio thread reads the packed copy.
@@ -162,7 +162,7 @@ private:
     void writeOutputs (juce::AudioBuffer<float>&, int numSamples, bool sendOutputs);
     void markProjectChanged();
     void applyEffectSettings (bool force);
-    void applyPlaySettings (bool force);
+    void applyPlaySettings (bool force, bool guitarPlays);
     void applyPreset (Engine&, int presetIndex);
     void applyLayerPreset (Engine&, int presetIndex);
     int layerPreset = 0;
@@ -221,7 +221,9 @@ private:
     void refreshWheelOffsets();
     void clearWheels();
     void noteWheelPosition (const juce::MidiMessage&);
-    int lastPbAssign = 0, lastMwAssign = 0, lastAtAssign = 0;   // refreshWheelOffsets: an assignment just taken resets the synth's own wheel
+    int lastPbAssign = 0, lastMwAssign = 0, lastAtAssign = 0;
+    int blockPb = 0, blockMw = 0, blockAt = 0;   // the wheels' jobs as read at this block's start (audio thread)
+    static bool changesLastingState (const juce::MidiMessage&);   // refreshWheelOffsets: an assignment just taken resets the synth's own wheel
     bool hostWasPlaying = false;   // the transport's state at the last block (audio thread)
     juce::Optional<juce::AudioPlayHead::PositionInfo> blockPosition;   // this block's playhead (audio thread)
     // A guitar block's events (the clip's and the engine's), sorted by time. Audio thread.
@@ -349,7 +351,7 @@ private:
     // Controllers (CC121) clears them in FluidSynth.
     void applyChannelSettings (int channel, const PlaySettings&);
     bool playApplied = false;
-    PlaySettings currentPlaySettings() const;
+    PlaySettings currentPlaySettings (bool guitarPlays) const;
 
     // Notes as played after transposing, so a note-off finds its note even if the transpose moved meanwhile.
     std::array<std::array<juce::int16, 128>, 16> playedNote;   // -1: none

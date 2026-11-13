@@ -114,7 +114,6 @@ public:
         int velocityCurve = 0;
         int accent = 64;
         bool hold = false;              // chords keep sounding after the keys are let go
-        // True when nothing would change: the processor then plays notes directly.
     };
 
     struct Event
