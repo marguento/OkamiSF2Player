@@ -384,7 +384,10 @@ private:
     int guitarExtra() const { return guitarShown ? panelGap + heightOf (guitarSection) : 0; }
     // GENERAL: Gain and Tone, the effects and PLAY (what every instrument has).
     // SOUNDFONT: its title, the file box (and a warning row when there's one), the instrument row.
-    int soundHeight() const { return 26 + 28 + (infoLabel.isVisible() ? 22 : 0) + 8 + 28 + 10; }
+    int soundHeight() const { return soundFolded ? collapsedHeight : 26 + 28 + (infoLabel.isVisible() ? 22 : 0) + 8 + 28 + 10; }
+    bool soundFolded = false;   // SOUNDFONT folded to one line saying what's loaded
+    void toggleSound();
+    void showSoundContents();
     int generalHeight() const { return 26 + 24 + 10 + heightOf (effectsSection) + 10 + heightOf (playSection) + 10; }
     int minimumHeight() const;
     void toggleSection (Section);

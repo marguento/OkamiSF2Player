@@ -257,6 +257,7 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     recentFiles.restoreFromString (settings->getValue ("recentFiles"));
     showHints = settings->getBoolValue ("showHints", true);
     showControllers = settings->getBoolValue ("guitarControllers", false);
+    soundFolded = settings->getBoolValue ("soundFolded", false);
     showEffectControls = settings->getBoolValue ("showEffectControls", false);
 
     fileBox.setTextWhenNothingSelected ("Choose a SoundFont...");
@@ -718,6 +719,7 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     }
     applyHeight();
     showSectionContents();
+    showSoundContents();
     refreshLayerControls();
     refreshGuitarPanel();
     refreshPanelButton();
@@ -1323,6 +1325,7 @@ void SF2PlayerEditor::mouseUp (const juce::MouseEvent& e)
     else if (title (playPanel).contains (at)) toggleSection (playSection);
     else if (guitarShown && title (guitarPanel).contains (at)) toggleSection (guitarSection);
     else if (title (keysPanel).contains (at)) toggleSection (keyboardSection);
+    else if (title (soundPanel).contains (at)) toggleSound();
 }
 
 // A section's title with its fold arrow: ▾ open, ▸ folded.
@@ -1465,7 +1468,19 @@ void SF2PlayerEditor::paint (juce::Graphics& g)
         g.drawRoundedRectangle (area.reduced (0.5f), 6.0f, 1.0f);
         g.setColour (SF2Look::dim);
         g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
-        g.drawText ("SOUNDFONT", soundPanel.getX() + 12, soundPanel.getY() + 7, 120, 14, juce::Justification::centredLeft);
+        g.drawText (juce::String::fromUTF8 (soundFolded ? "\xe2\x96\xb8" : "\xe2\x96\xbe"), soundPanel.getX() + 8, soundPanel.getY() + 7, 12, 14,
+                    juce::Justification::centred);
+        g.drawText ("SOUNDFONT", soundPanel.getX() + 22, soundPanel.getY() + 7, 120, 14, juce::Justification::centredLeft);
+        if (soundFolded)   // one line: what's loaded
+        {
+            juce::String text = st->file.getFileNameWithoutExtension();
+            if (juce::isPositiveAndBelow (st->preset, (int) st->presets.size()))
+                text << juce::String::fromUTF8 ("  \xc2\xb7  ") << presetLabel (st->presets[(size_t) st->preset]);
+            g.setColour (SF2Look::text);
+            g.setFont (juce::FontOptions (12.5f));
+            g.drawFittedText (text.isEmpty() ? juce::String ("No SoundFont") : text, soundPanel.getX() + 104, soundPanel.getY() + 4,
+                              soundPanel.getWidth() - 116, 18, juce::Justification::centredLeft, 1, 0.8f);
+        }
     }
     // GENERAL: a cool slate under everything every instrument has.
     {
@@ -1629,6 +1644,7 @@ void SF2PlayerEditor::resized()
     // SOUNDFONT: the file and the instrument chosen from it.
     soundPanel = area.removeFromTop (soundHeight());
     auto sound = soundPanel.reduced (10, 0).withTrimmedTop (26);
+    if (soundFolded) { sound = soundPanel.withY (-200); infoLabel.setBounds ({}); }   // its contents hidden
     fileBox.setBounds (sound.removeFromTop (28));
     placeAuthor();
     if (infoLabel.isVisible())
@@ -2182,4 +2198,24 @@ void SF2PlayerEditor::placeAuthor()
     const int right = fileBox.getRight() - 30;   // the arrow
     authorLabel.setBounds (textEnd, fileBox.getY(), juce::jmax (0, right - textEnd), fileBox.getHeight());
     authorLabel.toFront (false);
+}
+
+// SOUNDFONT folded to its title (with what's loaded) or open; the window follows.
+void SF2PlayerEditor::toggleSound()
+{
+    soundFolded = ! soundFolded;
+    settings->setValue ("soundFolded", soundFolded);
+    settings->saveIfNeeded();
+    showSoundContents();
+    applyHeight();
+    resized();
+    repaint();
+}
+
+void SF2PlayerEditor::showSoundContents()
+{
+    for (juce::Component* c : { (juce::Component*) &fileBox, (juce::Component*) &authorLabel, (juce::Component*) &previousButton,
+                                (juce::Component*) &nextButton, (juce::Component*) &searchBox, (juce::Component*) &presetBox,
+                                (juce::Component*) &panelButton, (juce::Component*) &previewButton, (juce::Component*) &favouriteButton })
+        c->setVisible (! soundFolded);
 }
