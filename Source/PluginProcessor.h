@@ -116,7 +116,8 @@ public:
     // saved before they existed plays as it did. Only while the panel hasn't played yet (a start
     // given later would change what was recorded). Atomics: hosts restore state on any thread.
     std::atomic<bool> stateRestored { false }, guitarStartGiven { false };
-    std::atomic<bool> playedGuitar { false };   // the panel already played notes: too late for the start
+    std::atomic<bool> playedGuitar { false };
+    juce::CriticalSection startLock;   // the start's check and edits vs. a state being restored (never the audio thread)   // the panel already played notes: too late for the start
     // The Guitar panel is playing (shown and not Direct): what the processor's blocks go by.
     bool guitarPlaying() const { return guitarPanelActive() && parameters.getRawParameterValue ("guitarDirect")->load() < 0.5f; }
 
@@ -212,18 +213,20 @@ private:
     juce::int64 newestVoiceId() const;
     double tremoloPhase = 0.0;
     // Pattern mode: plays the rhythm's steps that fall in this block, on every channel holding a chord.
-    void runPattern (const GuitarEngine::Settings&, juce::int64 blockStart, int numSamples);
+    void runPattern (const GuitarEngine::Settings&, const juce::Optional<juce::AudioPlayHead::PositionInfo>&, juce::int64 blockStart, int numSamples);
     // Pitch per voice: the engine's slides and bends, and the wheels and aftertouch when they're
     // given to Pitch, Slide or Mono Bend. Each voice is retuned by what changed since last time.
     void applyPitch (juce::int64 now, juce::int64 sinceVoiceId);
     bool guitarController (const juce::MidiMessage&, const GuitarEngine::Settings&, int channel, juce::int64 at);
     void refreshWheelOffsets();
     void clearWheels();
+    void noteWheelPosition (const juce::MidiMessage&);
     int lastPbAssign = 0, lastMwAssign = 0;   // refreshWheelOffsets: an assignment just taken resets the synth's own wheel
     bool hostWasPlaying = false;   // the transport's state at the last block (audio thread)
     // A guitar block's events (the clip's and the engine's), sorted by time. Audio thread.
     struct GuitarItem { int position, order; juce::uint8 bytes[3]; int size; GuitarEngine::Event note; bool fromGuitar; };
     std::array<GuitarItem, 2048> guitarItems;
+    std::array<int, 4096> overflowIndices {};   // a flood's messages past guitarItems, by their place in the block
     // What each voice was retuned by, keyed by FluidSynth's voice (a fixed pool, so a slot per pool
     // entry, found by linear probing and never shared); a new note on that voice (another id)
     // starts from 0. Cleared with a new engine.

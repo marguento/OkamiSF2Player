@@ -1361,6 +1361,7 @@ void SF2PlayerEditor::refreshGuitarPanel()
     if (show)   // a guitar: what's played with comes first, the effects and PLAY fold away
     {
         // A new instance's first guitar: ready to try (Chords, a Folk pattern, Hold).
+        const juce::ScopedLock lock (player.startLock);   // setStateInformation can't land in between
         if (! player.stateRestored.load() && ! player.playedGuitar.load() && ! player.guitarStartGiven.exchange (true))
         {
             for (auto [id, value] : { std::pair { "guitarDirect", 0.0f }, std::pair { "guitarMode", (float) GuitarEngine::chords },
@@ -2522,11 +2523,17 @@ void SF2PlayerEditor::toggleEffectControls()
 void SF2PlayerEditor::applyPanelChoice (const SF2PlayerProcessor::State& st)
 {
     const auto key = favouriteKey (st, st.preset);
-    const bool opening = ! panelKeyPrimed;   // the first call: the window just opened
-    panelKeyPrimed = true;
+    if (! panelKeyPrimed)
+    {
+        // The first instrument this window sees is the project's own: its saved choice stands. A
+        // project's SoundFont still loading (or missing) hasn't shown it yet: wait for it.
+        if (key.isEmpty() && (st.file != juce::File() || st.missing != juce::File())) return;
+        panelKeyPrimed = true;
+        panelKey = key;
+        return;
+    }
     if (key.isEmpty() || key == panelKey) return;
     panelKey = key;
-    if (opening) return;   // what the project was saved with stands
     const auto choices = juce::StringArray::fromLines (settings->getValue ("panelChoices"));
     float choice = 0.0f;   // Auto
     for (const auto& line : choices)
