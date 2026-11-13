@@ -30,8 +30,11 @@ release bumps it and adds an entry here: one line per change a player would noti
   - Pattern and Hold dim in Solo and Harmony (they play a held chord); switching to those modes
     lets a held chord go.
   - A preset changed after it was chosen reads "(edited)", and the menu ticks it.
-  - A new guitar starts in **Chords** with **Pattern** and **Hold** on, ready to try (saved
-    projects keep their own settings).
+  - A new instance's first guitar starts in **Chords** with **Pattern** and **Hold** on, ready to
+    try; projects keep their own settings, and one saved before 1.3 stays in Direct.
+  - While the Guitar panel plays, PLAY's Mono, Legato and Glide stand aside (they kept one note
+    of each chord); a chord kept by Hold stops when Ableton stops; the drawn chord and Preview are
+    heard as they are (never latched by Hold or Pattern).
   - Each stroke lights the keys it plays on the keyboard, not only the neck.
   - Every switch of the panel (cards, presets, strings, positions, curves) is one edit Ableton
     can undo with Cmd+Z.

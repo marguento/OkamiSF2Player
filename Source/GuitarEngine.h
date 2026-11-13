@@ -649,6 +649,19 @@ public:
     static int heardVelocity (const Settings& s, int velocity) { return shapeVelocity (s, velocity); }
 
     // A chord is held (or kept by Hold) on `channel`: since when (-1: none) and how hard.
+    // Chords latched by Hold (no key down) let go: their strings end, their pattern stops.
+    void releaseLatched (juce::int64 time)
+    {
+        for (int channel = 0; channel < 16; ++channel)
+        {
+            auto& c = channels[(size_t) channel];
+            if (! c.latched || c.down.count > 0) continue;
+            endStrings (channel, time);
+            c.latched = false;
+            c.voicing = {};
+        }
+    }
+
     juce::int64 heldSince (int channel) const
     {
         const auto& c = channels[(size_t) channel];
@@ -1205,10 +1218,16 @@ private:
 
     juce::int64 samples (float ms) const { return (juce::int64) (ms * 0.001 * sampleRate); }
 
+    // Full (it shouldn't be: 1024 waiting), a note-off still goes in, in place of the latest
+    // note-on still to come: a note never starting is better than one never ending.
     void schedule (const Event& e)
     {
-        if (eventCount < maxEvents)
-            events[(size_t) eventCount++] = e;
+        if (eventCount < maxEvents) { events[(size_t) eventCount++] = e; return; }
+        if (e.velocity > 0) return;
+        int latest = -1;
+        for (int i = 0; i < eventCount; ++i)
+            if (events[(size_t) i].velocity > 0 && (latest < 0 || events[(size_t) i].time > events[(size_t) latest].time)) latest = i;
+        if (latest >= 0) events[(size_t) latest] = e;
     }
 
     // Starts the notes of a chord (or one note), strummed and humanized.

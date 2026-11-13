@@ -1376,6 +1376,46 @@ int main()
                     "Double: the original leans left, its twin comes later on the right", db (leftEarly) + " vs " + db (rightEarly));
         }
 
+        // A project saved before the Guitar panel (no guitar parameters in it) plays as it did: the
+        // parameters' defaults are Direct, no Pattern, no Hold. And Ableton stopping lets a chord
+        // Hold kept go.
+        {
+            Player old (testFont);
+            const auto s = old.p.guitarSettingsNow();
+            GuitarEngine g;
+            g.prepare (rate);
+            auto h = chordSettings (GuitarEngine::chords);
+            h.hold = true;
+            take (g, h, { 60, 64, 67 }, 0);
+            for (int key : { 60, 64, 67 }) g.noteOff (0, key, second / 2);
+            drain (g, second);
+            const bool kept = g.heldSince (0) >= 0;
+            g.releaseLatched (second);
+            const auto let = drain (g, second * 2);
+            expect (s.direct && ! s.pattern && ! s.hold && kept && g.heldSince (0) < 0 && let.offs > 0,
+                    "Old projects stay Direct; a held chord stops with Ableton's transport");
+        }
+
+        // PLAY's Mono (or Legato) and Glide stand aside while the Guitar panel plays: a strummed chord
+        // keeps all its notes.
+        {
+            Player mono (testFont);
+            mono.set ("guitarPanel", 1);
+            mono.set ("guitarDirect", 0);
+            mono.set ("guitarPattern", 0);
+            mono.set ("guitarHold", 0);
+            mono.set ("guitarMode", 2);
+            mono.set ("playMode", 1);
+            mono.set ("glide", 300);
+            int most = 0;
+            mono.render (1.0, [&] (int b, juce::MidiBuffer& m)
+            {
+                if (b == 0) for (int key : { 60, 64, 67 }) m.addEvent (juce::MidiMessage::noteOn (1, key, (juce::uint8) 100), 0);
+                most = juce::jmax (most, mono.p.activeVoices.load());
+            });
+            expect (most >= 3, "Mono and Glide stand aside while the guitar strums: a chord keeps its notes", juce::String (most) + " voices");
+        }
+
         // Tremolo: the level swings at its rate.
         Player tremolo (testFont);
         tremolo.set ("guitarPanel", 1);   // a Guitar panel control: it acts only while the panel shows

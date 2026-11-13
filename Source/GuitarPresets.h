@@ -23,13 +23,6 @@ inline const juce::StringArray& ids()
     return list;
 }
 
-// Parameters retired from the panel: a preset sets them back to neutral (their defaults).
-inline const juce::StringArray& retired()
-{
-    static const juce::StringArray list { "strumDirection", "palmMute", "strumByVelocity" };
-    return list;
-}
-
 // A preset: its name and the values it sets. A parameter it doesn't name goes to its default.
 struct Preset
 {

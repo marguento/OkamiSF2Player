@@ -90,11 +90,11 @@ static juce::AudioProcessorValueTreeState::ParameterLayout makeLayout()
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "guitarPanel", 6 }, "Guitar Panel",
                                                               juce::StringArray { "Auto", "On", "Off" }, 0));
     // Direct: a plain sampler, the guitar engine off (the default: the SoundFont as it is).
-    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "guitarDirect", 6 }, "Guitar Direct", false));   // a new guitar starts playing: Chords, Pattern, Hold
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "guitarDirect", 6 }, "Guitar Direct", true));   // neutral: a project from 1.2 plays as it did
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "guitarMode", 6 }, "Guitar Mode",
                                                               juce::StringArray { "Solo", "Harmony", "Chords", "Bass & Chord", "Bass & Pick" }, 2));
-    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "guitarPattern", 6 }, "Guitar Pattern", true));
-    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "guitarHold", 6 }, "Guitar Hold", true));
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "guitarPattern", 6 }, "Guitar Pattern", false));
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "guitarHold", 6 }, "Guitar Hold", false));
     {
         juce::StringArray names;
         for (const char* name : GuitarEngine::positionNames) names.add (name);
@@ -160,7 +160,6 @@ static juce::AudioProcessorValueTreeState::ParameterLayout makeLayout()
         for (const char* name : GuitarEngine::tuningNames) names.add (name);
         layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "guitarTuning", 6 }, "Guitar Tuning", names, 0));
     }
-    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "strumByVelocity", 6 }, "Velocity Strings", false));
     {
         juce::StringArray names;
         for (const auto& rhythm : GuitarEngine::rhythms) names.add (rhythm.name);
@@ -169,9 +168,6 @@ static juce::AudioProcessorValueTreeState::ParameterLayout makeLayout()
     layout.add (std::make_unique<Float> (juce::ParameterID { "strum", 6 }, "Strum", juce::NormalisableRange<float> (0.0f, 250.0f, 1.0f, 0.5f), 0.0f,
                                          Attributes().withStringFromValueFunction ([] (float v, int)
                                          { return v < 0.5f ? juce::String ("Off") : juce::String (juce::roundToInt (v)) + " ms"; })));
-    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "strumDirection", 6 }, "Strum Direction",
-                                                              juce::StringArray { "Down", "Up", "Alternate" }, 0));
-    layout.add (std::make_unique<Float> (juce::ParameterID { "palmMute", 6 }, "Palm Mute", range (0.0f, 1.0f, 0.01f), 0.0f, percent));
     layout.add (std::make_unique<Float> (juce::ParameterID { "humanize", 6 }, "Humanize", range (0.0f, 1.0f, 0.01f), 0.0f, percent));
     layout.add (std::make_unique<Float> (juce::ParameterID { "doubleMix", 6 }, "Double", range (0.0f, 1.0f, 0.01f), 0.0f, percent));
     layout.add (std::make_unique<Float> (juce::ParameterID { "tremoloDepth", 6 }, "Tremolo Depth", range (0.0f, 1.0f, 0.01f), 0.0f, percent));
@@ -409,6 +405,13 @@ SF2PlayerProcessor::PlaySettings SF2PlayerProcessor::currentPlaySettings() const
     s.bendRange = juce::roundToInt (value ("bendRange"));
     s.mode = juce::roundToInt (value ("playMode"));
     s.glide = juce::roundToInt (value ("glide"));
+    // The Guitar panel playing (not Direct) strums chords on one channel and slides by itself:
+    // Mono or Legato would keep one note of each chord, and Glide would slide string into string.
+    if (guitarPanelActive() && value ("guitarDirect") < 0.5f)
+    {
+        s.mode = 0;
+        s.glide = 0;
+    }
     s.layerAttenuation = juce::roundToInt (-value ("layerLevel") * 10.0f);
     return s;
 }
@@ -565,7 +568,7 @@ void SF2PlayerProcessor::playDeferredMidi (const GuitarEngine::Settings* guitarS
         const int channel = m.getChannel() - 1;
         if (guitarSettings != nullptr && juce::isPositiveAndBelow (channel, numMidiChannels))
         {
-            if (m.isNoteOn()) { guitar.noteOn (*guitarSettings, channel, m.getNoteNumber(), m.getVelocity(), at); continue; }
+            if (m.isNoteOn()) { lastPlayedVelocity = m.getVelocity(); guitar.noteOn (*guitarSettings, channel, m.getNoteNumber(), m.getVelocity(), at); continue; }
             if (m.isNoteOff() && guitar.noteOff (channel, m.getNoteNumber(), at)) continue;
             if (m.isAllNotesOff() || m.isAllSoundOff()) guitar.allOff (channel, at);
         }
@@ -710,6 +713,7 @@ void SF2PlayerProcessor::swapEngine (std::unique_ptr<Engine> fresh)
         ++pinGeneration;
         guitar.reset();   // its notes were in the old engine
         guitarEngaged = false;
+        clearWheels();   // the new engine's voices start in tune
         if (engine != nullptr)
         {
             applyEffectSettings (true);
@@ -970,6 +974,7 @@ void SF2PlayerProcessor::flushGuitar()
         }
     });
     guitarEngaged = false;
+    clearWheels();
 }
 
 void SF2PlayerProcessor::setGuitarShape (const std::array<int, 6>& frets)
@@ -1008,13 +1013,10 @@ GuitarEngine::Settings SF2PlayerProcessor::currentGuitarSettings() const
     s.pattern = value ("guitarPattern") > 0.5f;
     s.hold = value ("guitarHold") > 0.5f;
     s.strumMs = value ("strum");
-    s.direction = juce::roundToInt (value ("strumDirection"));
-    s.palm = value ("palmMute");
     s.humanize = value ("humanize");
     s.doubleMix = value ("doubleMix");
     s.rhythm = juce::jlimit (0, GuitarEngine::rhythmCount - 1, juce::roundToInt (value ("strumPattern")));
     s.tuning = juce::roundToInt (value ("guitarTuning"));
-    s.velocityStrings = value ("strumByVelocity") > 0.5f;
     s.position = juce::roundToInt (value ("chordPosition"));
     s.topString = juce::roundToInt (value ("stringsTop"));
     s.bottomString = juce::jmax (s.topString, juce::roundToInt (value ("stringsBottom")));
@@ -1029,7 +1031,8 @@ GuitarEngine::Settings SF2PlayerProcessor::currentGuitarSettings() const
     s.fxTimeMs = value ("fxTime");
     s.fxSteps = juce::roundToInt (value ("fxSteps"));
     s.soloFx = juce::roundToInt (value ("soloFx"));
-    for (int i = 0; i < 4; ++i) s.keySwitch[(size_t) i] = juce::roundToInt (value (("keySwitch" + juce::String (i + 1)).toRawUTF8()));
+    static constexpr const char* keySwitchIds[] = { "keySwitch1", "keySwitch2", "keySwitch3", "keySwitch4" };   // no String built here: audio thread
+    for (int i = 0; i < 4; ++i) s.keySwitch[(size_t) i] = juce::roundToInt (value (keySwitchIds[i]));
     s.pedalFx = juce::roundToInt (value ("pedalFx"));
     s.legatoSteps = juce::roundToInt (value ("legatoSteps"));
     s.legatoMs = value ("legatoTime");
@@ -1090,6 +1093,22 @@ void SF2PlayerProcessor::tweakNewVoices (int channel, int detuneCents, bool palm
 // Retunes voices by what their pitch should be now: the engine's glide for their note, plus the
 // wheels' offset for the channel (and Mono Bend's for the lowest note). Only voices newer than
 // `sinceVoiceId` when it's given (a note just started).
+SF2PlayerProcessor::AppliedPitch* SF2PlayerProcessor::appliedPitchFor (const void* voice, juce::int64 id)
+{
+    const auto size = appliedPitch.size();
+    const auto start = (size_t) ((reinterpret_cast<std::uintptr_t> (voice) >> 4) % size);
+    for (size_t k = 0; k < size; ++k)
+    {
+        auto& slot = appliedPitch[(start + k) % size];
+        if (slot.voice == voice || slot.voice == nullptr)
+        {
+            if (slot.voice == nullptr || slot.id != id) slot = { voice, id, 0.0f };   // a new note on this voice
+            return &slot;
+        }
+    }
+    return nullptr;
+}
+
 void SF2PlayerProcessor::applyPitch (juce::int64 now, juce::int64 sinceVoiceId)
 {
     std::array<fluid_voice_t*, 256> voices {};
@@ -1106,8 +1125,9 @@ void SF2PlayerProcessor::applyPitch (juce::int64 now, juce::int64 sinceVoiceId)
         const int note = fluid_voice_get_key (voice) - transpose;
         float cents = guitar.pitchCents (channel, note, now) + channelCents[(size_t) channel];
         if (note == lowest[(size_t) channel]) cents += monoCents[(size_t) channel];
-        auto& applied = appliedPitch[(size_t) (id % (juce::int64) appliedPitch.size())];
-        if (applied.id != id) applied = { id, 0.0f };
+        auto* slot = appliedPitchFor (voice, id);
+        if (slot == nullptr) continue;   // more voices in the pool than slots: can't happen (256 at most)
+        auto& applied = *slot;
         if (std::abs (cents - applied.cents) < 0.5f) continue;
         fluid_voice_gen_incr (voice, GEN_FINETUNE, cents - applied.cents);
         fluid_voice_update_param (voice, GEN_FINETUNE);
@@ -1149,21 +1169,44 @@ bool SF2PlayerProcessor::guitarController (const juce::MidiMessage& m, const Gui
         taken = true;
     }
     if (! taken) return false;
-    // The offsets: Pitch smooth, Slide by semitones (along the frets), Mono Bend on the lowest note.
-    float channelOffset = 0.0f, monoOffset = 0.0f;
-    auto add = [&] (int kind, float amount, int range)   // kind: 1 pitch, 2 slide, 3 mono bend
-    {
-        const float cents = amount * 100.0f * (float) range;
-        if (kind == 1) channelOffset += cents;
-        else if (kind == 2) channelOffset += 100.0f * std::round (cents / 100.0f);
-        else if (kind == 3) monoOffset += cents;
-    };
-    if (pb != 0) add (pb == 1 ? 2 : 3, wheelBend[(size_t) channel], value ("pbRange"));
-    if (mw != 0) add (mw, wheelMod[(size_t) channel], value ("mwRange"));
-    if (at2 == 1) add (1, wheelPressure[(size_t) channel], value ("atRange"));
-    channelCents[(size_t) channel] = channelOffset;
-    monoCents[(size_t) channel] = monoOffset;
+    refreshWheelOffsets();
     return true;
+}
+
+// The wheels' offsets from their last positions and today's assignments, every channel: so an
+// assignment set back to its default (or a cleared wheel) leaves no stale detune behind.
+void SF2PlayerProcessor::refreshWheelOffsets()
+{
+    auto value = [this] (const char* id) { return juce::roundToInt (parameters.getRawParameterValue (id)->load()); };
+    const int pb = value ("pbAssign"), mw = value ("mwAssign"), at2 = value ("atAssign");
+    const int pbRange = value ("pbRange"), mwRange = value ("mwRange"), atRange = value ("atRange");
+    for (int channel = 0; channel < 16; ++channel)
+    {
+        // Pitch smooth, Slide by semitones (along the frets), Mono Bend on the lowest note.
+        float channelOffset = 0.0f, monoOffset = 0.0f;
+        auto add = [&] (int kind, float amount, int range)   // kind: 1 pitch, 2 slide, 3 mono bend
+        {
+            const float cents = amount * 100.0f * (float) range;
+            if (kind == 1) channelOffset += cents;
+            else if (kind == 2) channelOffset += 100.0f * std::round (cents / 100.0f);
+            else if (kind == 3) monoOffset += cents;
+        };
+        if (pb != 0) add (pb == 1 ? 2 : 3, wheelBend[(size_t) channel], pbRange);
+        if (mw != 0) add (mw, wheelMod[(size_t) channel], mwRange);
+        if (at2 == 1) add (1, wheelPressure[(size_t) channel], atRange);
+        channelCents[(size_t) channel] = channelOffset;
+        monoCents[(size_t) channel] = monoOffset;
+    }
+}
+
+void SF2PlayerProcessor::clearWheels()
+{
+    wheelBend.fill (0.0f);
+    wheelMod.fill (0.0f);
+    wheelPressure.fill (0.0f);
+    channelCents.fill (0.0f);
+    monoCents.fill (0.0f);
+    appliedPitch.fill ({});
 }
 
 // Sixteenth-note steps: on the host's grid while it plays (so a pattern lines up with the clip),
@@ -1177,6 +1220,11 @@ void SF2PlayerProcessor::runPattern (const GuitarEngine::Settings& s, juce::int6
         {
             if (const auto tempo = position->getBpm()) bpm = juce::jlimit (20.0, 400.0, *tempo);
             if (const auto beat = position->getPpqPosition(); beat && position->getIsPlaying()) ppq = *beat;
+            // Ableton stopped: a chord Hold kept stops with it (its note-offs don't end it, and no
+            // all-notes-off comes). Played with the transport stopped, a pattern runs on its own.
+            const bool playing = position->getIsPlaying();
+            if (hostWasPlaying && ! playing) guitar.releaseLatched (blockStart);
+            hostWasPlaying = playing;
         }
     const double samplesPerStep = sampleRate * 60.0 / bpm / 4.0;
     const auto& rhythm = GuitarEngine::rhythms[(size_t) s.rhythm];
@@ -1330,14 +1378,23 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         {
             // This block's events: the clip's (notes into the engine, the rest as they are)
             // and the engine's notes that fall due, in time order.
-            struct Item { int position, order; juce::uint8 bytes[3]; int size; GuitarEngine::Event note; bool fromGuitar; };
-            static constexpr int maxItems = 2048;
-            std::array<Item, maxItems> items;
+            using Item = GuitarItem;
+            auto& items = guitarItems;   // a member: 2048 items are too much for the audio thread's stack
+            static constexpr int maxItems = (int) std::tuple_size_v<std::decay_t<decltype (guitarItems)>>;
             int count = 0, order = 0;
             for (const auto metadata : midi)
             {
-                if (metadata.numBytes > 3 || count >= maxItems)
+                if (metadata.numBytes > 3)
                     continue;
+                if (count >= maxItems)   // past the list (a flood): note-offs still end their notes, now
+                {
+                    const auto message = juce::MidiMessage (metadata.data, metadata.numBytes);
+                    const int channel = message.getChannel() - 1;
+                    if (message.isNoteOff() && juce::isPositiveAndBelow (channel, numMidiChannels)
+                        && ! guitar.noteOff (channel, message.getNoteNumber(), blockStart + metadata.samplePosition))
+                        handleMidi (message);
+                    continue;
+                }
                 const auto message = juce::MidiMessage (metadata.data, metadata.numBytes);
                 const int channel = message.getChannel() - 1;
                 const auto at = blockStart + juce::jlimit (0, numSamples, metadata.samplePosition);
@@ -1345,7 +1402,10 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                 if (onChannel && guitarController (message, guitarSettings, channel, at))
                     {}   // a wheel, aftertouch or the pedal, taken by the guitar
                 else if (onChannel && message.isNoteOn())
+                {
+                    lastPlayedVelocity = message.getVelocity();   // as played, before the engine shapes it
                     guitar.noteOn (guitarSettings, channel, message.getNoteNumber(), message.getVelocity(), at);
+                }
                 else if (onChannel && message.isNoteOff() && guitar.noteOff (channel, message.getNoteNumber(), at))
                     {}   // the engine ends what it started for this key
                 else
@@ -1362,6 +1422,20 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
             const auto blockEnd = blockStart + numSamples;
             guitar.advance (guitarSettings, blockEnd);   // first: the chord a pattern plays is voiced here
             guitar.tremolo (guitarSettings, blockEnd);
+            refreshWheelOffsets();   // an assignment changed since: no stale offset
+            // The neck's drawn chord, heard as drawn: strummed once, its own length, never a held
+            // chord (Hold and Pattern don't take it).
+            if (auditionRequests.exchange (0, std::memory_order_acq_rel) > 0)
+            {
+                std::array<int, 6> notes {};
+                const int n = GuitarEngine::shapeNotes (guitarShapeFrets(), notes.data(), GuitarEngine::tuningOf (guitarTuning()));
+                if (n > 0) guitar.audition (guitarSettings, 0, notes.data(), n, 100, blockStart, (juce::int64) (sampleRate * 1.5));
+            }
+            if (const int preview = previewRequest.exchange (0, std::memory_order_acq_rel); preview > 0)   // the Preview button: one note
+            {
+                const int note = preview - 1;
+                guitar.audition (guitarSettings, 0, &note, 1, 100, blockStart, (juce::int64) (sampleRate * 0.7));
+            }
             if (guitarSettings.pattern && guitarSettings.mode != GuitarEngine::solo && guitarSettings.mode != GuitarEngine::harmony)
                 runPattern (guitarSettings, blockStart, numSamples);
             GuitarEngine::Event due;
@@ -1549,6 +1623,7 @@ void SF2PlayerProcessor::setStateInformation (const void* data, int sizeInBytes)
     auto xml = getXmlFromBinary (data, sizeInBytes);
     if (xml == nullptr || ! xml->hasTagName (parameters.state.getType()))
         return;
+    stateRestored = true;   // a saved project: its own settings, never the first-try start
 
     auto state = juce::ValueTree::fromXml (*xml);
     // The writer first, the parameters only once this project's file is published: a save

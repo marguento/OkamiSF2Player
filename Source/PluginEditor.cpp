@@ -241,11 +241,9 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
       playModeAttachment (p.parameters, "playMode", playMode),
       guitarPanelAttachment (p.parameters, "guitarPanel", guitarPanelBox),
       guitarModeAttachment (p.parameters, "guitarMode", guitarModeBox),
-      strumDirectionAttachment (p.parameters, "strumDirection", strumDirectionBox),
       tremoloSyncAttachment (p.parameters, "tremoloSync", tremoloSyncBox),
       patternAttachment (p.parameters, "strumPattern", patternBox),
-      tuningAttachment (p.parameters, "guitarTuning", tuningBox),
-      velocityStringsAttachment (p.parameters, "strumByVelocity", velocityStringsToggle)
+      tuningAttachment (p.parameters, "guitarTuning", tuningBox)
 {
     setLookAndFeel (&look);
 
@@ -375,7 +373,6 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
         for (const char* name : GuitarEngine::tuningNames) tunings.add (name);
         setUpCombo (tuningBox, tunings, "guitarTuning", "The guitar's tuning: how chords are voiced, drawn and shown on the neck");
     }
-    velocityStringsToggle.setTooltip ("Soft strums catch only the high strings, hard ones all six");
     {
         userPresets = GuitarPresets::fromXml (settings->getValue ("guitarUserPresets"));
         rebuildPresetMenu();
@@ -383,7 +380,6 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
         guitarPresets.onChange = [this] { choosePresetItem (guitarPresets.getSelectedId()); };
         addAndMakeVisible (guitarPresets);
     }
-    addAndMakeVisible (velocityStringsToggle);
     {
         juce::StringArray rhythms;
         for (const auto& rhythm : GuitarEngine::rhythms) rhythms.add (rhythm.name);
@@ -528,11 +524,9 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     }
     stringsDash.setJustificationType (juce::Justification::centred);
     optionsNote.setJustificationType (juce::Justification::centredLeft);
-    setUpCombo (strumDirectionBox, { "Down", "Up", "Alternate" }, "strumDirection",
-                "Down: low string to high. Up: high to low. Alternate: down, up, down...");
     setUpCombo (tremoloSyncBox, { "Free", "1/2", "1/4", "1/8", "1/16", "1/4T", "1/8T" }, "tremoloSync",
                 "Tremolo at Rate (Free) or locked to Ableton's tempo");
-    for (auto* label : { &guitarModeLabel, &strumDirectionLabel, &tuningLabel })
+    for (auto* label : { &guitarModeLabel, &tuningLabel })
     {
         label->setJustificationType (juce::Justification::centred);
         label->setFont (juce::FontOptions (12.0f));
@@ -540,7 +534,6 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
         addAndMakeVisible (*label);
     }
     strum.slider.setTooltip ("Strum time: how long a chord takes from the first string to the last (Off: a pick\'s natural 18 ms)");
-    palmMute.slider.setTooltip ("Notes under velocity 45 are stopped by the hand: shorter and darker");
     humanize.slider.setTooltip ("Small random changes of velocity, timing and tuning on every note");
     doubleMix.slider.setTooltip ("A second take: the same notes 18 ms later, a little sharp, on the right; the original on the left");
     tremoloDepth.slider.setTooltip ("Stereo tremolo depth (0: off)");
@@ -676,6 +669,13 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
         const int count = GuitarEngine::shapeNotes (player.guitarShapeFrets(), notes.data(), GuitarEngine::tuningOf (player.guitarTuning()));
         if (count == 0) return;
         stopAudition();
+        if (guitarShown && ! directButton.getToggleState())
+        {
+            // Through the guitar's own audition: the keyboard would make it a chord to voice,
+            // and Hold and Pattern would keep it going.
+            player.auditionRequests.fetch_add (1, std::memory_order_release);
+            return;
+        }
         auditionNotes = notes;
         auditionCount = count;
         auditionTicks = 30;   // 1.5 s at 20 Hz
@@ -1182,7 +1182,14 @@ void SF2PlayerEditor::preview()
     if (previewNote >= 0)
         player.keyboardState.noteOff (1, previewNote, 0.0f);
     const auto& p = presets[(size_t) index];
-    previewNote = (60 >= p.lowKey && 60 <= p.highKey) ? 60 : (p.lowKey + p.highKey) / 2;
+    const int note = (60 >= p.lowKey && 60 <= p.highKey) ? 60 : (p.lowKey + p.highKey) / 2;
+    if (guitarShown && ! directButton.getToggleState())
+    {
+        player.previewRequest.store (note + 1, std::memory_order_release);   // the note itself, not a chord to hold
+        previewNote = -1;
+        return;
+    }
+    previewNote = note;
     player.keyboardState.noteOn (1, previewNote, 0.8f);
     previewTicks = 14;   // 20 Hz timer: 0.7 s
 }
@@ -1271,9 +1278,6 @@ void SF2PlayerEditor::applyGuitarPreset (const GuitarPresets::Preset& preset)
     for (const auto& id : GuitarPresets::ids())
         if (auto* parameter = player.parameters.getParameter (id))
             editParameter (*parameter, parameter->convertTo0to1 (presetValue (preset, id)));
-    for (const auto& id : GuitarPresets::retired())
-        if (auto* parameter = player.parameters.getParameter (id))
-            editParameter (*parameter, parameter->getDefaultValue());
 }
 
 // The current controls under a name (the same name replaces that preset), kept in the settings.
@@ -1356,6 +1360,15 @@ void SF2PlayerEditor::refreshGuitarPanel()
     repaint();
     if (show)   // a guitar: what's played with comes first, the effects and PLAY fold away
     {
+        // A new instance's first guitar: ready to try (Chords, a Folk pattern, Hold).
+        if (! player.stateRestored && ! player.guitarStartGiven)
+        {
+            player.guitarStartGiven = true;
+            for (auto [id, value] : { std::pair { "guitarDirect", 0.0f }, std::pair { "guitarMode", (float) GuitarEngine::chords },
+                                      std::pair { "guitarPattern", 1.0f }, std::pair { "guitarHold", 1.0f } })
+                if (auto* parameter = player.parameters.getParameter (id))
+                    editParameter (*parameter, parameter->convertTo0to1 (value));
+        }
         // The layer has no place on a guitar (its zones take the keyboard): it goes off.
         if (auto* layer = player.parameters.getParameter ("layerMode"); layer != nullptr && layer->getValue() > 0.0f)
         {
@@ -1437,10 +1450,6 @@ void SF2PlayerEditor::showSectionContents()
     playMode.setVisible (play);
     playModeLabel.setVisible (play);
     const bool guitar = guitarShown && ! collapsed[guitarSection];
-    for (juce::Component* gone : { (juce::Component*) &palmMute.slider, (juce::Component*) &palmMute.label,
-                                   (juce::Component*) &strumDirectionBox, (juce::Component*) &strumDirectionLabel,
-                                   (juce::Component*) &velocityStringsToggle })
-        gone->setVisible (false);   // not in the panel any more (neutral)
     for (auto& button : modeButtons) button.setVisible (guitar);
     for (auto* button : { &patternButton, &directButton, &holdButton }) button->setVisible (guitar);
     guitarModeBox.setVisible (false);
@@ -1573,7 +1582,7 @@ void SF2PlayerEditor::timerCallback()
     if (lastVelocityLabel.isVisible())
     {
         const auto settings = player.guitarSettingsNow();
-        const int raw = player.lastVelocity.load();
+        const int raw = player.lastPlayedVelocity.load();
         const int heard = raw > 0 ? GuitarEngine::heardVelocity (settings, raw) : 0;
         const bool below = settings.velocityFx == GuitarEngine::slowStrumLow || settings.velocityFx == GuitarEngine::veloMute;
         const bool fires = heard > 0 && (below ? heard < settings.fxVelocity : heard >= settings.fxVelocity);
@@ -1586,12 +1595,22 @@ void SF2PlayerEditor::timerCallback()
     }
     // PLAY's summary: the controls away from their defaults (none: it changes nothing).
     {
+        // The Guitar panel playing sets Mono, Legato and Glide aside (they'd keep one note of each
+        // chord, and slide string into string): dimmed, and left out of the summary.
+        const bool guitarPlays = guitarShown && ! directButton.getToggleState();
+        for (juce::Component* c : { (juce::Component*) &playMode, (juce::Component*) &glide.slider })
+        {
+            const float alpha = guitarPlays ? 0.35f : 1.0f;
+            if (c->getAlpha() != alpha) { c->setAlpha (alpha); c->setEnabled (! guitarPlays); }
+        }
+        playMode.setTooltip (guitarPlays ? "Off while the Guitar panel plays: it strums chords itself (Direct brings it back)"
+                                         : "Poly: as the SoundFont plays. Mono: one note at a time. Legato: one note, connected notes don't restart.");
         juce::StringArray changes;
         for (auto* knob : { &attack, &release, &velocityCurve, &transpose, &fineTune, &bendRange, &glide })
             if (auto* parameter = dynamic_cast<juce::RangedAudioParameter*> (player.parameters.getParameter (knob->parameterID)))
-                if (std::abs (parameter->getValue() - parameter->getDefaultValue()) > 1.0e-4f)
+                if (std::abs (parameter->getValue() - parameter->getDefaultValue()) > 1.0e-4f && ! (guitarPlays && knob == &glide))
                     changes.add (knob->label.getText() + " " + knob->slider.getTextFromValue (knob->slider.getValue()));
-        if (playMode.getSelectedItemIndex() > 0) changes.add (playMode.getText());
+        if (playMode.getSelectedItemIndex() > 0 && ! guitarPlays) changes.add (playMode.getText());
         const auto summary = changes.joinIntoString (juce::String::fromUTF8 ("  \xc2\xb7  "));
         if (summary != playSummary) { playSummary = summary; repaint (playPanel); }
     }
@@ -2505,7 +2524,9 @@ void SF2PlayerEditor::applyPanelChoice (const SF2PlayerProcessor::State& st)
 {
     const auto key = favouriteKey (st, st.preset);
     if (key.isEmpty() || key == panelKey) return;
+    const bool opening = panelKey.isEmpty();
     panelKey = key;
+    if (opening) return;   // the window just opened: the project's own choice stands
     const auto choices = juce::StringArray::fromLines (settings->getValue ("panelChoices"));
     float choice = 0.0f;   // Auto
     for (const auto& line : choices)

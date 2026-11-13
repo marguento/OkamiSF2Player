@@ -277,13 +277,11 @@ private:
     std::unique_ptr<juce::FileChooser> chooser;
     // The Guitar panel: shown for a guitar (Auto) or when forced on (the Guitar menu in PLAY's header).
     Knob strum { *this, "strum", "Strum" };
-    Knob palmMute { *this, "palmMute", "Palm" };
     Knob humanize { *this, "humanize", "Humanize" };
     Knob doubleMix { *this, "doubleMix", "Double" };
     Knob tremoloDepth { *this, "tremoloDepth", "Tremolo" };
     Knob tremoloRate { *this, "tremoloRate", "Rate" };
-    juce::ComboBox guitarPanelBox, guitarModeBox, strumDirectionBox, tremoloSyncBox, patternBox, tuningBox;
-    juce::ToggleButton velocityStringsToggle { "Velocity strings" };
+    juce::ComboBox guitarPanelBox, guitarModeBox, tremoloSyncBox, patternBox, tuningBox;
     // Starting points for the Guitar panel: they set its controls (Off: all neutral).
     PresetBox guitarPresets;
     // Presets: the built-in ones, then the user's (kept in the settings), Save current as..., Delete.
@@ -297,10 +295,9 @@ private:
     void storeUserPresets();
     juce::String lastPresetName;   // the preset last chosen or matched ("... (edited)" once changed)
     void showGuitarPreset();
-    juce::Label guitarModeLabel { {}, "Mode" }, strumDirectionLabel { {}, "Way" };
+    juce::Label guitarModeLabel { {}, "Mode" };
     juce::AudioProcessorValueTreeState::ComboBoxAttachment guitarPanelAttachment, guitarModeAttachment,
-        strumDirectionAttachment, tremoloSyncAttachment, patternAttachment, tuningAttachment;
-    juce::AudioProcessorValueTreeState::ButtonAttachment velocityStringsAttachment;
+        tremoloSyncAttachment, patternAttachment, tuningAttachment;
     juce::Label tuningLabel { {}, "Tune" };
     // The five modes as buttons under the neck, Pattern and Direct beside them (the hidden Mode
     // menu holds the parameter); Hold by the display.

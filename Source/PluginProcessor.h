@@ -111,11 +111,18 @@ public:
     GuitarEngine::Settings guitarSettingsNow() const { return currentGuitarSettings(); }   // for the editor
     int guitarTuning() const { return juce::roundToInt (parameters.getRawParameterValue ("guitarTuning")->load()); }
     GuitarView guitarView;
+    // A new instance (no saved state) gets the Guitar panel ready to try the first time it shows:
+    // Chords, Pattern and Hold. The parameters' own defaults stay neutral (Direct), so a project
+    // saved before they existed plays as it did. Message thread.
+    bool stateRestored = false, guitarStartGiven = false;
 
     // The chord drawn on the neck (Shape mode): a fret per string from the low E, -1 not played.
     // Saved with the project. Message thread sets it; the audio thread reads the packed copy.
     void setGuitarShape (const std::array<int, 6>& frets);
     std::array<int, 6> guitarShapeFrets() const { return GuitarEngine::unpackShape (guitarShape.load()); }
+    // The editor asks to hear the drawn chord through the guitar (the audio thread plays it).
+    std::atomic<int> auditionRequests { 0 };
+    std::atomic<int> previewRequest { 0 };   // the Preview button's note + 1, through the guitar (0: none)
     std::atomic<juce::uint32> guitarShape { GuitarEngine::packShape ({ -1, -1, -1, -1, -1, -1 }) };
 
     // Voices sounding after the last block (for the editor and tests).
@@ -128,6 +135,7 @@ public:
     // For the editor: note-ons received, the latest velocity, the output's peak since last read.
     std::atomic<int> notesReceived { 0 };
     std::atomic<int> lastVelocity { 0 };
+    std::atomic<int> lastPlayedVelocity { 0 };   // the last note-on the Guitar panel took, as played
     std::atomic<float> outputPeak { 0.0f };
 
     // Notes from the host light the on-screen keyboard; its clicks play the synth.
@@ -205,8 +213,18 @@ private:
     // given to Pitch, Slide or Mono Bend. Each voice is retuned by what changed since last time.
     void applyPitch (juce::int64 now, juce::int64 sinceVoiceId);
     bool guitarController (const juce::MidiMessage&, const GuitarEngine::Settings&, int channel, juce::int64 at);
-    struct AppliedPitch { juce::int64 id = -1; float cents = 0.0f; };
+    void refreshWheelOffsets();
+    bool hostWasPlaying = false;
+    // A guitar block's events (the clip's and the engine's), sorted by time. Audio thread.
+    struct GuitarItem { int position, order; juce::uint8 bytes[3]; int size; GuitarEngine::Event note; bool fromGuitar; };
+    std::array<GuitarItem, 2048> guitarItems;   // runPattern: the transport's last state (audio thread)
+    void clearWheels();
+    // What each voice was retuned by, keyed by FluidSynth's voice (a fixed pool, so a slot per pool
+    // entry, found by linear probing and never shared); a new note on that voice (another id)
+    // starts from 0. Cleared with a new engine.
+    struct AppliedPitch { const void* voice = nullptr; juce::int64 id = -1; float cents = 0.0f; };
     std::array<AppliedPitch, 1024> appliedPitch {};
+    AppliedPitch* appliedPitchFor (const void* voice, juce::int64 id);
     std::array<float, 16> channelCents {}, monoCents {};   // the wheels' offsets, per channel
     std::array<float, 16> wheelBend {}, wheelMod {}, wheelPressure {};   // -1..1, 0..1, 0..1
     void applyTremolo (int numSamples);

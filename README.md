@@ -232,7 +232,7 @@ Settings file `~/Library/Application Support/SF2 Player/SF2 Player.settings`: `r
 
 ## Tests
 
-`ctest` runs `PluginTests` (69 checks). Each renders through the real processor and fails on a
+`ctest` runs `PluginTests` (71 checks). Each renders through the real processor and fails on a
 wrong result:
 
 - **Fidelity:** bit-identical output to FluidSynth at the defaults.
@@ -245,7 +245,7 @@ wrong result:
 - **State and files:** the saved state (file, instruments, knobs), saving without waiting for a
   load, a missing file kept, a file lost during a rate change reported then reloaded, a failed
   rebuild not undoing a newer file, global key ranges, hostile files refused quickly.
-- **Guitar panel:** chord recognition and Chord Position voicings, each mode's keys (Repeat strums, basses, picked strings, Harmony's intervals, Solo's repeats, Velo Mute, Hold, Strings, slow strums), Velocity FX in every mode (Velo Mute on soft chords, Slide Down from above, Slow if Hard on Pattern's strokes), Humanize varying every stroke, a held chord let go when the mode leaves the chord modes, presets (real parameters, each different, the user's kept through the settings), strum order and timing, every string ended on release, Direct bit-identical, chord names (full, partial, intervals), notes never left on by a release mid-strum or a palm cut, strumming spreading a chord's start, Double's twin later on the right, tremolo swinging, chord names and the neck's string placement.
+- **Guitar panel:** chord recognition and Chord Position voicings, each mode's keys (Repeat strums, basses, picked strings, Harmony's intervals, Solo's repeats, Velo Mute, Hold, Strings, slow strums), Velocity FX in every mode (Velo Mute on soft chords, Slide Down from above, Slow if Hard on Pattern's strokes), Humanize varying every stroke, PLAY's Mono and Glide set aside while the guitar strums, old projects staying Direct, a held chord stopping with the transport, a held chord let go when the mode leaves the chord modes, presets (real parameters, each different, the user's kept through the settings), strum order and timing, every string ended on release, Direct bit-identical, chord names (full, partial, intervals), notes never left on by a release mid-strum or a palm cut, strumming spreading a chord's start, Double's twin later on the right, tremolo swinging, chord names and the neck's string placement.
 - **CPU:** 64 string notes under 30 % of a 128-sample block (reported, not judged, under
   Rosetta).
 
