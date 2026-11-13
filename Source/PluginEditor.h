@@ -3,6 +3,7 @@
 #include "PluginProcessor.h"
 #include "GuitarNeck.h"
 #include "Guide.h"
+#include "GuitarPresets.h"
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_audio_utils/juce_audio_utils.h>
 
@@ -251,7 +252,15 @@ private:
     juce::ToggleButton velocityStringsToggle { "Velocity strings" };
     // Starting points for the Guitar panel: they set its controls (Off: all neutral).
     juce::ComboBox guitarPresets;
-    void applyGuitarPreset (int index);
+    // Presets: the built-in ones, then the user's (kept in the settings), Save current as..., Delete.
+    std::vector<GuitarPresets::Preset> userPresets;
+    static constexpr int builtInPresetId = 1, userPresetId = 200, savePresetId = 900, deletePresetId = 1000;
+    void rebuildPresetMenu();
+    void choosePresetItem (int id);
+    float presetValue (const GuitarPresets::Preset&, const juce::String& id) const;
+    void applyGuitarPreset (const GuitarPresets::Preset&);
+    void saveGuitarPreset();
+    void storeUserPresets();
     void showGuitarPreset();
     juce::Label guitarModeLabel { {}, "Mode" }, strumDirectionLabel { {}, "Way" };
     juce::AudioProcessorValueTreeState::ComboBoxAttachment guitarPanelAttachment, guitarModeAttachment,
@@ -398,7 +407,10 @@ private:
     bool soundFolded = false;   // SOUNDFONT folded to one line saying what's loaded
     void toggleSound();
     void showSoundContents();
-    int generalHeight() const { return 26 + 24 + 10 + heightOf (effectsSection) + 10 + heightOf (playSection) + 10; }
+    int openGeneralHeight() const { return 26 + 24 + 10 + heightOf (effectsSection) + 10 + heightOf (playSection) + 10; }
+    int generalHeight() const { return generalFolded ? collapsedHeight : openGeneralHeight(); }
+    bool generalFolded = false;   // GENERAL folded to its title (the meter, Gain and Tone in words)
+    void toggleGeneral();
     int minimumHeight() const;
     void toggleSection (Section);
     void fitToScreen (int keep = -1);   // folds sections until the window fits the screen

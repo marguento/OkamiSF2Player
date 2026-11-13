@@ -3,6 +3,8 @@
 // Orchestral collection in ~/Downloads it also checks that collection and the CPU use.
 #include <set>
 #include "../Source/PluginProcessor.h"
+#include "../Source/GuitarPresets.h"
+#include <set>
 #include "../Source/SoundFontInfo.h"
 #include "../Source/GuitarNeck.h"
 #include <fluidsynth.h>
@@ -1283,6 +1285,26 @@ int main()
         double low = 1e9, high = 0;
         for (double at = 0.3; at < 1.2; at += 0.02) { const double v = rms (t, at, at + 0.02); low = juce::jmin (low, v); high = juce::jmax (high, v); }
         expect (high > low * 4, "Tremolo: the level swings with depth at 100 %", db (low) + " to " + db (high));
+    }
+
+    {
+        // Presets: every parameter they name exists, each built-in plays differently, and the
+        // user's survive a round trip through the settings (anything unknown or broken left out).
+        Player presets (testFont);
+        bool allExist = true;
+        for (const auto& id : GuitarPresets::ids()) allExist = allExist && presets.p.parameters.getParameter (id) != nullptr;
+        for (const auto& preset : GuitarPresets::builtIns())
+            for (const auto& [id, value] : preset.values) allExist = allExist && GuitarPresets::ids().contains (id);
+        std::set<std::map<juce::String, float>> distinct;
+        for (const auto& preset : GuitarPresets::builtIns()) distinct.insert (preset.values);
+        GuitarPresets::Preset mine { "Mine", { { "strum", 80.0f }, { "guitarMode", 3.0f } }, true };
+        auto back = GuitarPresets::fromXml (GuitarPresets::toXml ({ mine }));
+        const auto broken = GuitarPresets::fromXml ("<GuitarPresets><Preset name=\"X\"><Value id=\"gain\" value=\"9\"/>"
+                                                    "<Value id=\"strum\" value=\"nan\"/></Preset><Preset name=\"\"/></GuitarPresets>");
+        expect (allExist && distinct.size() == GuitarPresets::builtIns().size() && back.size() == 1 && back[0].name == "Mine"
+                    && back[0].values == mine.values && broken.size() == 1 && broken[0].values.empty()
+                    && GuitarPresets::fromXml ("not xml").empty(),
+                "Presets: real parameters, each built-in different, the user's kept through the settings");
     }
 
     std::printf ("\n%d of %d checks passed\n", checks - failures, checks);

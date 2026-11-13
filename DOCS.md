@@ -218,8 +218,12 @@ along the frets), Mono Bend (the lowest note only), Modulation, or as usual.
 
 **The rest of the panel:**
 
-- **Presets** (next to GUITAR): Acoustic Strum, Campfire, Double-Tracked, Slow Ballad, High Strings,
-  Folk Pattern, Fingerpicking, Bass & Pick, or Off (Direct). Move a control and it says Custom.
+- **Presets** (next to GUITAR): each holds every control of the panel, CONTROLLERS included (a
+  control it doesn't name goes back to its default). Acoustic Strum, Campfire, Double-Tracked, Slow
+  Ballad, High Strings, Folk Pattern, Muted Rock, Fingerpicking, Bass & Pick, Lead Solo, Octave
+  Lead, or Off (Direct). **Save current as…** keeps the panel as it is under a name (the same name
+  replaces it), in the app's settings, so every project has it; **Delete** removes one. Move a
+  control and the menu says Presets… again.
 - **Strum** (CONTROLLERS, FEEL): strum time, from the first string to the last, up to 250 ms (Off:
   a pick's 18 ms).
 - CONTROLLERS also has:

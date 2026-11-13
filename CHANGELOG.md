@@ -34,8 +34,10 @@ release bumps it and adds an entry here: one line per change a player would noti
     velocity, timing and tuning), **Tune** (Standard, Drop D, Drop C, Open G, DADGAD) and a stereo
     **Tremolo** (at a rate or locked to Ableton's tempo), in a box of their own: FEEL and SOUND
     side by side, the three wheels' jobs under them.
-  - **Presets:** Acoustic Strum, Campfire, Double-Tracked, Slow Ballad, High Strings, Folk Pattern,
-    Fingerpicking, Bass & Pick, and Off (Direct).
+  - **Presets** hold every control of the panel: Acoustic Strum, Campfire, Double-Tracked, Slow
+    Ballad, High Strings, Folk Pattern, Muted Rock, Fingerpicking, Bass & Pick, Lead Solo, Octave
+    Lead, and Off (Direct). **Save current as…** keeps your own for every project; **Delete**
+    removes one.
   - **The neck** lights each string as the pick crosses it (down from the low E, up from the high
     one) and shades the Chord Position's frets; the display shows the chord, a big strum arrow, the
     fret and its notes. Pattern, Direct, Hold and the on/off options are lit switches; each mode's
@@ -50,6 +52,8 @@ release bumps it and adds an entry here: one line per change a player would noti
   beside it, and the instrument), **GENERAL** (Gain, Tone, the effects, PLAY:
   what every instrument has), then the instrument's own: **GUITAR**, or **INSTRUMENT**
   (Layer and Split, which a guitar's zones leave no room for: a guitar turns the layer off).
+  SOUNDFONT and GENERAL fold to one line (a click on the title) saying what's loaded and the
+  levels; GENERAL keeps its meter.
 - **Help built in:** the ? button opens a guide (Start, Guitar, Controls) and About; the header
   explains whatever control the mouse is over (turn it off in the ? menu).
 - Reverb preset "Short Room" and chorus preset "Bright", for acoustic guitar.

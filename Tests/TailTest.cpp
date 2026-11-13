@@ -24,6 +24,8 @@ struct EditorTestAccess
     static void settle (SF2PlayerEditor& editor) { for (int i = 0; i < 2; ++i) { editor.resized(); editor.applyHeight(); } editor.resized(); }
     static void sounding (SF2PlayerEditor& editor) { editor.keyboard.sounding = { 48, 52, 55, 60, 64, 58 }; editor.keyboard.soundingAlpha = 1.0f; }
     static void foldSound (SF2PlayerEditor& editor) { if (! editor.soundFolded) editor.toggleSound(); }
+    // Folded for this snapshot only (not saved in the settings).
+    static void foldGeneral (SF2PlayerEditor& editor) { editor.generalFolded = true; editor.applyHeight(); editor.resized(); }
     static void guide (SF2PlayerEditor& editor, int page) { editor.openGuide ((Guide::Page) page); }
     static void hint (SF2PlayerEditor& editor, const juce::String& text) { editor.hintLabel.setText (text, juce::dontSendNotification); }
 
@@ -176,6 +178,8 @@ int main (int argc, char** argv)
             EditorTestAccess::hint (*dynamic_cast<SF2PlayerEditor*> (editor.get()), juce::String (hint));
         if (std::getenv ("SOUNDFOLD") != nullptr)
             if (auto* e = dynamic_cast<SF2PlayerEditor*> (editor.get())) EditorTestAccess::foldSound (*e);
+        if (std::getenv ("GENERALFOLD") != nullptr)
+            if (auto* e = dynamic_cast<SF2PlayerEditor*> (editor.get())) EditorTestAccess::foldGeneral (*e);
         if (std::getenv ("SOUNDING") != nullptr)   // the keyboard marking an open C the guitar plays
             if (auto* e = dynamic_cast<SF2PlayerEditor*> (editor.get())) EditorTestAccess::sounding (*e);
         if (auto* e = dynamic_cast<SF2PlayerEditor*> (editor.get())) EditorTestAccess::settle (*e);

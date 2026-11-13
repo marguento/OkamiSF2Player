@@ -6,23 +6,6 @@
 
 namespace
 {
-// Direct, mode, pattern, strum (ms), chord position, humanize, double, tremolo, rhythm. Way, Palm and
-// Velocity strings aren't in the panel any more: a preset sets them back to neutral.
-struct GuitarPreset { const char* name; float values[9]; };
-const GuitarPreset guitarPresetList[] = {
-    { "Off (Direct)",   { 1, 2, 0,   0, 0, 0.00f, 0.0f, 0.00f, 2 } },
-    { "Acoustic Strum", { 0, 2, 0,  35, 0, 0.35f, 0.0f, 0.00f, 2 } },
-    { "Campfire",       { 0, 2, 0,  45, 0, 0.50f, 0.0f, 0.00f, 2 } },
-    { "Double-Tracked", { 0, 2, 0,  30, 0, 0.40f, 0.8f, 0.00f, 2 } },
-    { "Slow Ballad",    { 0, 2, 0, 120, 1, 0.30f, 0.5f, 0.15f, 2 } },
-    { "High Strings",   { 0, 2, 0,  20, 2, 0.30f, 0.0f, 0.00f, 2 } },
-    { "Folk Pattern",   { 0, 2, 1,  30, 0, 0.40f, 0.0f, 0.00f, 2 } },
-    { "Fingerpicking",  { 0, 2, 1,   0, 0, 0.45f, 0.0f, 0.00f, 10 } },
-    { "Bass & Pick",    { 0, 4, 0,   0, 0, 0.35f, 0.0f, 0.00f, 2 } },
-};
-const char* const guitarPresetIds[] = { "guitarDirect", "guitarMode", "guitarPattern", "strum", "chordPosition",
-                                        "humanize", "doubleMix", "tremoloDepth", "strumPattern" };
-const char* const retiredGuitarIds[] = { "strumDirection", "palmMute", "strumByVelocity" };   // kept neutral
 // The neck shows played chords around this fret, by Chord Position (I to IV, Kbd).
 constexpr int positionFret[] = { 1, 3, 5, 7, 3 };
 } // namespace
@@ -258,6 +241,7 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     showHints = settings->getBoolValue ("showHints", true);
     showControllers = settings->getBoolValue ("guitarControllers", false);
     soundFolded = settings->getBoolValue ("soundFolded", false);
+    generalFolded = settings->getBoolValue ("generalFolded", false);
     showEffectControls = settings->getBoolValue ("showEffectControls", false);
 
     fileBox.setTextWhenNothingSelected ("Choose a SoundFont...");
@@ -371,10 +355,10 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     }
     velocityStringsToggle.setTooltip ("Soft strums catch only the high strings, hard ones all six");
     {
-        int id = 1;
-        for (const auto& preset : guitarPresetList) guitarPresets.addItem (preset.name, id++);
-        guitarPresets.setTooltip ("Starting points for the Guitar panel: they set its controls (Off: the SoundFont as it is)");
-        guitarPresets.onChange = [this] { if (guitarPresets.getSelectedId() > 0) applyGuitarPreset (guitarPresets.getSelectedId() - 1); };
+        userPresets = GuitarPresets::fromXml (settings->getValue ("guitarUserPresets"));
+        rebuildPresetMenu();
+        guitarPresets.setTooltip ("Presets hold every control of the Guitar panel. Save your own with \"Save current as...\"");
+        guitarPresets.onChange = [this] { choosePresetItem (guitarPresets.getSelectedId()); };
         addAndMakeVisible (guitarPresets);
     }
     addAndMakeVisible (velocityStringsToggle);
@@ -1169,31 +1153,116 @@ void SF2PlayerEditor::changeListenerCallback (juce::ChangeBroadcaster*)
 }
 
 
-void SF2PlayerEditor::applyGuitarPreset (int index)
+// The menu: the built-in presets, then the user's, then saving the current controls and deleting one.
+void SF2PlayerEditor::rebuildPresetMenu()
 {
-    if (! juce::isPositiveAndBelow (index, (int) std::size (guitarPresetList)))
-        return;
-    for (size_t i = 0; i < std::size (guitarPresetIds); ++i)
-        if (auto* parameter = player.parameters.getParameter (guitarPresetIds[i]))
-            parameter->setValueNotifyingHost (parameter->convertTo0to1 (guitarPresetList[index].values[i]));
-    for (const char* id : retiredGuitarIds)
+    guitarPresets.clear (juce::dontSendNotification);
+    const auto& builtIns = GuitarPresets::builtIns();
+    for (int i = 0; i < (int) builtIns.size(); ++i) guitarPresets.addItem (builtIns[(size_t) i].name, builtInPresetId + i);
+    auto* menu = guitarPresets.getRootMenu();
+    if (! userPresets.empty())
+    {
+        menu->addSectionHeader ("My presets");
+        for (int i = 0; i < (int) userPresets.size(); ++i) guitarPresets.addItem (userPresets[(size_t) i].name, userPresetId + i);
+    }
+    menu->addSeparator();
+    menu->addItem (savePresetId, juce::String::fromUTF8 ("Save current as\xe2\x80\xa6"));
+    if (! userPresets.empty())
+    {
+        juce::PopupMenu remove;
+        for (int i = 0; i < (int) userPresets.size(); ++i) remove.addItem (deletePresetId + i, userPresets[(size_t) i].name);
+        menu->addSubMenu ("Delete", remove);
+    }
+    showGuitarPreset();
+}
+
+void SF2PlayerEditor::choosePresetItem (int id)
+{
+    if (id <= 0) return;
+    if (id == savePresetId) saveGuitarPreset();
+    else if (id >= deletePresetId)
+    {
+        if (const int i = id - deletePresetId; juce::isPositiveAndBelow (i, (int) userPresets.size()))
+        {
+            userPresets.erase (userPresets.begin() + i);
+            storeUserPresets();
+        }
+    }
+    else if (id >= userPresetId)
+    {
+        if (const int i = id - userPresetId; juce::isPositiveAndBelow (i, (int) userPresets.size())) applyGuitarPreset (userPresets[(size_t) i]);
+    }
+    else if (const int i = id - builtInPresetId; juce::isPositiveAndBelow (i, (int) GuitarPresets::builtIns().size()))
+        applyGuitarPreset (GuitarPresets::builtIns()[(size_t) i]);
+    showGuitarPreset();
+}
+
+// A preset's value for a parameter: what it holds, else the parameter's default.
+float SF2PlayerEditor::presetValue (const GuitarPresets::Preset& preset, const juce::String& id) const
+{
+    if (const auto found = preset.values.find (id); found != preset.values.end()) return found->second;
+    if (auto* parameter = player.parameters.getParameter (id)) return parameter->convertFrom0to1 (parameter->getDefaultValue());
+    return 0.0f;
+}
+
+void SF2PlayerEditor::applyGuitarPreset (const GuitarPresets::Preset& preset)
+{
+    for (const auto& id : GuitarPresets::ids())
+        if (auto* parameter = player.parameters.getParameter (id))
+            parameter->setValueNotifyingHost (parameter->convertTo0to1 (presetValue (preset, id)));
+    for (const auto& id : GuitarPresets::retired())
         if (auto* parameter = player.parameters.getParameter (id))
             parameter->setValueNotifyingHost (parameter->getDefaultValue());
 }
 
-// The menu names the preset the controls match, else invites a choice ("Presets...", dimmed).
+// The current controls under a name (the same name replaces that preset), kept in the settings.
+void SF2PlayerEditor::saveGuitarPreset()
+{
+    auto* window = new juce::AlertWindow ("Save preset", "A name for the Guitar panel's current settings:", juce::MessageBoxIconType::NoIcon, this);
+    window->addTextEditor ("name", "My Preset " + juce::String ((int) userPresets.size() + 1));
+    window->addButton ("Save", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    window->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    window->enterModalState (true, juce::ModalCallbackFunction::create ([safe = juce::Component::SafePointer<SF2PlayerEditor> (this), window] (int result)
+    {
+        const auto name = window->getTextEditorContents ("name").substring (0, 60).trim();
+        if (safe == nullptr || result != 1 || name.isEmpty()) return;
+        GuitarPresets::Preset preset { name, {}, true };
+        for (const auto& id : GuitarPresets::ids())
+            if (auto* value = safe->player.parameters.getRawParameterValue (id)) preset.values[id] = value->load();
+        auto& list = safe->userPresets;
+        const auto same = std::find_if (list.begin(), list.end(), [&] (const auto& p) { return p.name == name; });
+        if (same != list.end()) *same = preset;
+        else list.push_back (preset);
+        safe->storeUserPresets();
+    }), true);
+}
+
+void SF2PlayerEditor::storeUserPresets()
+{
+    settings->setValue ("guitarUserPresets", GuitarPresets::toXml (userPresets));
+    settings->saveIfNeeded();
+    rebuildPresetMenu();
+}
+
+// The menu names the preset the controls match (the user's first), else invites a choice ("Presets...").
 void SF2PlayerEditor::showGuitarPreset()
 {
-    for (int p = 0; p < (int) std::size (guitarPresetList); ++p)
+    auto matches = [this] (const GuitarPresets::Preset& preset)
     {
-        bool matches = true;
-        for (size_t i = 0; i < std::size (guitarPresetIds) && matches; ++i)
-            matches = std::abs (player.parameters.getRawParameterValue (guitarPresetIds[i])->load() - guitarPresetList[p].values[i]) < 0.01f;
-        if (matches)
-        {
-            if (guitarPresets.getSelectedId() != p + 1) guitarPresets.setSelectedId (p + 1, juce::dontSendNotification);
-            return;
-        }
+        for (const auto& id : GuitarPresets::ids())
+            if (auto* value = player.parameters.getRawParameterValue (id); value != nullptr && std::abs (value->load() - presetValue (preset, id)) > 0.01f)
+                return false;
+        return true;
+    };
+    int found = 0;
+    for (int i = 0; i < (int) userPresets.size() && found == 0; ++i)
+        if (matches (userPresets[(size_t) i])) found = userPresetId + i;
+    for (int i = 0; i < (int) GuitarPresets::builtIns().size() && found == 0; ++i)
+        if (matches (GuitarPresets::builtIns()[(size_t) i])) found = builtInPresetId + i;
+    if (found != 0)
+    {
+        if (guitarPresets.getSelectedId() != found) guitarPresets.setSelectedId (found, juce::dontSendNotification);
+        return;
     }
     if (guitarPresets.getSelectedId() != 0 || guitarPresets.getTextWhenNothingSelected().isEmpty())
     {
@@ -1324,6 +1393,7 @@ void SF2PlayerEditor::mouseUp (const juce::MouseEvent& e)
     else if (guitarShown && title (guitarPanel).contains (at)) toggleSection (guitarSection);
     else if (title (keysPanel).contains (at)) toggleSection (keyboardSection);
     else if (title (soundPanel).contains (at)) toggleSound();
+    else if (title (generalPanel).withTrimmedRight (240).contains (at)) toggleGeneral();   // not over the outputs switch
     else if (guitarShown && controllersFrame.withHeight (collapsedControllersHeight).contains (at)) toggleControllers();
 }
 
@@ -1490,7 +1560,21 @@ void SF2PlayerEditor::paint (juce::Graphics& g)
         g.drawRoundedRectangle (area.reduced (0.5f), 6.0f, 1.0f);
         g.setColour (SF2Look::dim);
         g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
-        g.drawText ("GENERAL", generalPanel.getX() + 12, generalPanel.getY() + 7, 120, 14, juce::Justification::centredLeft);
+        g.drawText (juce::String::fromUTF8 (generalFolded ? "\xe2\x96\xb8" : "\xe2\x96\xbe"), generalPanel.getX() + 8, generalPanel.getY() + 7, 12, 14,
+                    juce::Justification::centred);
+        g.drawText ("GENERAL", generalPanel.getX() + 22, generalPanel.getY() + 7, 80, 14, juce::Justification::centredLeft);
+        if (generalFolded)   // one line: the levels, and which effects send
+        {
+            juce::String text;
+            text << "Gain " << gainSlider.getTextFromValue (gainSlider.getValue()) << juce::String::fromUTF8 ("  \xc2\xb7  ")
+                 << "Tone " << toneSlider.getTextFromValue (toneSlider.getValue());
+            if (reverbToggle.getToggleState()) text << juce::String::fromUTF8 ("  \xc2\xb7  Reverb");
+            if (chorusToggle.getToggleState()) text << juce::String::fromUTF8 ("  \xc2\xb7  Chorus");
+            g.setColour (SF2Look::text);
+            g.setFont (juce::FontOptions (12.5f));
+            g.drawFittedText (text, meterArea.getRight() + 18, generalPanel.getY() + 4, generalPanel.getRight() - meterArea.getRight() - 30, 18,
+                              juce::Justification::centredLeft, 1, 0.8f);
+        }
     }
     // The MIDI light and the output meter, in GENERAL's title bar.
     const auto dot = juce::Rectangle<float> ((float) meterArea.getX() - 16.0f, (float) meterArea.getCentreY() - 3.5f, 7.0f, 7.0f);
@@ -1701,8 +1785,10 @@ void SF2PlayerEditor::resized()
     // switch in its title bar.
     area.removeFromTop (panelGap);
     generalPanel = area.removeFromTop (generalHeight());
-    auto general = generalPanel.reduced (10, 0);
-    sendsToggle.setBounds (general.getRight() - 210, generalPanel.getY() + 2, 210, 22);
+    // Folded, its contents are laid out out of sight (the title keeps the meter).
+    const auto generalContents = generalFolded ? generalPanel.withY (-4000).withHeight (openGeneralHeight()) : generalPanel;
+    auto general = generalContents.reduced (10, 0);
+    sendsToggle.setBounds (general.getRight() - 210, generalContents.getY() + 2, 210, 22);
     // The MIDI light and the output meter: what comes in and what goes out, after the title.
     meterArea = juce::Rectangle<int> (generalPanel.getX() + 112, generalPanel.getY() + 11, 110, 6);
     general.removeFromTop (26);
@@ -2270,6 +2356,17 @@ void SF2PlayerEditor::placeAuthor()
     const int right = fileBox.getRight() - 30;   // the arrow
     authorLabel.setBounds (textEnd, fileBox.getY(), juce::jmax (0, right - textEnd), fileBox.getHeight());
     authorLabel.toFront (false);
+}
+
+// GENERAL folded to its title (the meter, the levels in words) or open; the window follows.
+void SF2PlayerEditor::toggleGeneral()
+{
+    generalFolded = ! generalFolded;
+    settings->setValue ("generalFolded", generalFolded);
+    settings->saveIfNeeded();
+    applyHeight();
+    resized();
+    repaint();
 }
 
 // SOUNDFONT folded to its title (with what's loaded) or open; the window follows.
