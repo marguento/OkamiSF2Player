@@ -1781,7 +1781,8 @@ void SF2PlayerEditor::showMode()
     for (int i = 0; i < GuitarEngine::modeCount; ++i)
     {
         auto& button = modeButtons[(size_t) i];
-        if (button.getToggleState() != (i == mode)) button.setToggleState (i == mode, juce::dontSendNotification);
+        const bool lit = i == mode && ! direct;   // Direct: no mode plays, none lit
+        if (button.getToggleState() != lit) button.setToggleState (lit, juce::dontSendNotification);
         if (button.getAlpha() != (direct ? 0.45f : 1.0f)) button.setAlpha (direct ? 0.45f : 1.0f);
     }
     const int curve = juce::roundToInt (player.parameters.getRawParameterValue ("guitarVeloCurve")->load());
