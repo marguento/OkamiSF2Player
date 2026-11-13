@@ -196,6 +196,16 @@ void RangeKeyboard::drawSoundingDot (juce::Graphics& g, juce::Rectangle<float> k
     }
 }
 
+// A change from the editor, told to the host as one edit (so Ableton can undo it, Cmd+Z); a value
+// already there is left alone (no empty undo steps).
+static void editParameter (juce::AudioProcessorParameter& parameter, float normalised)
+{
+    if (std::abs (parameter.getValue() - normalised) < 1.0e-6f) return;
+    parameter.beginChangeGesture();
+    parameter.setValueNotifyingHost (normalised);
+    parameter.endChangeGesture();
+}
+
 // ---------------------------------------------------------------------------- knobs
 
 SF2PlayerEditor::Knob::Knob (SF2PlayerEditor& editor, const juce::String& id, const juce::String& name)
@@ -421,7 +431,7 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
         button.onClick = [this, i]
         {
             if (auto* parameter = player.parameters.getParameter ("chordPosition"))
-                parameter->setValueNotifyingHost (parameter->convertTo0to1 ((float) i));
+                editParameter (*parameter, parameter->convertTo0to1 ((float) i));
         };
         addAndMakeVisible (button);
     }
@@ -482,7 +492,7 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
         button.onClick = [this, i]
         {
             if (auto* parameter = player.parameters.getParameter ("guitarVeloCurve"))
-                parameter->setValueNotifyingHost (parameter->convertTo0to1 ((float) i));
+                editParameter (*parameter, parameter->convertTo0to1 ((float) i));
         };
         addAndMakeVisible (button);
     }
@@ -608,7 +618,7 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
                 {
                     const int now = juce::roundToInt (threshold->convertFrom0to1 (threshold->getValue()));
                     if ((below && now == 90) || (! below && now == 45))
-                        threshold->setValueNotifyingHost (threshold->convertTo0to1 (below ? 45.0f : 90.0f));
+                        editParameter (*threshold, threshold->convertTo0to1 (below ? 45.0f : 90.0f));
                 }
                 velocityFxBox.setSelectedItemIndex (i, juce::sendNotificationSync);
                 showMode();
@@ -1260,10 +1270,10 @@ void SF2PlayerEditor::applyGuitarPreset (const GuitarPresets::Preset& preset)
 {
     for (const auto& id : GuitarPresets::ids())
         if (auto* parameter = player.parameters.getParameter (id))
-            parameter->setValueNotifyingHost (parameter->convertTo0to1 (presetValue (preset, id)));
+            editParameter (*parameter, parameter->convertTo0to1 (presetValue (preset, id)));
     for (const auto& id : GuitarPresets::retired())
         if (auto* parameter = player.parameters.getParameter (id))
-            parameter->setValueNotifyingHost (parameter->getDefaultValue());
+            editParameter (*parameter, parameter->getDefaultValue());
 }
 
 // The current controls under a name (the same name replaces that preset), kept in the settings.
@@ -1349,7 +1359,7 @@ void SF2PlayerEditor::refreshGuitarPanel()
         // The layer has no place on a guitar (its zones take the keyboard): it goes off.
         if (auto* layer = player.parameters.getParameter ("layerMode"); layer != nullptr && layer->getValue() > 0.0f)
         {
-            layer->setValueNotifyingHost (0.0f);
+            editParameter (*layer, 0.0f);
             layerModeBox.setSelectedItemIndex (0, juce::dontSendNotification);
             refreshLayerControls();
         }
@@ -2503,7 +2513,7 @@ void SF2PlayerEditor::applyPanelChoice (const SF2PlayerProcessor::State& st)
             choice = (float) line.fromLastOccurrenceOf ("=", false, false).getIntValue();
     if (auto* parameter = player.parameters.getParameter ("guitarPanel"))
         if (juce::roundToInt (player.parameters.getRawParameterValue ("guitarPanel")->load()) != (int) choice)
-            parameter->setValueNotifyingHost (parameter->convertTo0to1 (choice));
+            editParameter (*parameter, parameter->convertTo0to1 (choice));
 }
 
 void SF2PlayerEditor::showPanelMenu()
@@ -2519,7 +2529,7 @@ void SF2PlayerEditor::showPanelMenu()
         if (chosen <= 0) return;
         const int choice = chosen - 1;   // 0 Auto, 1 Guitar (On), 2 No panel (Off)
         if (auto* parameter = player.parameters.getParameter ("guitarPanel"))
-            parameter->setValueNotifyingHost (parameter->convertTo0to1 ((float) choice));
+            editParameter (*parameter, parameter->convertTo0to1 ((float) choice));
         // Remembered for this instrument: Auto needs no entry.
         auto choices = juce::StringArray::fromLines (settings->getValue ("panelChoices"));
         choices.removeEmptyStrings();
@@ -2561,7 +2571,7 @@ void SF2PlayerEditor::clickString (int index)
     else bottom = number;
     for (auto [id, value] : { std::pair { "stringsTop", top }, std::pair { "stringsBottom", bottom } })
         if (auto* parameter = player.parameters.getParameter (id))
-            parameter->setValueNotifyingHost (parameter->convertTo0to1 ((float) value));
+            editParameter (*parameter, parameter->convertTo0to1 ((float) value));
     showMode();
 }
 

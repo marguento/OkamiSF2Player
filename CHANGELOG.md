@@ -33,6 +33,8 @@ release bumps it and adds an entry here: one line per change a player would noti
   - A new guitar starts in **Chords** with **Pattern** and **Hold** on, ready to try (saved
     projects keep their own settings).
   - Each stroke lights the keys it plays on the keyboard, not only the neck.
+  - Every switch of the panel (cards, presets, strings, positions, curves) is one edit Ableton
+    can undo with Cmd+Z.
   - Kbd follows the keyboard's octaves as labelled (below C2: I, C2: II, C3: III, C4: IV), and
     the neck shows the position it chose.
   - Humanize you can hear: each stroke varies in loudness, timing and speed across the strings;
