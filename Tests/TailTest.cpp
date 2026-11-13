@@ -24,6 +24,19 @@ struct EditorTestAccess
     static void settle (SF2PlayerEditor& editor) { for (int i = 0; i < 2; ++i) { editor.resized(); editor.applyHeight(); } editor.resized(); }
     static void sounding (SF2PlayerEditor& editor) { editor.keyboard.sounding = { 48, 52, 55, 60, 64, 58 }; editor.keyboard.soundingAlpha = 1.0f; }
     static void foldSound (SF2PlayerEditor& editor) { if (! editor.soundFolded) editor.toggleSound(); }
+    // Picks a preset and prints what the menu shows, and any control that doesn't match it.
+    static void preset (SF2PlayerEditor& e, int id)
+    {
+        e.choosePresetItem (id);
+        e.timerCallback();
+        const auto& p = GuitarPresets::builtIns()[(size_t) (id - 1)];
+        for (const auto& pid : GuitarPresets::ids())
+        {
+            const float now = e.player.parameters.getRawParameterValue (pid)->load(), want = e.presetValue (p, pid);
+            if (std::abs (now - want) > 0.01f) std::printf ("mismatch %s: %f vs %f\n", pid.toRawUTF8(), now, want);
+        }
+        std::printf ("menu: %s\n", e.guitarPresets.getText().toRawUTF8());
+    }
     // Folded for this snapshot only (not saved in the settings).
     static void foldGeneral (SF2PlayerEditor& editor) { editor.generalFolded = true; editor.applyHeight(); editor.resized(); }
     static void guide (SF2PlayerEditor& editor, int page) { editor.openGuide ((Guide::Page) page); }
@@ -178,6 +191,8 @@ int main (int argc, char** argv)
             EditorTestAccess::hint (*dynamic_cast<SF2PlayerEditor*> (editor.get()), juce::String (hint));
         if (std::getenv ("SOUNDFOLD") != nullptr)
             if (auto* e = dynamic_cast<SF2PlayerEditor*> (editor.get())) EditorTestAccess::foldSound (*e);
+        if (const char* id = std::getenv ("PRESETPICK"))
+            if (auto* e = dynamic_cast<SF2PlayerEditor*> (editor.get())) EditorTestAccess::preset (*e, std::atoi (id));
         if (std::getenv ("GENERALFOLD") != nullptr)
             if (auto* e = dynamic_cast<SF2PlayerEditor*> (editor.get())) EditorTestAccess::foldGeneral (*e);
         if (std::getenv ("SOUNDING") != nullptr)   // the keyboard marking an open C the guitar plays

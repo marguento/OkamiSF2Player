@@ -105,6 +105,7 @@ public:
         std::atomic<int> pitchClasses { 0 };        // bit n: pitch class n sounds
         std::atomic<int> bass { -1 };
         std::atomic<bool> up { false }, strummed { false }, palm { false };
+        std::atomic<int> fx { 0 };                  // the Velocity Switch FX it fired (0: none)
     };
     int guitarTuning() const { return juce::roundToInt (parameters.getRawParameterValue ("guitarTuning")->load()); }
     GuitarView guitarView;

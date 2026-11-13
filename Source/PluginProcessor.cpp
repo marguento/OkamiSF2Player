@@ -1362,7 +1362,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
             const auto blockEnd = blockStart + numSamples;
             guitar.advance (guitarSettings, blockEnd);   // first: the chord a pattern plays is voiced here
             guitar.tremolo (guitarSettings, blockEnd);
-            if (guitarSettings.pattern)
+            if (guitarSettings.pattern && guitarSettings.mode != GuitarEngine::solo && guitarSettings.mode != GuitarEngine::harmony)
                 runPattern (guitarSettings, blockStart, numSamples);
             GuitarEngine::Event due;
             while (count < maxItems && guitar.pop (blockEnd, due))
@@ -1432,6 +1432,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
             guitarView.up.store (last.up, std::memory_order_relaxed);
             guitarView.strummed.store (last.strummed, std::memory_order_relaxed);
             guitarView.palm.store (last.palm, std::memory_order_relaxed);
+            guitarView.fx.store (last.fx, std::memory_order_relaxed);
             guitarView.sequence.store (last.sequence, std::memory_order_release);
         }
         activeVoices = fluid_synth_get_active_voice_count (engine->synth);

@@ -175,10 +175,16 @@ holds. Notes outside the zones play as they are.
 Every note lies on a string: a new note on a string stops the one ringing there, as on a guitar;
 letting the chord go stops them all (unless Hold).
 
-**Options** (the box under the modes, only what the mode uses):
+**Options** (the box under the modes, only what the mode uses, in cards: the mode's own at the
+left, VELOCITY FX at the right):
 
-- **Velocity FX:** Slow Strum on Higher Velo / on Lower Velo (a chord played above or below
-  **Velo** is strummed over **Time**), Velo Mute (notes under Velo are muted).
+- **Velocity FX:** what a note gets from (or under) a velocity, set in the row under the cards:
+  Slow if Hard / Slow if Soft (a chord played above or below it is strummed over **Time**), Velo
+  Mute (notes under it are muted, in every mode), Slide Up (from below, fret by fret), Slide Down
+  (from above, fret by fret), Bend (bent up to the note) and Rev. Bend (pre-bent, released to it),
+  over **Time** and **Steps**. Choosing one sets its natural threshold while the old one is
+  untouched: 90 for the hard ones, 45 for the soft ones. The display lights its name when it
+  fires. Solo has no strums, so no slow ones.
 - **Chord Position:** where chords lie on the neck, by their highest note: I (E3-G#3, the open
   position), II (G3-B3), III (A#3-D4), IV (C#4-F4), or Kbd: the octave you play the chord in picks
   it, E to E (from E1: I, from E2: II, from E3: III, from E4: IV).
@@ -191,7 +197,10 @@ letting the chord go stops them all (unless Hold).
 - **Add-on keys** (Bass & Pick): the black keys among the string keys. Unison: C#5 the second
   bass, D#5 the 4th string, F#5 the 2nd, G#5 to C6 the 1st. Chromatic: a semitone below those
   (G#5 below the 1st string), and A#5 to C6 one to three semitones above the 1st.
-- **Rhythm** (with Pattern), **Interval** (Harmony).
+- **Rhythm** (with Pattern), **Interval** (Harmony: 4th Down, 5th Up, Octave Up, Power 1, Power 2,
+  2 Oct. Up).
+- **Pattern** and **Hold** play a held chord, so they only work in the chord modes; in Solo and
+  Harmony they're dimmed, and switching to them lets a held chord go.
 
 **Solo's articulations:**
 
@@ -203,9 +212,9 @@ letting the chord go stops them all (unless Hold).
   Articulations: H.O., Slide, Tremolo (the notes picked again and again), Sustain 1-2 Mono (notes
   ring until a step of one or two semitones), Velo Mute (notes under Velo muted), Muted.
 - **Bass Zone:** notes up to the key next to it play firmer and without articulations.
-- **Velocity FX** add Slide Up, Slide Down, Bend and Reverse Bend: a note at Velo or harder slides
-  up into its pitch, slides down from it, bends up to it, or starts pre-bent and comes down to it,
-  over **Time** and **Steps**.
+- **Velocity FX** work on Solo's notes too: a note at the threshold or harder slides up into its
+  pitch or down into it from above, bends up to it, or starts pre-bent and comes down to it, over
+  **Time** and **Steps**.
 
 Pattern, Hold and Direct sit together in the panel's title bar, Direct a little apart.
 

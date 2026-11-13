@@ -200,7 +200,7 @@ public:
         }
         if (! inMain (note) && ! inRepeat (note))   // outside the zones: as it is
         {
-            playKeyed (s, channel, note, &note, 1, velocity, time, false);
+            playKeyed (s, channel, note, &note, 1, velocity, time, false, false, false);   // no FX either
             return;
         }
         if (s.mode == solo || s.mode == harmony)
@@ -311,7 +311,11 @@ public:
         float value = g.to;
         if (time < g.start) value = g.from;
         else if (g.duration > 0 && time < g.start + g.duration)
-            value = g.from + (g.to - g.from) * (float) (time - g.start) / (float) g.duration;
+        {
+            float t = (float) (time - g.start) / (float) g.duration;
+            if (! g.quantized) t = 1.0f - (1.0f - t) * (1.0f - t);   // a bend: quick at first, settling into the note
+            value = g.from + (g.to - g.from) * t;
+        }
         return g.quantized ? 100.0f * std::round (value / 100.0f) : value;
     }
 
@@ -354,7 +358,9 @@ public:
             c.soloMode = s.mode == solo;
             c.sustainMono = c.soloMode && (articulations (s, c) & (1 << artSustainMono)) != 0;
             if (! c.sustainMono) releaseSustained (channel, until);
-            if (c.latched && ! s.hold && c.down.count == 0)
+            // Hold let go, or the mode left the chord modes (Solo and Harmony have no held chord): the
+            // chord latched (and its pattern) stops.
+            if (c.latched && (! s.hold || ! chordMode) && c.down.count == 0)
             {
                 endStrings (channel, until);
                 c.latched = false;
@@ -631,6 +637,7 @@ public:
         std::array<int, 16> notes {};   // low to high
         int count = 0;
         bool up = false, strummed = false, palm = false;
+        int fx = fxOff;              // the Velocity Switch FX it fired, if any
     };
     const LastPlayed& lastPlayed() const { return last; }
 
@@ -1091,6 +1098,8 @@ private:
         auto stroke = s;
         stroke.direction = goingUp ? up : down;
         if (strummed && stroke.strumMs <= 0.0f) stroke.strumMs = 18.0f;   // a pick takes time to cross the strings
+        const bool veloMuted = ! muted && s.velocityFx == veloMute && velocity < s.fxVelocity;   // soft strokes muted
+        muted = muted || veloMuted;
         if (muted)
         {
             stroke.palm = juce::jmax (0.85f, s.palm);
@@ -1098,6 +1107,7 @@ private:
         }
         auto* group = startGroupWith (stroke, channel, notes.values.data(), notes.count, velocity, time, strummed && notes.count > 1);
         if (group == nullptr) return;
+        if (veloMuted) last.fx = veloMute;
         auto& c = channels[(size_t) channel];
         for (int i = 0; i < group->outputCount; ++i)
         {
@@ -1144,13 +1154,15 @@ private:
                       bool strummed, bool muted = false, bool applyFx = true)
     {
         auto settings = s;
+        const bool veloMuted = ! muted && applyFx && s.velocityFx == veloMute && velocity < s.fxVelocity;   // Harmony's soft notes
+        muted = muted || veloMuted;
         if (muted)
         {
             settings.palm = juce::jmax (0.6f, s.palm);
             velocity = juce::jmin (velocity, palmVelocity - 1);
         }
         auto* group = startGroupWith (settings, channel, notes, count, velocity, time, strummed, applyFx);
-        if (group != nullptr) { group->key = key; group->velocity = velocity; }
+        if (group != nullptr) { group->key = key; group->velocity = velocity; if (veloMuted) last.fx = veloMute; }
         return group;
     }
 
@@ -1223,9 +1235,12 @@ private:
         const bool goingUp = s.direction == up;
         auto strumTotal = strum ? samples (s.strumMs) : 0;
         // Velocity Switch FX: a slow strum above (or below) its velocity.
-        if (strum && ((s.velocityFx == slowStrumHigh && velocity > s.fxVelocity) || (s.velocityFx == slowStrumLow && velocity < s.fxVelocity)))
+        const bool slow = strum && ((s.velocityFx == slowStrumHigh && velocity > s.fxVelocity) || (s.velocityFx == slowStrumLow && velocity < s.fxVelocity));
+        if (slow)
             strumTotal = juce::jmax (strumTotal, samples (s.fxTimeMs));
         const bool palm = s.palm > 0.0f && velocity < palmVelocity;
+        last.fx = slow ? s.velocityFx
+                : (applyFx && velocity >= s.fxVelocity && s.velocityFx >= slideUp && s.velocityFx <= reverseBend) ? s.velocityFx : fxOff;
         last.up = goingUp;
         last.strummed = strum && strumTotal > 0 && group->outputCount > 1;
         last.palm = palm;
@@ -1271,7 +1286,7 @@ private:
             const auto length = samples (s.fxTimeMs);
             const bool fx = applyFx && velocity >= s.fxVelocity;
             if (fx && s.velocityFx == slideUp)          setGlide (channel, pitch, -steps, 0.0f, at, length, true);
-            else if (fx && s.velocityFx == slideDown)   setGlide (channel, pitch, 0.0f, -steps, at + length / 2, length, true);
+            else if (fx && s.velocityFx == slideDown)   setGlide (channel, pitch, steps, 0.0f, at, length, true);   // from above, fret by fret
             else if (fx && s.velocityFx == bend)        setGlide (channel, pitch, -steps, 0.0f, at, length, false);
             else if (fx && s.velocityFx == reverseBend) setGlide (channel, pitch, steps, 0.0f, at, length, false);
             else                                        setGlide (channel, pitch, 0.0f, 0.0f, at, 0, false);

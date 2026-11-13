@@ -99,9 +99,17 @@ struct FolderTab : juce::TextButton
     }
 };
 
-struct RangeKeyboard : juce::MidiKeyboardComponent
+struct RangeKeyboard : juce::MidiKeyboardComponent, juce::TooltipClient
 {
     using MidiKeyboardComponent::MidiKeyboardComponent;
+    // The key under the mouse, explained (its zone and what it does there).
+    std::function<juce::String (int note)> describe;
+    juce::String getTooltip() override
+    {
+        const auto at = getMouseXYRelative().toFloat();
+        const int note = getNoteAndVelocityAtPosition (at).note;
+        return describe != nullptr && note >= 0 ? describe (note) : juce::String();
+    }
     int lowKey = 0, highKey = 127;
     int splitKey = -1;   // Split: the keys below it play the second instrument (tinted)
     bool repeatZones = false;   // the Guitar panel's Repeat zones (C1-D#1, C5-C6), tinted
@@ -139,6 +147,7 @@ private:
     struct Knob
     {
         Knob (SF2PlayerEditor& editor, const juce::String& parameterID, const juce::String& name);
+        const juce::String parameterID;
         juce::Slider slider { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxBelow };
         juce::Label label;
         juce::AudioProcessorValueTreeState::SliderAttachment attachment;
@@ -261,6 +270,7 @@ private:
     void applyGuitarPreset (const GuitarPresets::Preset&);
     void saveGuitarPreset();
     void storeUserPresets();
+    juce::String lastPresetName;   // the preset last chosen or matched ("... (edited)" once changed)
     void showGuitarPreset();
     juce::Label guitarModeLabel { {}, "Mode" }, strumDirectionLabel { {}, "Way" };
     juce::AudioProcessorValueTreeState::ComboBoxAttachment guitarPanelAttachment, guitarModeAttachment,
@@ -375,12 +385,14 @@ private:
     void applyHeight();   // the window's height is its contents': it never stretches
     static constexpr int panelHeight = 118, collapsedHeight = 26, panelGap = 12;
     static constexpr int baseNeckHeight = 140, guitarHeader = 30;   // the neck and the mode buttons
-    int optionRows = 3;   // the options box's rows, as laid out for the mode (and the controllers)
-    static int optionsHeight (int rows) { return 24 * rows + 4 * (rows - 1) + 20; }
+    int optionContent = 96;   // the options box's contents' height, as laid out for the mode
+    int optionsHeight() const { return optionContent + 20; }
+    std::vector<std::pair<juce::Rectangle<int>, juce::String>> optionHeadings;   // its cards' titles
+    std::vector<std::unique_ptr<LedButton>> intervalButtons;   // Harmony's intervals, one lit
     // The neck, the mode buttons and the options box, under the knobs (the controllers' rows too when shown).
     int neckHeight() const
     {
-        return baseNeckHeight + optionsHeight (optionRows) + (patternBoxShown ? patternBoxHeight + 6 : 0)
+        return baseNeckHeight + optionsHeight() + (patternBoxShown ? patternBoxHeight + 6 : 0)
              + (showControllers ? controllersBoxHeight : collapsedControllersHeight) + 6;
     }
     // CONTROLLERS, a box of its own under the mode's, folding to its title: FEEL and SOUND side by
@@ -431,6 +443,9 @@ private:
     void showHelpMenu();
     void openGuide (Guide::Page);
     void showHint();
+    juce::String playSummary;   // what PLAY changes (empty: nothing)
+    juce::String keyHint (int note) const;            // a key's zone and job, for the hint line
+    juce::String areaHint (juce::Point<int>) const;   // the painted parts: titles, the meter, the zones
     friend struct EditorTestAccess;   // TailTest's snapshots fold sections without touching the settings file
 
     juce::String heldText;   // the keys held, for the PIANO title

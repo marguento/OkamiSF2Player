@@ -84,11 +84,20 @@ public:
         }
         palmGlow = palm ? 1.0f : 0.0f;
         palmMuted = palm;
+        fxGlow = 0.0f;   // set by showFx after this
         age = 0.0f;
         repaint();
     }
 
     // The Chord Position to shade on the board (0-3: I to IV; -1: none, as in Kbd or a non-chord mode).
+    // The Velocity Switch FX the last chord fired (empty: none): a light that fades, like PALM's.
+    void showFx (const juce::String& fx)
+    {
+        fxName = fx;
+        fxGlow = fx.isNotEmpty() ? 1.0f : 0.0f;
+        repaint();
+    }
+
     // The rhythm Pattern plays (empty: Pattern off), shown at the display's foot.
     void setPattern (const juce::String& rhythm)
     {
@@ -114,9 +123,10 @@ public:
             else if (! stringPending[i]) stringGlow[i] = juce::jmax (0.0f, stringGlow[i] - seconds * 2.2f);
             strings = strings || stringPending[i] || stringGlow[i] > 0.0f;
         }
-        const bool changing = strings || arrowGlow > 0.0f || palmGlow > 0.0f || age < fadeAfter + 1.0f;
+        const bool changing = strings || arrowGlow > 0.0f || palmGlow > 0.0f || fxGlow > 0.0f || age < fadeAfter + 1.0f;
         arrowGlow = juce::jmax (0.0f, arrowGlow - seconds * 1.6f);
         palmGlow = juce::jmax (0.0f, palmGlow - seconds * 1.2f);
+        fxGlow = juce::jmax (0.0f, fxGlow - seconds * 0.8f);
         age += seconds;
         if (changing) repaint();
     }
@@ -209,14 +219,16 @@ public:
                 g.setColour (cream.withAlpha (0.35f + 0.6f * glow));
                 g.drawText (text, r, juce::Justification::centredLeft);
             };
-            if (patternName.isNotEmpty())
+            if (patternName.isNotEmpty() && fxGlow <= 0.05f)   // a fired FX takes its place for a moment
             {
                 g.setColour (juce::Colour (0xff6fe07a).withAlpha (0.85f));
                 g.setFont (juce::FontOptions (9.5f, juce::Font::bold));
                 g.drawFittedText ("PATTERN " + juce::String::fromUTF8 ("\xc2\xb7 ") + patternName,
                                   lights.removeFromRight (lights.getWidth() * 0.62f).toNearestInt(), juce::Justification::centredRight, 1, 0.7f);
             }
-            light (lights, "PALM", colours.accent, palmGlow);   // the direction is the big arrow above
+            light (lights.removeFromLeft (48.0f), "PALM", colours.accent, palmGlow);   // the direction is the big arrow above
+            if (fxGlow > 0.05f)
+                light (lights, fxName, juce::Colour (0xfff0b44c), fxGlow);   // the Velocity FX just fired
         }
 
         // Right: a rosewood fingerboard, high E on top as in tablature, frets 1 to 12.
@@ -375,7 +387,8 @@ private:
     int noteCount = 0;
     juce::String name;
     bool arrowUp = false, palmMuted = false;
-    float arrowGlow = 0.0f, palmGlow = 0.0f, age = 99.0f;
+    float arrowGlow = 0.0f, palmGlow = 0.0f, fxGlow = 0.0f, age = 99.0f;
+    juce::String fxName;
     std::array<float, 6> stringGlow {}, stringDelay {};
     std::array<bool, 6> stringPending {};
     int shownPosition = -1;

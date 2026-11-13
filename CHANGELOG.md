@@ -22,6 +22,17 @@ release bumps it and adds an entry here: one line per change a player would noti
   - **Solo's articulations:** H.O. (hammer-on and pull-off) and Slide between legato notes, always
     or on key switches (C1-D#1) and the pedal, with Tremolo, Sustain 1-2 Mono, Velo Mute and Muted;
     a Bass Zone; Velocity FX Slide Up, Slide Down, Bend and Reverse Bend.
+  - **Velocity FX** in every mode: Velo Mute mutes soft chords too, Slide Down comes into the
+    note from above, a bend eases into its pitch, each FX gets its natural threshold (hard 90,
+    soft 45), and the display names the one that fired.
+  - The options in cards: POSITION (I II III / IV Kbd), STRINGS (E A D / G B e) or the mode's
+    own, Harmony's intervals as switches, and VELOCITY FX beside them.
+  - Pattern and Hold dim in Solo and Harmony (they play a held chord); switching to those modes
+    lets a held chord go.
+  - A preset changed after it was chosen reads "(edited)".
+  - Hints for the keyboard (each key's zone and job), the zones and the section titles; PLAY says
+    what it changes ("changes nothing" at its defaults); a very-soft-notes warning no longer
+    covers the zones' names.
   - **Controllers:** the pitch bender, mod wheel and aftertouch as Pitch, Slide (by semitones),
     Mono Bend (the lowest note) or Modulation.
   - Every note lies on a string: a new note on a string stops the one ringing there

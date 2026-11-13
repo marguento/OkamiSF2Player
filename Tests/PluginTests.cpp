@@ -1105,6 +1105,42 @@ int main()
                     juce::String ((int) picked.ons.size()) + " tremolo picks, slide at " + juce::String (mid));
         }
 
+        // Velocity FX in the chord modes: Velo Mute mutes a soft chord (not a hard one), Slide Down
+        // comes into the note from above, fret by fret; and leaving the chord modes lets a chord
+        // latched by Hold go.
+        {
+            GuitarEngine g;
+            g.prepare (rate);
+            auto m = chordSettings (GuitarEngine::chords);
+            m.velocityFx = GuitarEngine::veloMute;
+            m.fxVelocity = 45;
+            take (g, m, { 60, 64, 67 }, 0, 30);
+            const bool softMuted = drain (g, second).palm && g.lastPlayed().fx == GuitarEngine::veloMute;
+            for (int key : { 60, 64, 67 }) g.noteOff (0, key, second);
+            take (g, m, { 62, 65, 69 }, second * 2, 110);
+            const bool hardOpen = ! drain (g, second * 3).palm;
+            g.reset();
+            auto d = chordSettings (GuitarEngine::solo);
+            d.velocityFx = GuitarEngine::slideDown;
+            d.fxVelocity = 90;
+            d.fxTimeMs = 100.0f;
+            g.noteOn (d, 0, 60, 120, 0);
+            const bool fromAbove = g.pitchCents (0, 60, 0) == 200.0f && g.pitchCents (0, 60, second) == 0.0f;
+            g.reset();
+            auto h = chordSettings (GuitarEngine::chords);
+            h.hold = true;
+            take (g, h, { 60, 64, 67 }, 0);
+            for (int key : { 60, 64, 67 }) g.noteOff (0, key, second / 2);
+            drain (g, second);
+            const bool latched = g.heldSince (0) >= 0;
+            auto solo = h;
+            solo.mode = GuitarEngine::solo;
+            g.advance (solo, second * 2);
+            const auto let = drain (g, second * 3);
+            expect (softMuted && hardOpen && fromAbove && latched && g.heldSince (0) < 0 && let.offs > 0,
+                    "Velo Mute mutes soft chords; Slide Down comes from above; Solo lets a held chord go");
+        }
+
         // Velocity FX Bend: a hard note starts two semitones low and bends up. Accent and the
         // velocity curve shape what's played; the bass zone plays firmer and without articulations.
         {
