@@ -113,8 +113,12 @@ public:
     GuitarView guitarView;
     // A new instance (no saved state) gets the Guitar panel ready to try the first time it shows:
     // Chords, Pattern and Hold. The parameters' own defaults stay neutral (Direct), so a project
-    // saved before they existed plays as it did. Message thread.
-    bool stateRestored = false, guitarStartGiven = false;
+    // saved before they existed plays as it did. Only while the panel hasn't played yet (a start
+    // given later would change what was recorded). Atomics: hosts restore state on any thread.
+    std::atomic<bool> stateRestored { false }, guitarStartGiven { false };
+    std::atomic<bool> playedGuitar { false };   // the panel already played notes: too late for the start
+    // The Guitar panel is playing (shown and not Direct): what the processor's blocks go by.
+    bool guitarPlaying() const { return guitarPanelActive() && parameters.getRawParameterValue ("guitarDirect")->load() < 0.5f; }
 
     // The chord drawn on the neck (Shape mode): a fret per string from the low E, -1 not played.
     // Saved with the project. Message thread sets it; the audio thread reads the packed copy.
@@ -214,11 +218,12 @@ private:
     void applyPitch (juce::int64 now, juce::int64 sinceVoiceId);
     bool guitarController (const juce::MidiMessage&, const GuitarEngine::Settings&, int channel, juce::int64 at);
     void refreshWheelOffsets();
-    bool hostWasPlaying = false;
+    void clearWheels();
+    int lastPbAssign = 0, lastMwAssign = 0;   // refreshWheelOffsets: an assignment just taken resets the synth's own wheel
+    bool hostWasPlaying = false;   // the transport's state at the last block (audio thread)
     // A guitar block's events (the clip's and the engine's), sorted by time. Audio thread.
     struct GuitarItem { int position, order; juce::uint8 bytes[3]; int size; GuitarEngine::Event note; bool fromGuitar; };
-    std::array<GuitarItem, 2048> guitarItems;   // runPattern: the transport's last state (audio thread)
-    void clearWheels();
+    std::array<GuitarItem, 2048> guitarItems;
     // What each voice was retuned by, keyed by FluidSynth's voice (a fixed pool, so a slot per pool
     // entry, found by linear probing and never shared); a new note on that voice (another id)
     // starts from 0. Cleared with a new engine.

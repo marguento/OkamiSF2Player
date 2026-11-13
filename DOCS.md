@@ -149,7 +149,7 @@ chord in the Main zone keeps strumming by itself. **Direct** (in the title bar) 
 into a plain sampler: every note as it comes, the SoundFont exactly as it is; choosing a mode turns
 it off. What you set is saved with the project, and a project saved before 1.3 keeps playing as it
 did (Direct). While the panel plays, PLAY's Mono, Legato and Glide stand aside (dimmed): they'd
-keep one note of each chord. When Ableton stops, a chord kept by Hold stops with it.
+keep one note of each chord. When Ableton stops, a chord kept by Hold stops with it (with or without Pattern).
 
 **The neck and the keyboard follow what the guitar plays:** each stroke lights the strings on the
 neck and, for a moment, the keys it sounds on the keyboard below (green dots stay on them while

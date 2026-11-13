@@ -648,7 +648,6 @@ public:
     // A velocity as the engine hears it (after Accent and the curve): what Velocity FX compare.
     static int heardVelocity (const Settings& s, int velocity) { return shapeVelocity (s, velocity); }
 
-    // A chord is held (or kept by Hold) on `channel`: since when (-1: none) and how hard.
     // Chords latched by Hold (no key down) let go: their strings end, their pattern stops.
     void releaseLatched (juce::int64 time)
     {
@@ -662,6 +661,7 @@ public:
         }
     }
 
+    // A chord is held (or kept by Hold) on `channel`: since when (-1: none) and how hard.
     juce::int64 heldSince (int channel) const
     {
         const auto& c = channels[(size_t) channel];

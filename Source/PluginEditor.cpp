@@ -669,7 +669,7 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
         const int count = GuitarEngine::shapeNotes (player.guitarShapeFrets(), notes.data(), GuitarEngine::tuningOf (player.guitarTuning()));
         if (count == 0) return;
         stopAudition();
-        if (guitarShown && ! directButton.getToggleState())
+        if (player.guitarPlaying())
         {
             // Through the guitar's own audition: the keyboard would make it a chord to voice,
             // and Hold and Pattern would keep it going.
@@ -1183,7 +1183,7 @@ void SF2PlayerEditor::preview()
         player.keyboardState.noteOff (1, previewNote, 0.0f);
     const auto& p = presets[(size_t) index];
     const int note = (60 >= p.lowKey && 60 <= p.highKey) ? 60 : (p.lowKey + p.highKey) / 2;
-    if (guitarShown && ! directButton.getToggleState())
+    if (player.guitarPlaying())
     {
         player.previewRequest.store (note + 1, std::memory_order_release);   // the note itself, not a chord to hold
         previewNote = -1;
@@ -1361,9 +1361,8 @@ void SF2PlayerEditor::refreshGuitarPanel()
     if (show)   // a guitar: what's played with comes first, the effects and PLAY fold away
     {
         // A new instance's first guitar: ready to try (Chords, a Folk pattern, Hold).
-        if (! player.stateRestored && ! player.guitarStartGiven)
+        if (! player.stateRestored.load() && ! player.playedGuitar.load() && ! player.guitarStartGiven.exchange (true))
         {
-            player.guitarStartGiven = true;
             for (auto [id, value] : { std::pair { "guitarDirect", 0.0f }, std::pair { "guitarMode", (float) GuitarEngine::chords },
                                       std::pair { "guitarPattern", 1.0f }, std::pair { "guitarHold", 1.0f } })
                 if (auto* parameter = player.parameters.getParameter (id))
@@ -1597,7 +1596,7 @@ void SF2PlayerEditor::timerCallback()
     {
         // The Guitar panel playing sets Mono, Legato and Glide aside (they'd keep one note of each
         // chord, and slide string into string): dimmed, and left out of the summary.
-        const bool guitarPlays = guitarShown && ! directButton.getToggleState();
+        const bool guitarPlays = player.guitarPlaying();
         for (juce::Component* c : { (juce::Component*) &playMode, (juce::Component*) &glide.slider })
         {
             const float alpha = guitarPlays ? 0.35f : 1.0f;
@@ -2523,10 +2522,11 @@ void SF2PlayerEditor::toggleEffectControls()
 void SF2PlayerEditor::applyPanelChoice (const SF2PlayerProcessor::State& st)
 {
     const auto key = favouriteKey (st, st.preset);
+    const bool opening = ! panelKeyPrimed;   // the first call: the window just opened
+    panelKeyPrimed = true;
     if (key.isEmpty() || key == panelKey) return;
-    const bool opening = panelKey.isEmpty();
     panelKey = key;
-    if (opening) return;   // the window just opened: the project's own choice stands
+    if (opening) return;   // what the project was saved with stands
     const auto choices = juce::StringArray::fromLines (settings->getValue ("panelChoices"));
     float choice = 0.0f;   // Auto
     for (const auto& line : choices)
