@@ -22,7 +22,7 @@ struct EditorTestAccess
     static void controllers (SF2PlayerEditor& editor, bool on) { if (editor.showControllers != on) editor.toggleControllers(); }
     static void zones (SF2PlayerEditor& editor) { editor.keyboard.repeatZones = true; editor.player.keyboardState.noteOn (1, 60, 0.8f); editor.player.keyboardState.noteOn (1, 64, 0.8f); editor.player.keyboardState.noteOn (1, 67, 0.8f); editor.timerCallback(); editor.keyboard.repeatZones = true; }
     static void settle (SF2PlayerEditor& editor) { for (int i = 0; i < 2; ++i) { editor.resized(); editor.applyHeight(); } editor.resized(); }
-    static void sounding (SF2PlayerEditor& editor) { editor.keyboard.sounding = { 48, 52, 55, 60, 64, -1 }; editor.keyboard.soundingAlpha = 1.0f; }
+    static void sounding (SF2PlayerEditor& editor) { editor.keyboard.sounding = { 48, 52, 55, 60, 64, 58 }; editor.keyboard.soundingAlpha = 1.0f; }
     static void guide (SF2PlayerEditor& editor, int page) { editor.openGuide ((Guide::Page) page); }
     static void hint (SF2PlayerEditor& editor, const juce::String& text) { editor.hintLabel.setText (text, juce::dontSendNotification); }
 

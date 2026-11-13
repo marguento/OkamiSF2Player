@@ -181,20 +181,24 @@ void RangeKeyboard::drawBlackNote (int note, juce::Graphics& g, juce::Rectangle<
     if (isSounding (note)) drawSoundingDot (g, area, false);
 }
 
-// The neck's green dot on a key the guitar sounds: low on a white key (above its name), near the
-// tip of a black one.
+// A key the guitar sounds, in the neck's green: a white key's lower part (the bit you see below
+// the black keys) glows, a black key turns green.
 void RangeKeyboard::drawSoundingDot (juce::Graphics& g, juce::Rectangle<float> key, bool white) const
 {
-    const float size = juce::jlimit (5.0f, 9.0f, key.getWidth() - 3.0f);
-    const auto centre = juce::Point<float> (key.getCentreX(), white ? key.getBottom() - 19.0f : key.getBottom() - size);
-    const auto dot = juce::Rectangle<float> (size, size).withCentre (centre);
     const juce::Colour green (0xff62d86e);
-    g.setColour (green.withAlpha (0.35f * soundingAlpha));
-    g.fillEllipse (dot.expanded (2.5f));
-    g.setColour (green.withAlpha (soundingAlpha));
-    g.fillEllipse (dot);
-    g.setColour (juce::Colours::black.withAlpha (0.4f * soundingAlpha));
-    g.drawEllipse (dot, 0.8f);
+    if (white)
+    {
+        const auto band = key.reduced (1.5f, 0.0f).withTop (key.getBottom() - key.getHeight() * 0.42f).withTrimmedBottom (13.0f);
+        g.setGradientFill (juce::ColourGradient::vertical (green.withAlpha (0.25f * soundingAlpha), band.getY(),
+                                                           green.withAlpha (0.85f * soundingAlpha), band.getBottom()));
+        g.fillRoundedRectangle (band, 2.0f);
+    }
+    else
+    {
+        g.setGradientFill (juce::ColourGradient::vertical (green.darker (0.5f).withAlpha (0.9f * soundingAlpha), key.getY(),
+                                                           green.withAlpha (0.95f * soundingAlpha), key.getBottom()));
+        g.fillRoundedRectangle (key.reduced (0.5f), 1.5f);
+    }
 }
 
 // ---------------------------------------------------------------------------- knobs
