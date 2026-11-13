@@ -1558,17 +1558,12 @@ void SF2PlayerEditor::paint (juce::Graphics& g)
         if (! collapsed[guitarSection] && ! optionsFrame.isEmpty())
         {
             // The mode's options in a box of their own, named after it.
+            // The chosen tab's folder: its options (the tab above names the mode).
             const auto box = optionsFrame.toFloat();
-            g.setColour (juce::Colours::black.withAlpha (0.18f));
+            g.setColour (FolderTab::box);
             g.fillRoundedRectangle (box, 6.0f);
-            g.setColour (juce::Colour (0xfff1e6c8).withAlpha (0.10f));
+            g.setColour (juce::Colour (0xfff1e6c8).withAlpha (0.14f));
             g.drawRoundedRectangle (box.reduced (0.5f), 6.0f, 1.0f);
-            static const char* const modeNames[] = { "SOLO", "HARMONY", "CHORDS", "BASS & CHORD", "BASS & PICK" };
-            const int mode = juce::jlimit (0, GuitarEngine::modeCount - 1, guitarModeBox.getSelectedItemIndex());
-            g.setColour (juce::Colour (0xffb8ab90));
-            g.setFont (juce::FontOptions (10.5f, juce::Font::bold));
-            g.drawText (juce::String (modeNames[mode]) + " OPTIONS", optionsFrame.getX() + 10, optionsFrame.getY() + 5, 240, 14,
-                        juce::Justification::centredLeft);
             if (! patternFrame.isEmpty())
             {
                 const auto pattern = patternFrame.toFloat();
@@ -1729,13 +1724,13 @@ void SF2PlayerEditor::resized()
         else
             patternFrame = {};
         optionsFrame = strip.removeFromBottom (optionsHeight (optionRows)).reduced (8, 0);
-        optionsArea = optionsFrame.reduced (8, 0).withTrimmedTop (22).withTrimmedBottom (8);
-        strip.removeFromBottom (6);
-        auto modes = strip.removeFromBottom (26).reduced (8, 0);   // Pattern, the five modes, Direct
-        patternButton.setBounds (modes.removeFromLeft (86).reduced (0, 2));
-        directButton.setBounds (modes.removeFromRight (78).reduced (0, 2));
+        optionsArea = optionsFrame.reduced (8, 0).withTrimmedTop (10).withTrimmedBottom (8);
+        // The mode tabs sit on the box (the chosen one runs into it, over its top edge).
+        auto modes = strip.removeFromBottom (28).reduced (8, 0).translated (0, 1);   // Pattern, the five tabs, Direct
+        patternButton.setBounds (modes.removeFromLeft (86).withTrimmedBottom (6).withTrimmedTop (1));
+        directButton.setBounds (modes.removeFromRight (78).withTrimmedBottom (6).withTrimmedTop (1));
         modes.reduce (8, 0);
-        const int gap = 4, buttonWidth = (modes.getWidth() - gap * (GuitarEngine::modeCount - 1)) / GuitarEngine::modeCount;
+        const int gap = 3, buttonWidth = (modes.getWidth() - gap * (GuitarEngine::modeCount - 1)) / GuitarEngine::modeCount;
         for (auto& button : modeButtons)
         {
             button.setBounds (modes.removeFromLeft (buttonWidth));

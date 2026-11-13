@@ -66,6 +66,38 @@ struct LedButton : juce::TextButton
     }
 };
 
+// A folder's tab: the Guitar panel's modes. The chosen one is the options box's own colour and
+// opens into it (it overlaps the box's top edge); the others sit behind, darker.
+struct FolderTab : juce::TextButton
+{
+    static inline const juce::Colour box { 0xff1f1610 };   // the options box, under its tab
+    void paintButton (juce::Graphics& g, bool over, bool) override
+    {
+        const bool on = getToggleState();
+        auto r = getLocalBounds().toFloat();
+        if (! on) r = r.withTrimmedBottom (2.0f).withTrimmedTop (3.0f);   // behind: a little lower, clear of the box
+        juce::Path tab;
+        tab.addRoundedRectangle (r.getX(), r.getY(), r.getWidth(), r.getHeight() + 6.0f, 6.0f, 6.0f, true, true, false, false);
+        g.saveState();
+        g.reduceClipRegion (getLocalBounds());
+        g.setColour (on ? box : juce::Colour (0xff35271b).brighter (over ? 0.08f : 0.0f));
+        g.fillPath (tab);
+        g.setColour (juce::Colour (0xfff1e6c8).withAlpha (on ? 0.14f : 0.07f));
+        g.strokePath (tab, juce::PathStrokeType (1.0f));
+        if (on)   // the box's colour runs on below the tab: no line between them
+        {
+            g.setColour (box);
+            g.fillRect (r.withTop (r.getBottom() - 2.0f).reduced (1.0f, 0.0f));
+            g.setColour (juce::Colour (0xffe0a64b));
+            g.fillRoundedRectangle (r.getX() + 8.0f, r.getY() + 1.0f, r.getWidth() - 16.0f, 2.0f, 1.0f);
+        }
+        g.restoreState();
+        g.setColour (on ? juce::Colour (0xffe0a64b) : juce::Colour (0xfff1e6c8).withAlpha (isEnabled() ? 0.6f : 0.3f));
+        g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
+        g.drawFittedText (getButtonText(), r.toNearestInt().reduced (4, 0), juce::Justification::centred, 1, 0.8f);
+    }
+};
+
 struct RangeKeyboard : juce::MidiKeyboardComponent
 {
     using MidiKeyboardComponent::MidiKeyboardComponent;
@@ -228,7 +260,7 @@ private:
     juce::Label tuningLabel { {}, "Tune" };
     // The five modes as buttons under the neck, Pattern and Direct beside them (the hidden Mode
     // menu holds the parameter); Hold by the display.
-    std::array<juce::TextButton, GuitarEngine::modeCount> modeButtons;
+    std::array<FolderTab, GuitarEngine::modeCount> modeButtons;
     LedButton patternButton { "Pattern" }, directButton { "Direct" }, holdButton { "Hold" };
     // Pattern's rhythms, all in view in their own box while Pattern is on; one lit at a time.
     std::vector<std::unique_ptr<LedButton>> rhythmButtons;
@@ -335,7 +367,7 @@ private:
     static constexpr int panelHeight = 118, collapsedHeight = 26, panelGap = 12;
     static constexpr int baseNeckHeight = 140, guitarHeader = 30;   // the neck and the mode buttons
     int optionRows = 3;   // the options box's rows, as laid out for the mode (and the controllers)
-    static int optionsHeight (int rows) { return 24 * rows + 4 * (rows - 1) + 30; }
+    static int optionsHeight (int rows) { return 24 * rows + 4 * (rows - 1) + 20; }
     // The neck, the mode buttons and the options box, under the knobs (the controllers' rows too when shown).
     int neckHeight() const { return baseNeckHeight + optionsHeight (optionRows) + (patternBoxShown ? patternBoxHeight + 6 : 0); }
     int heightOf (Section s) const
