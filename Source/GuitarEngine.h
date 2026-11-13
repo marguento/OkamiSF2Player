@@ -840,8 +840,8 @@ private:
         float x = juce::jlimit (0.0f, 1.0f, v / 127.0f);
         switch (s.velocityCurve)
         {
-            case 1: x = std::pow (x, 0.6f); break;
-            case 2: x = std::pow (x, 1.6f); break;
+            case 1: x = std::pow (x, 0.5f); break;   // soft notes clearly louder
+            case 2: x = std::pow (x, 2.0f); break;   // soft notes clearly softer
             case 3: x = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::pi * x); break;
             default: break;
         }
@@ -1256,13 +1256,23 @@ private:
             strumTotal = (juce::int64) ((double) strumTotal * (1.2 - 0.4 * velocity / 127.0) * (goingUp ? 0.8 : 1.0));
             last.strummed = strumTotal > 0;
         }
+        // Humanize, the whole stroke: a little louder or softer (up to ±15), a little late (up to
+        // 15 ms), quicker or slower across the strings (up to ±35 %), as no two strokes match.
+        int strokeVelocity = 0;
+        juce::int64 strokeDelay = 0;
+        if (s.humanize > 0.0f)
+        {
+            strokeVelocity = juce::roundToInt ((random.nextFloat() * 2.0f - 1.0f) * 15.0f * s.humanize);
+            strokeDelay = samples (random.nextFloat() * 15.0f * s.humanize);
+            strumTotal = (juce::int64) ((double) strumTotal * (1.0 + (random.nextDouble() * 2.0 - 1.0) * 0.35 * s.humanize));
+        }
         for (int i = 0; i < n; ++i)
         {
             const int index = goingUp ? n - 1 - i : i;
             const int note = outputs[index];
             group->outputs[(size_t) i] = (juce::uint8) juce::jlimit (0, 127, note);
-            juce::int64 at = time;
-            int vel = velocity;
+            juce::int64 at = time + strokeDelay;
+            int vel = velocity + strokeVelocity;
             if (n > 1)
             {
                 double t = (double) i / (n - 1);
@@ -1270,14 +1280,14 @@ private:
                     t += (random.nextDouble() - 0.5) * 0.3 / (n - 1);
                 at += (juce::int64) ((double) strumTotal * t);
                 if (strum)
-                    vel = juce::roundToInt (velocity * (1.0 - (goingUp ? 0.10 : 0.14) * t)) + random.nextInt (7) - 3;
+                    vel = juce::roundToInt ((velocity + strokeVelocity) * (1.0 - (goingUp ? 0.10 : 0.14) * t)) + random.nextInt (7) - 3;
             }
             juce::int8 detune = 0;
-            if (s.humanize > 0.0f)
+            if (s.humanize > 0.0f)   // and each string: its own velocity, timing and tuning
             {
-                vel += juce::roundToInt ((random.nextFloat() * 2.0f - 1.0f) * 5.0f * s.humanize);
-                at += samples (random.nextFloat() * 5.0f * s.humanize);
-                detune = (juce::int8) juce::roundToInt ((random.nextFloat() * 2.0f - 1.0f) * 5.0f * s.humanize);
+                vel += juce::roundToInt ((random.nextFloat() * 2.0f - 1.0f) * 8.0f * s.humanize);
+                at += samples (random.nextFloat() * 6.0f * s.humanize);
+                detune = (juce::int8) juce::roundToInt ((random.nextFloat() * 2.0f - 1.0f) * 8.0f * s.humanize);
             }
             const auto velocityByte = (juce::uint8) juce::jlimit (1, 127, vel);
             const auto palmOff = samples (juce::jmap (s.palm, 600.0f, 70.0f));

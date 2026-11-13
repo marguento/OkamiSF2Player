@@ -249,8 +249,9 @@ along the frets), Mono Bend (the lowest note only), Modulation, or as usual.
 - CONTROLLERS also has:
   - **Double:** a second take of every note, 18 ms later and 4 cents sharp, on the right, with
     the original on the left (double-tracking); the slider is the second take's level.
-  - **Humanize:** small random changes to each note's velocity (up to ±5), timing (up to 5 ms
-    later) and tuning (up to ±5 cents).
+  - **Humanize:** no two strokes alike: each one a little louder or softer (up to ±15), later (up
+    to 15 ms) and quicker or slower across the strings (up to ±35 %), and each string its own
+    velocity (±8), timing (up to 6 ms) and tuning (±8 cents). At 100 %.
   - **Tune:** Standard, Drop D, Drop C, Open G or DADGAD.
   - **Tremolo** and **Rate:** a stereo tremolo; the menu beside them locks it to Ableton's tempo
     (1/2 to 1/16, triplets).

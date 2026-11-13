@@ -1105,6 +1105,37 @@ int main()
                     juce::String ((int) picked.ons.size()) + " tremolo picks, slide at " + juce::String (mid));
         }
 
+        // Humanize: at 100 % no two strokes of the same chord match (loudness and timing), at 0 they
+        // stay within the hand's own few steps.
+        {
+            auto spreadOf = [&] (float humanize)
+            {
+                GuitarEngine g;
+                g.prepare (rate);
+                auto p = chordSettings (GuitarEngine::chords);
+                p.humanize = humanize;
+                take (g, p, { 60, 64, 67 }, 0, 100);
+                drain (g, second);
+                int lowVel = 127, highVel = 0;
+                juce::int64 lowLate = std::numeric_limits<juce::int64>::max(), highLate = 0;
+                for (int k = 0; k < 12; ++k)
+                {
+                    const auto at = second * (k + 1);
+                    g.stroke (p, 0, GuitarEngine::strokeDown, 100, at);
+                    GuitarEngine::Event e;
+                    bool first = true;
+                    while (g.pop (at + second, e))
+                        if (e.velocity > 0 && first) { first = false; lowVel = juce::jmin (lowVel, (int) e.velocity); highVel = juce::jmax (highVel, (int) e.velocity);
+                                                       lowLate = juce::jmin (lowLate, e.time - at); highLate = juce::jmax (highLate, e.time - at); }
+                }
+                return std::pair { highVel - lowVel, (double) (highLate - lowLate) * 1000.0 / rate };
+            };
+            const auto [plainVel, plainMs] = spreadOf (0.0f);
+            const auto [humanVel, humanMs] = spreadOf (1.0f);
+            expect (humanVel >= 12 && humanMs >= 5.0 && plainVel <= 7 && plainMs < 1.0, "Humanize: each stroke louder or softer, earlier or later",
+                    juce::String (plainVel) + " / " + juce::String (plainMs, 1) + " ms -> " + juce::String (humanVel) + " / " + juce::String (humanMs, 1) + " ms");
+        }
+
         // Slow if Hard on Pattern's strokes: a hard chord's strokes take Time, a soft one's don't.
         {
             auto spread = [&] (int velocity)

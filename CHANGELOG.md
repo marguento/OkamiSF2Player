@@ -33,6 +33,8 @@ release bumps it and adds an entry here: one line per change a player would noti
   - A new guitar starts in **Chords** with **Pattern** and **Hold** on, ready to try (saved
     projects keep their own settings).
   - Each stroke lights the keys it plays on the keyboard, not only the neck.
+  - Humanize you can hear: each stroke varies in loudness, timing and speed across the strings;
+    the Convex and Concave velocity curves are stronger.
   - Hints for the keyboard (each key's zone and job), the zones and the section titles; PLAY says
     what it changes ("changes nothing" at its defaults); a very-soft-notes warning no longer
     covers the zones' names.
