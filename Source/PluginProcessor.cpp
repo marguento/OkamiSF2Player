@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include "DrumKit.h"
 #include "PluginEditor.h"
 #include <fluidsynth.h>
 #include <algorithm>
@@ -764,6 +765,7 @@ bool SF2PlayerProcessor::loadSoundFont (const juce::File& file)
             p.name = juce::String::fromUTF8 (fluid_preset_get_name (preset));
             p.bank = fluid_preset_get_banknum (preset);
             p.number = fluid_preset_get_num (preset);
+            p.drumKit = DrumKit::isKit (p.bank, p.name);
             if (auto range = info.keyRanges.find ({ p.bank, p.number }); range != info.keyRanges.end())
                 p.lowKey = range->second.first, p.highKey = range->second.second;
             if (auto amounts = info.sends.find ({ p.bank, p.number }); amounts != info.sends.end())

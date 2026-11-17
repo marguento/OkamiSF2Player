@@ -663,6 +663,8 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     addAndMakeVisible (keysButton);
     neck.setTooltip ("Click a string at a fret to draw a chord and see its name; click the name to hear it");
     keyboard.describe = [this] (int note) { return keyHint (note); };
+    drumPads.onRename = [this] (int note, const juce::String& name) { renameDrum (note, name); };
+    addChildComponent (drumPads);
     lastVelocityLabel.setText ("play a note", juce::dontSendNotification);
     lastVelocityLabel.setColour (juce::Label::textColourId, SF2Look::dim);
     lastVelocityLabel.setFont (juce::FontOptions (12.0f));
@@ -1055,6 +1057,7 @@ void SF2PlayerEditor::fillPresetBox (const SF2PlayerProcessor::State& state)
     nextButton.setEnabled (shown > 1);
     refreshFavouriteButton (state, favourite);
     applyPanelChoice (state);
+    refreshDrumPads (state);
     refreshPanelButton();
 
     addInstruments (layerPresetBox, {}, state, favourite);
@@ -1425,7 +1428,7 @@ int SF2PlayerEditor::minimumHeight() const
 {
     int height = 46 + soundHeight();   // the title, then SOUNDFONT
     height += 12 + generalHeight();
-    height += 12 + (guitarShown ? heightOf (guitarSection) : pianoHeight);
+    height += 12 + (guitarShown ? heightOf (guitarSection) : instrumentHeight());
     height += 12 + (collapsed[keyboardSection] ? collapsedHeight : 26 + zoneBand + keyboardHeight + 10);   // PIANO
     return height + 14;
 }
@@ -1504,7 +1507,9 @@ void SF2PlayerEditor::timerCallback()
 {
     showHint();
     refreshGuitarPanel();
+    refreshDrumPads (*player.state());   // a guitar shown or gone changes whether the pads show
     refreshPanelButton();
+    if (drumsShown) drumPads.tick();
     // The neck: what the Guitar panel's engine played last, and its lights fading.
     auto& view = player.guitarView;
     if (const int sequence = view.sequence.load (std::memory_order_acquire); sequence != shownGuitarSequence)
@@ -1740,7 +1745,14 @@ void SF2PlayerEditor::paint (juce::Graphics& g)
         g.drawRoundedRectangle (area.reduced (0.5f), 6.0f, 1.0f);
         g.setColour (juce::Colour (0xffa9b4d6));
         g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
-        g.drawText ("INSTRUMENT", pianoPanel.getX() + 12, pianoPanel.getY() + 7, 160, 14, juce::Justification::centredLeft);
+        g.drawText (drumsShown ? "DRUM KIT" : "INSTRUMENT", pianoPanel.getX() + 12, pianoPanel.getY() + 7, 160, 14, juce::Justification::centredLeft);
+        if (drumsShown)
+        {
+            g.setColour (juce::Colour (0xffa9b4d6).withAlpha (0.55f));
+            g.setFont (juce::FontOptions (10.0f));
+            g.drawText ("click a pad to hear it, double-click to rename it", pianoPanel.getX() + 90, pianoPanel.getY() + 7,
+                        pianoPanel.getWidth() - 102, 14, juce::Justification::centredRight);
+        }
     }
     // PIANO: a deep green-black under the keyboard.
     {
@@ -2042,7 +2054,9 @@ void SF2PlayerEditor::resized()
         guitarPanel = {};
         controllersFrame = {};
         layoutControllers (false);
-        pianoPanel = area.removeFromTop (pianoHeight);
+        pianoPanel = area.removeFromTop (instrumentHeight());
+        if (drumsShown)
+            drumPads.setBounds (pianoPanel.reduced (10, 0).withTrimmedTop (pianoHeight).withHeight (drumPads.preferredHeight()));
         auto inner = pianoPanel.reduced (10, 0).withTrimmedTop (28).withHeight (26);
         layerLabel.setBounds (inner.removeFromLeft (44));
         layerModeBox.setBounds (inner.removeFromLeft (84));
@@ -2446,6 +2460,8 @@ juce::String SF2PlayerEditor::keyHint (int note) const
 {
     using E = GuitarEngine;
     const auto name = juce::MidiMessage::getMidiNoteName (note, true, true, 3);
+    if (drumsShown && drumPads.plays (note) && ! (keyboard.splitKey >= 0 && note < keyboard.splitKey))
+        return name + ": " + drumPads.nameOf (note);
     if (! keyboard.repeatZones)   // no Guitar panel: the instrument itself (and the Split's lower part)
         return name + (keyboard.splitKey >= 0 && note < keyboard.splitKey ? ": plays the second instrument (below the Split)" : ": click to hear it");
     const int mode = guitarModeBox.getSelectedItemIndex();
@@ -2563,9 +2579,30 @@ void SF2PlayerEditor::showPanelMenu()
     menu.addItem (1, juce::String ("Automatic (detected: ") + (player.detectedGuitar() ? "guitar" : "standard instrument") + ")", true, current == 0);
     menu.addItem (2, "Guitar panel", true, current == 1);
     menu.addItem (3, "Standard (no extra panel)", true, current == 2);
+    menu.addSeparator();
+    const bool kit = [this] { const auto st = player.state(); return juce::isPositiveAndBelow (st->preset, (int) st->presets.size()) && st->presets[(size_t) st->preset].drumKit; }();
+    menu.addItem (4, juce::String ("Drum pads (") + (kit ? "detected: a kit" : "not detected") + ")", true, drumsShown);
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (panelButton), [this] (int chosen)
     {
         if (chosen <= 0) return;
+        if (chosen == 4)   // the pads on or off for this instrument, remembered
+        {
+            const auto st = player.state();
+            const bool kit = juce::isPositiveAndBelow (st->preset, (int) st->presets.size()) && st->presets[(size_t) st->preset].drumKit;
+            const auto key = favouriteKey (*st, st->preset);
+            if (drumsShown)
+                setDrumChoice (key, kit ? 2 : 0);
+            else
+            {
+                setDrumChoice (key, kit ? 0 : 1);
+                if (player.guitarPanelActive())   // the pads and the Guitar panel don't share the keys
+                    if (auto* parameter = player.parameters.getParameter ("guitarPanel"))
+                        editParameter (*parameter, parameter->convertTo0to1 (2.0f));
+            }
+            refreshDrumPads (*st);
+            refreshPanelButton();
+            return;
+        }
         const int choice = chosen - 1;   // 0 Auto, 1 Guitar (On), 2 No panel (Off)
         if (auto* parameter = player.parameters.getParameter ("guitarPanel"))
             editParameter (*parameter, parameter->convertTo0to1 ((float) choice));
@@ -2582,15 +2619,92 @@ void SF2PlayerEditor::showPanelMenu()
 }
 
 // The button says what the instrument gets, Guitar (lit) or Standard, and whether that was detected.
+// DRUM KIT: the pads show for a kit (or an instrument forced on), never with the Guitar panel.
+void SF2PlayerEditor::refreshDrumPads (const SF2PlayerProcessor::State& st)
+{
+    const bool valid = juce::isPositiveAndBelow (st.preset, (int) st.presets.size());
+    const auto key = valid ? favouriteKey (st, st.preset) : juce::String();
+    if (key != choiceKey) { choiceKey = key; shownChoice = drumChoice (key); }   // the settings read once per instrument
+    const int choice = shownChoice;
+    const bool show = valid && ! guitarShown && (choice == 1 || (choice == 0 && st.presets[(size_t) st.preset].drumKit));
+    const int rowsBefore = drumPads.rows();
+    if (show && key != drumKey)
+    {
+        const auto& preset = st.presets[(size_t) st.preset];
+        // At most six octaves of pads (C1-B6): a kit is rarely wider, and a whole keyboard would be too tall.
+        drumPads.lowKey = juce::jlimit (24, 95, preset.lowKey);
+        drumPads.highKey = juce::jlimit (drumPads.lowKey, 95, preset.highKey);
+        drumPads.customNames.clear();
+        const auto prefix = key + "#";
+        for (const auto& line : juce::StringArray::fromLines (settings->getValue ("drumNames")))
+            if (line.startsWith (prefix))
+            {
+                const auto rest = line.substring (prefix.length());
+                const int note = rest.upToFirstOccurrenceOf ("=", false, false).getIntValue();
+                if (juce::isPositiveAndBelow (note, 128) && rest.containsChar ('='))
+                    drumPads.customNames[note] = rest.fromFirstOccurrenceOf ("=", false, false);
+            }
+        drumPads.repaint();
+    }
+    drumKey = show ? key : juce::String();
+    if (show == drumsShown && (! show || drumPads.rows() == rowsBefore))
+        return;   // nothing to lay out again (another kit with as many octaves keeps the height)
+    drumsShown = show;
+    drumPads.setVisible (show);
+    applyHeight();
+    resized();
+    repaint();
+}
+
+int SF2PlayerEditor::drumChoice (const juce::String& key) const
+{
+    if (key.isEmpty()) return 0;
+    for (const auto& line : juce::StringArray::fromLines (settings->getValue ("drumChoices")))
+        if (line.upToLastOccurrenceOf ("=", false, false) == key)
+            return juce::jlimit (0, 2, line.fromLastOccurrenceOf ("=", false, false).getIntValue());
+    return 0;
+}
+
+void SF2PlayerEditor::setDrumChoice (const juce::String& key, int choice)
+{
+    if (key.isEmpty()) return;
+    auto choices = juce::StringArray::fromLines (settings->getValue ("drumChoices"));
+    choices.removeEmptyStrings();
+    for (int i = choices.size(); --i >= 0;)
+        if (choices[i].upToLastOccurrenceOf ("=", false, false) == key) choices.remove (i);
+    if (choice != 0) choices.add (key + "=" + juce::String (choice));
+    if (key == choiceKey) shownChoice = choice;
+    settings->setValue ("drumChoices", choices.joinIntoString ("\n"));
+    settings->saveIfNeeded();
+}
+
+// A pad's name, kept for this kit in the settings ("<kit>#<note>=<name>"); empty goes back to General MIDI's.
+void SF2PlayerEditor::renameDrum (int note, const juce::String& name)
+{
+    if (drumKey.isEmpty() || ! juce::isPositiveAndBelow (note, 128)) return;
+    const auto clean = name.removeCharacters ("\r\n\t").trim();
+    const auto prefix = drumKey + "#" + juce::String (note) + "=";
+    auto lines = juce::StringArray::fromLines (settings->getValue ("drumNames"));
+    lines.removeEmptyStrings();
+    for (int i = lines.size(); --i >= 0;)
+        if (lines[i].startsWith (prefix)) lines.remove (i);
+    if (clean.isNotEmpty()) lines.add (prefix + clean);
+    settings->setValue ("drumNames", lines.joinIntoString ("\n"));
+    settings->saveIfNeeded();
+    if (clean.isNotEmpty()) drumPads.customNames[note] = clean;
+    else drumPads.customNames.erase (note);
+    drumPads.repaint();
+}
+
 void SF2PlayerEditor::refreshPanelButton()
 {
     const bool guitar = player.guitarPanelActive();
     const bool automatic = juce::roundToInt (player.parameters.getRawParameterValue ("guitarPanel")->load()) == 0;
-    const auto text = juce::String (guitar ? "Guitar" : "Standard") + (automatic ? juce::String::fromUTF8 (" \xc2\xb7 auto") : juce::String());
+    const auto text = juce::String (guitar ? "Guitar" : drumsShown ? "Drums" : "Standard") + (automatic ? juce::String::fromUTF8 (" \xc2\xb7 auto") : juce::String());
     if (panelButton.getButtonText() != text)
     {
         panelButton.setButtonText (text);
-        panelButton.setColour (juce::TextButton::textColourOffId, guitar ? SF2Look::accent : SF2Look::dim);
+        panelButton.setColour (juce::TextButton::textColourOffId, guitar || drumsShown ? SF2Look::accent : SF2Look::dim);
     }
 }
 

@@ -271,6 +271,24 @@ along the frets), Mono Bend (the lowest note only), Modulation, or as usual.
   header explains whatever control the mouse is over (switch it off in the same menu).
 - For acoustic guitar, try the reverb preset **Short Room** and the chorus preset **Bright**.
 
+## Drum Kit
+
+A drum kit plays one piece per key. When the instrument is a kit (General MIDI's drum bank, 128,
+or an instrument with "Kit", "Drums" or "Percussion" in its name), the INSTRUMENT panel becomes
+**DRUM KIT** and shows a pad for every key the kit plays: a row per octave, C on the left, the
+lowest octave at the bottom. Each pad says what General MIDI puts on that key (C1 Kick, D1 Snare,
+F#1 Closed Hat, A#1 Open Hat, C#2 Crash…) and its note.
+
+- **Click** a pad to hear it; lower on the pad plays louder.
+- Pads **light up** as they sound, whether a clip, a MIDI keyboard or a click plays them.
+- **Double-click** a pad to rename it. Many kits follow General MIDI only in part (their extra
+  keys hold hi-hat variations, rimshots or effects); name those yourself. Names are kept for each
+  kit of each SoundFont, in the plugin's settings; an empty name goes back to General MIDI's.
+- The panel button (next to the instrument) says **Drums** while the pads show. Its menu has
+  **Drum pads**, to turn them off for a kit or on for an instrument the name doesn't give away;
+  the choice is remembered for that instrument. The pads and the Guitar panel never show together.
+- The keyboard's tooltip names the drum on each key too.
+
 ## MIDI from clips
 
 - **Program Change** switches the instrument on that MIDI channel at once, so a note sent with

@@ -13,9 +13,10 @@ Ableton again, as faithfully as possible: at its defaults it plays exactly what 
 not included:** download it separately from that page and open it in the plugin.
 
 **It plays any SoundFont**, not only that one: any General MIDI set, piano, drum kit or synth
-in .sf2 or .sf3 (thousands are free on musical-artifacts.com and elsewhere). Drum kits (the
-"Drum Kits" group, bank 128) play one piece per key on the General MIDI map (C1 kick, D1 snare,
-F#1 closed hi-hat…); there's no drum panel yet, so the keys aren't labelled.
+in .sf2 or .sf3 (thousands are free on musical-artifacts.com and elsewhere). Drum kits (bank 128, or any
+instrument named a kit) get **pads** (new in 1.4): one per key, named by the General MIDI drum
+map (C1 Kick, D1 Snare, F#1 Closed Hat…), lit as they play, and renamed with a double-click for
+kits that map their keys their own way.
 
 **Guitars play like a guitarist** (new in 1.3): with a guitar loaded, the **Guitar panel** turns
 the keyboard into a guitar the way MusicLab RealGuitar does. Chords taken in the Main zone are
@@ -110,6 +111,7 @@ or credential file, or a personal pattern (listed in the ignored `scripts/releas
 | `Source/PluginEditor.h/.cpp` | the look (`SF2Look`), the keyboard with key ranges and the split tint, every control, instrument lists by family with favorites, effect presets, preview |
 | `Source/ChordName.h` | chord names from pitch classes (about 45 types, partial chords, slash chords) |
 | `Source/GuitarNeck.h` | the Guitar panel's strip: chord name, six-string neck, strum arrow, palm and FX lights, the pattern's name |
+| `Source/DrumKit.h` | drum kits: which instruments are kits, General MIDI's drum names, the DRUM KIT panel's pads |
 | `Source/GuitarPresets.h` | the Guitar panel's presets: every control it holds, the built-in ones, the user's (as XML in the settings) |
 | `Source/GuitarEngine.h` | the Guitar panel's engine: keyboard zones, modes, chords recognized and voiced by position, strums, basses and strings, palm-muted, humanized, doubled; fixed arrays, audio thread only |
 | `Source/Guide.h` | the ? button's guide and About |

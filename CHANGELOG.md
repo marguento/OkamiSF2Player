@@ -3,6 +3,19 @@
 The version shows next to the title (`project(... VERSION x.y.z)` in CMakeLists.txt). Each
 release bumps it and adds an entry here: one line per change a player would notice.
 
+## 1.4.0 — Nov 17, 2026
+
+- **Drum Kit panel:** with a drum kit loaded, the INSTRUMENT panel shows a pad for each key the
+  kit plays, a row per octave, named by the General MIDI drum map (Kick, Snare, Closed Hat,
+  Crash…). Click a pad to hear it (lower on the pad is louder); pads light up as they play, from
+  a clip, a MIDI keyboard or a click.
+- **Rename any pad** with a double-click, for kits that don't follow General MIDI; the names are
+  kept for each kit of each SoundFont (an empty name goes back to General MIDI's).
+- Kits are found by themselves: the drum bank (128), or an instrument named a kit ("TR-808 Kit",
+  "Rock Drums", "Latin Percussion"). The panel button's menu turns the pads on or off for any
+  instrument, remembered; the button says **Drums** while they show.
+- The keyboard's tooltip names the drum on each key.
+
 ## 1.3.0 — Nov 17, 2026
 
 - **Guitar panel**, to play guitar SoundFonts the way the classic keyboard guitar instruments do.

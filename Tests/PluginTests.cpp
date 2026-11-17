@@ -7,6 +7,7 @@
 #include <set>
 #include "../Source/SoundFontInfo.h"
 #include "../Source/GuitarNeck.h"
+#include "../Source/DrumKit.h"
 #include <fluidsynth.h>
 #include <juce_events/juce_events.h>
 #include <algorithm>
@@ -1445,6 +1446,23 @@ int main()
                     && back[0].values == mine.values && broken.size() == 1 && broken[0].values.empty()
                     && GuitarPresets::fromXml ("not xml").empty(),
                 "Presets: real parameters, each built-in different, the user's kept through the settings");
+    }
+
+    {
+        // Drum kits: bank 128 or a kit's name shows the pads (not a word inside another), and the
+        // pads name General MIDI's keys, then the note itself; the user's names come first.
+        const bool detected = DrumKit::isKit (128, "Standard") && DrumKit::isKit (0, "TR-808 Kit") && DrumKit::isKit (0, "Rock Drums")
+                              && DrumKit::isKit (3, "Latin Percussion") && ! DrumKit::isKit (0, "Toolkit Pad") && ! DrumKit::isKit (0, "Grand Piano")
+                              && ! DrumKit::isKit (0, "Steel Drum Kitten")
+                              && ! DrumKit::isKit (0, "Steel Drums") && ! DrumKit::isKit (0, "Taiko Drum") && ! DrumKit::isKit (0, "Synth Drum");
+        juce::MidiKeyboardState state;
+        DrumKit::Pads pads (state);
+        pads.lowKey = 36; pads.highKey = 65;
+        pads.customNames[60] = "Hat Choke";
+        const bool named = pads.nameOf (36) == "Kick" && pads.nameOf (42) == "Closed Hat" && pads.nameOf (60) == "Hat Choke"
+                           && DrumKit::gmName (26).isEmpty() && DrumKit::gmName (88).isEmpty() && DrumKit::gmName (87) == "Open Surdo"
+                           && pads.rows() == 3 && pads.plays (65) && ! pads.plays (66);
+        expect (detected && named, "Drum kits: detected by bank or name, pads named by General MIDI or the user");
     }
 
     std::printf ("\n%d of %d checks passed\n", checks - failures, checks);

@@ -49,6 +49,7 @@ public:
     {
         juce::String name;
         int bank = 0, number = 0, lowKey = 0, highKey = 127;
+        bool drumKit = false;   // bank 128 or named a kit (DrumKit::isKit): the DRUM KIT panel's pads
         SoundFontInfo::Sends sends;   // what it sends to the reverb and the chorus, in percent
     };
 
