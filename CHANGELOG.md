@@ -3,7 +3,7 @@
 The version shows next to the title (`project(... VERSION x.y.z)` in CMakeLists.txt). Each
 release bumps it and adds an entry here: one line per change a player would notice.
 
-## 1.3.0 — Nov 11, 2026
+## 1.3.0 — Nov 17, 2026
 
 - **Guitar panel**, to play guitar SoundFonts the way the classic keyboard guitar instruments do.
   It appears by itself for a guitar (General MIDI 24-31, or an instrument named one), or for any
