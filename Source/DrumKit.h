@@ -45,7 +45,8 @@ namespace DrumKit
     struct Pads : juce::Component, juce::TooltipClient, private juce::MidiKeyboardState::Listener
     {
         explicit Pads (juce::MidiKeyboardState& s) : state (s) { state.addListener (this); }
-        ~Pads() override { state.removeListener (this); }
+        ~Pads() override { release(); state.removeListener (this); }
+        void visibilityChanged() override { if (! isVisible()) release(); }   // never a note left held
 
         int lowKey = 36, highKey = 60;
         std::map<int, juce::String> customNames;   // the user's names for this kit, by key
@@ -140,7 +141,8 @@ namespace DrumKit
             state.noteOn (1, note, velocity);
             held = note;
         }
-        void mouseUp (const juce::MouseEvent&) override
+        void mouseUp (const juce::MouseEvent&) override { release(); }
+        void release()
         {
             if (held >= 0) state.noteOff (1, held, 0.0f);
             held = -1;
