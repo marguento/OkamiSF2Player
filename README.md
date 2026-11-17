@@ -13,7 +13,9 @@ Ableton again, as faithfully as possible: at its defaults it plays exactly what 
 not included:** download it separately from that page and open it in the plugin.
 
 **It plays any SoundFont**, not only that one: any General MIDI set, piano, drum kit or synth
-in .sf2 or .sf3 (thousands are free on musical-artifacts.com and elsewhere).
+in .sf2 or .sf3 (thousands are free on musical-artifacts.com and elsewhere). Drum kits (the
+"Drum Kits" group, bank 128) play one piece per key on the General MIDI map (C1 kick, D1 snare,
+F#1 closed hi-hat…); there's no drum panel yet, so the keys aren't labelled.
 
 **Guitars play like a guitarist** (new in 1.3): with a guitar loaded, the **Guitar panel** turns
 the keyboard into a guitar the way MusicLab RealGuitar does. Chords taken in the Main zone are
