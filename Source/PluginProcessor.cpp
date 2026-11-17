@@ -1501,7 +1501,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                     if (count >= maxItems)   // past the list (a flood): played after it, at the block's end, in order
                     {
                         if (overflowCount < (int) overflowIndices.size()) overflowIndices[(size_t) overflowCount++] = index;
-                        else if (message.isNoteOff()) handleMidi (message);   // past even that (16k): a note still ends, early; the rest is lost
+                        else if (onChannel && message.isNoteOff()) lateNoteOffs[(size_t) channel].set ((size_t) message.getNoteNumber());   // past even that (16k): a note still ends, last; the rest is lost
                         continue;
                     }
                     Item item { juce::jlimit (0, numSamples, metadata.samplePosition), order++, {}, metadata.numBytes, {}, false };
@@ -1598,6 +1598,14 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                     handleMidi (juce::MidiMessage (metadata.data, metadata.numBytes));
                 }
             }
+            // Note-offs past even the overflow list: after everything (never before their note-on).
+            for (int channel = 0; channel < numMidiChannels; ++channel)
+                if (auto& offs = lateNoteOffs[(size_t) channel]; offs.any())
+                {
+                    for (int note = 0; note < 128; ++note)
+                        if (offs.test ((size_t) note)) handleMidi (juce::MidiMessage::noteOff (channel + 1, note));
+                    offs.reset();
+                }
             render (position, numSamples);
         }
         if (const auto& last = guitar.lastPlayed(); last.sequence != guitarView.sequence.load (std::memory_order_relaxed))

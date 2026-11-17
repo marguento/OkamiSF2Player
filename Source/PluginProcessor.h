@@ -1,4 +1,5 @@
 #pragma once
+#include <bitset>
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_audio_utils/juce_audio_utils.h>
@@ -230,6 +231,7 @@ private:
     struct GuitarItem { int position, order; juce::uint8 bytes[3]; int size; GuitarEngine::Event note; bool fromGuitar; };
     std::array<GuitarItem, 2048> guitarItems;
     std::array<int, 16384> overflowIndices {};   // a flood's messages past guitarItems, by their place in the block
+    std::array<std::bitset<128>, 16> lateNoteOffs {};   // note-offs past even overflowIndices, played at the block's end
     // What each voice was retuned by, keyed by FluidSynth's voice (a fixed pool, so a slot per pool
     // entry, found by linear probing and never shared); a new note on that voice (another id)
     // starts from 0. Cleared with a new engine.

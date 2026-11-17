@@ -3,6 +3,7 @@
 #include <iterator>
 #include <numeric>
 #include <tuple>
+#include <utility>
 
 namespace
 {
@@ -314,8 +315,11 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     {
         if (const int id = presetBox.getSelectedId(); id > 0)
         {
-            userPickedInstrument = true;   // its remembered panel choice applies
-            player.selectPreset (presetIndexOf (id));
+            const int index = presetIndexOf (id);
+            // Another instrument: its remembered panel choice applies (the same one, e.g. its
+            // favourite entry, changes nothing and must not leave the flag for a later change).
+            if (index != player.state()->preset) userPickedInstrument = true;
+            player.selectPreset (index);
         }
     };
     addAndMakeVisible (presetBox);
@@ -825,8 +829,11 @@ void SF2PlayerEditor::load (const juce::File& file)
     }
     userPickedInstrument = true;   // the file's instrument gets its remembered panel choice
     if (! player.loadSoundFont (file))
+    {
+        userPickedInstrument = false;   // nothing changed: a later instrument isn't this pick
         juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Okami SF2 Player",
                                                 file.getFileName() + " couldn't be read as a SoundFont.");
+    }
 }
 
 void SF2PlayerEditor::stepPreset (int delta)
@@ -2530,12 +2537,14 @@ void SF2PlayerEditor::toggleEffectControls()
 void SF2PlayerEditor::applyPanelChoice (const SF2PlayerProcessor::State& st)
 {
     const auto key = favouriteKey (st, st.preset);
-    if (key.isEmpty() || key == panelKey) return;
-    panelKey = key;
+    if (key.isEmpty()) return;
     // Only an instrument the user picks here gets its remembered choice: one the project (or a
-    // clip's program change) brings keeps the choice saved with the project.
-    if (! userPickedInstrument) return;
-    userPickedInstrument = false;
+    // clip's program change) brings keeps the choice saved with the project. A pick is spent on
+    // the first instrument shown after it (picks load synchronously), changed or not.
+    const bool picked = std::exchange (userPickedInstrument, false);
+    if (key == panelKey) return;
+    panelKey = key;
+    if (! picked) return;
     const auto choices = juce::StringArray::fromLines (settings->getValue ("panelChoices"));
     float choice = 0.0f;   // Auto
     for (const auto& line : choices)
