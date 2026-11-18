@@ -275,11 +275,29 @@ along the frets), Mono Bend (the lowest note only), Modulation, or as usual.
 
 A drum kit plays one piece per key. When the instrument is a kit (General MIDI's drum bank, 128,
 or an instrument with "Kit", "Drums" or "Percussion" in its name), the INSTRUMENT panel becomes
-**DRUM KIT** and shows a pad for every key the kit plays: a row per octave, C on the left, the
-lowest octave at the bottom. Each pad says what General MIDI puts on that key (C1 Kick, D1 Snare,
-F#1 Closed Hat, A#1 Open Hat, C#2 Crash…) and its note.
+**DRUM KIT**, with two views (the buttons **Kit** and **Pads** at its top right, remembered):
 
-- **Click** a pad to hear it; lower on the pad plays louder.
+- **Kit**: a drum set, with the pieces the kit has on General MIDI's keys: kick, snare, hi-hat,
+  high, mid and floor toms, crash, crash 2, ride, splash and china. Click a piece to hear it.
+- **Pads**: a pad for every key the kit plays, a row per octave, C on the left, the lowest octave
+  at the bottom. Each pad says what General MIDI puts on that key (C1 Kick, D1 Snare, F#1 Closed
+  Hat, A#1 Open Hat, C#2 Crash…) and its note. Lower on a pad plays louder.
+
+**Play it with the computer's keys:** click the panel (a thin orange line says it has the keys),
+then type. Each piece shows its key:
+
+| Key | Plays | Key | Plays |
+|---|---|---|---|
+| Z | Kick | F / G / H | High, mid, floor tom |
+| X | Snare | Q / W | Crash, crash 2 |
+| C | Side stick | E / R | Ride, ride bell |
+| V | Clap | T / Y | China, splash |
+| A / S / D | Closed, open, pedal hi-hat | Shift + key | an accent (full velocity) |
+
+A key whose piece the kit doesn't have does nothing. In Ableton, the plugin's window takes the
+keys while it's in front; click elsewhere in Ableton to give them back.
+
+- **Click** a pad or a piece to hear it.
 - Pads **light up** as they sound, whether a clip, a MIDI keyboard or a click plays them.
 - **Double-click** a pad to rename it. Many kits follow General MIDI only in part (their extra
   keys hold hi-hat variations, rimshots or effects); name those yourself. Names are kept for each

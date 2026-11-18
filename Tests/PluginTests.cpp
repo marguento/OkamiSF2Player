@@ -1462,7 +1462,14 @@ int main()
         const bool named = pads.nameOf (36) == "Kick" && pads.nameOf (42) == "Closed Hat" && pads.nameOf (60) == "Hat Choke"
                            && DrumKit::gmName (26).isEmpty() && DrumKit::gmName (88).isEmpty() && DrumKit::gmName (87) == "Open Surdo"
                            && pads.rows() == 3 && pads.plays (65) && ! pads.plays (66);
-        expect (detected && named, "Drum kits: detected by bank or name, pads named by General MIDI or the user");
+        // The computer's keys: each plays its piece's first key the kit has (either case), none when it has none.
+        DrumKit::Pads small (state);
+        small.lowKey = 36; small.highKey = 47;
+        const bool keys = pads.noteForKey ('z') == 36 && pads.noteForKey ('X') == 38 && pads.noteForKey ('f') == 50
+                          && pads.noteForKey ('h') == 43 && pads.noteForKey ('a') == 42 && pads.noteForKey ('1') == -1
+                          && small.noteForKey ('f') == -1 && small.noteForKey ('g') == 47 && small.noteForKey ('q') == -1
+                          && pads.keyForNote (36) == 'z' && pads.keyForNote (61) == 0;
+        expect (detected && named && keys, "Drum kits: detected by bank or name, pads named by General MIDI or the user, keys mapped");
     }
 
     std::printf ("\n%d of %d checks passed\n", checks - failures, checks);

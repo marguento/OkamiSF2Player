@@ -277,6 +277,8 @@ private:
     // DRUM KIT: a kit's pads, in the INSTRUMENT panel under the layer row (Auto for a kit, or
     // forced on or off per instrument from the panel button's menu, remembered in "drumChoices").
     DrumKit::Pads drumPads { player.keyboardState };
+    juce::TextButton kitViewButton { "Kit" }, padsViewButton { "Pads" };   // the panel's two views (remembered: "drumView")
+    void showDrumView (bool kit);
     bool drumsShown = false;
     juce::String drumKey;   // the kit the pads show (favouriteKey)
     juce::String choiceKey;   // the instrument shownChoice was read for

@@ -5,10 +5,14 @@ release bumps it and adds an entry here: one line per change a player would noti
 
 ## 1.4.0 — Nov 17, 2026
 
-- **Drum Kit panel:** with a drum kit loaded, the INSTRUMENT panel shows a pad for each key the
-  kit plays, a row per octave, named by the General MIDI drum map (Kick, Snare, Closed Hat,
-  Crash…). Click a pad to hear it (lower on the pad is louder); pads light up as they play, from
-  a clip, a MIDI keyboard or a click.
+- **Drum Kit panel:** with a drum kit loaded, the INSTRUMENT panel shows the kit as a **drum set**
+  (kick, snare, hi-hat, toms, crashes, ride, splash, china: the pieces the kit has) or as **pads**,
+  one per key, named by the General MIDI drum map (Kick, Snare, Closed Hat, Crash…). Click a piece
+  or a pad to hear it (lower on a pad is louder); everything lights up as it plays, from a clip, a
+  MIDI keyboard or a click. **Kit / Pads** switch the view, remembered.
+- **Play the drums with the computer's keys:** click the panel, then Z kick, X snare, C side
+  stick, V clap, A/S/D closed, open and pedal hi-hat, F/G/H toms, Q/W crashes, E ride, R ride
+  bell, T china, Y splash (Shift for an accent). Each piece shows its key.
 - **Rename any pad** with a double-click, for kits that don't follow General MIDI; the names are
   kept for each kit of each SoundFont (an empty name goes back to General MIDI's).
 - Kits are found by themselves: the drum bank (128), or an instrument named a kit ("TR-808 Kit",

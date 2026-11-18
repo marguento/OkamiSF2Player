@@ -665,6 +665,14 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     keyboard.describe = [this] (int note) { return keyHint (note); };
     drumPads.onRename = [this] (int note, const juce::String& name) { renameDrum (note, name); };
     addChildComponent (drumPads);
+    for (auto* button : { &kitViewButton, &padsViewButton })
+    {
+        button->setClickingTogglesState (false);
+        button->setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff3a4670));
+        addChildComponent (*button);
+    }
+    kitViewButton.onClick = [this] { showDrumView (true); };
+    padsViewButton.onClick = [this] { showDrumView (false); };
     lastVelocityLabel.setText ("play a note", juce::dontSendNotification);
     lastVelocityLabel.setColour (juce::Label::textColourId, SF2Look::dim);
     lastVelocityLabel.setFont (juce::FontOptions (12.0f));
@@ -1750,8 +1758,8 @@ void SF2PlayerEditor::paint (juce::Graphics& g)
         {
             g.setColour (juce::Colour (0xffa9b4d6).withAlpha (0.55f));
             g.setFont (juce::FontOptions (10.0f));
-            g.drawText ("click a pad to hear it, double-click to rename it", pianoPanel.getX() + 90, pianoPanel.getY() + 7,
-                        pianoPanel.getWidth() - 102, 14, juce::Justification::centredRight);
+            g.drawText (drumPads.kitView ? "click a piece to hear it" : "click a pad to hear it, double-click to rename it",
+                        pianoPanel.getX() + 90, pianoPanel.getY() + 7, pianoPanel.getWidth() - 102 - 126, 14, juce::Justification::centredRight);
         }
     }
     // PIANO: a deep green-black under the keyboard.
@@ -2056,7 +2064,11 @@ void SF2PlayerEditor::resized()
         layoutControllers (false);
         pianoPanel = area.removeFromTop (instrumentHeight());
         if (drumsShown)
+        {
             drumPads.setBounds (pianoPanel.reduced (10, 0).withTrimmedTop (pianoHeight).withHeight (drumPads.preferredHeight()));
+            padsViewButton.setBounds (pianoPanel.getRight() - 10 - 56, pianoPanel.getY() + 5, 56, 19);
+            kitViewButton.setBounds (padsViewButton.getX() - 58, pianoPanel.getY() + 5, 56, 19);
+        }
         auto inner = pianoPanel.reduced (10, 0).withTrimmedTop (28).withHeight (26);
         layerLabel.setBounds (inner.removeFromLeft (44));
         layerModeBox.setBounds (inner.removeFromLeft (84));
@@ -2651,8 +2663,27 @@ void SF2PlayerEditor::refreshDrumPads (const SF2PlayerProcessor::State& st)
         return;   // nothing to lay out again (another kit with as many octaves keeps the height)
     drumsShown = show;
     drumPads.setVisible (show);
+    kitViewButton.setVisible (show);
+    padsViewButton.setVisible (show);
+    showDrumView (settings->getValue ("drumView", "kit") == "kit");
     applyHeight();
     resized();
+    repaint();
+}
+
+// Kit (the drum set) or Pads (every key), remembered for every kit.
+void SF2PlayerEditor::showDrumView (bool kit)
+{
+    kitViewButton.setToggleState (kit, juce::dontSendNotification);
+    padsViewButton.setToggleState (! kit, juce::dontSendNotification);
+    if (settings->getValue ("drumView", "kit") != (kit ? "kit" : "pads"))
+    {
+        settings->setValue ("drumView", kit ? "kit" : "pads");
+        settings->saveIfNeeded();
+    }
+    if (drumPads.kitView == kit) return;
+    drumPads.kitView = kit;
+    if (drumsShown) { applyHeight(); resized(); }
     repaint();
 }
 
