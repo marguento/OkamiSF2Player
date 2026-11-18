@@ -162,6 +162,10 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
+    // The drums' computer keys work wherever the focus is in the window (a button, the kit's
+    // menu), except in a text field; keys nothing else takes come up here.
+    bool keyPressed (const juce::KeyPress& key) override { return drumsShown && drumPads.keyPressed (key); }
+    bool keyStateChanged (bool isKeyDown) override { return drumsShown && drumPads.keyStateChanged (isKeyDown); }
 
     bool isInterestedInFileDrag (const juce::StringArray& files) override;
     void fileDragEnter (const juce::StringArray&, int, int) override { dragging = true; repaint(); }

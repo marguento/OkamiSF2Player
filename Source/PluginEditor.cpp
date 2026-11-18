@@ -665,6 +665,7 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     keyboard.describe = [this] (int note) { return keyHint (note); };
     drumPads.onRename = [this] (int note, const juce::String& name) { renameDrum (note, name); };
     addChildComponent (drumPads);
+    setWantsKeyboardFocus (true);   // keys with no focused child reach keyPressed (the drums)
     for (auto* button : { &kitViewButton, &padsViewButton })
     {
         button->setClickingTogglesState (false);
@@ -2658,14 +2659,27 @@ void SF2PlayerEditor::refreshDrumPads (const SF2PlayerProcessor::State& st)
             }
         drumPads.repaint();
     }
+    // A new kit takes the computer's keys at once (no click needed), unless a text field has them.
+    const bool newKit = show && key != drumKey;
     drumKey = show ? key : juce::String();
+    auto takeKeys = [this]
+    {
+        auto* focused = juce::Component::getCurrentlyFocusedComponent();
+        if (dynamic_cast<juce::TextEditor*> (focused) == nullptr && drumPads.isShowing())
+            drumPads.grabKeyboardFocus();
+    };
     if (show == drumsShown && (! show || drumPads.rows() == rowsBefore))
+    {
+        if (newKit) takeKeys();
         return;   // nothing to lay out again (another kit with as many octaves keeps the height)
+    }
     drumsShown = show;
     drumPads.setVisible (show);
     kitViewButton.setVisible (show);
     padsViewButton.setVisible (show);
     showDrumView (settings->getValue ("drumView", "kit") == "kit");
+    if (show) juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<SF2PlayerEditor> (this), takeKeys]
+                                               { if (safe != nullptr) takeKeys(); });   // once it's laid out and showing
     applyHeight();
     resized();
     repaint();

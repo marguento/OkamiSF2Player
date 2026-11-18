@@ -1469,7 +1469,12 @@ int main()
                           && pads.noteForKey ('h') == 43 && pads.noteForKey ('a') == 42 && pads.noteForKey ('1') == -1
                           && small.noteForKey ('f') == -1 && small.noteForKey ('g') == 47 && small.noteForKey ('q') == -1
                           && pads.keyForNote (36) == 'z' && pads.keyForNote (61) == 0;
-        expect (detected && named && keys, "Drum kits: detected by bank or name, pads named by General MIDI or the user, keys mapped");
+        // By its layout too (one key per zone): the test font's drum sets are, its melodic instruments aren't.
+        const auto info = SoundFontInfo::read (testFont);
+        const bool shaped = info.kitShaped.count ({ 128, 0 }) == 1 && info.kitShaped.count ({ 128, 6 }) == 1
+                            && info.kitShaped.count ({ 0, 127 }) == 0 && info.kitShaped.count ({ 0, 0 }) == 0;
+        expect (detected && named && keys && shaped,
+                "Drum kits: detected by bank, name or layout, pads named by General MIDI or the user, keys mapped");
     }
 
     std::printf ("\n%d of %d checks passed\n", checks - failures, checks);

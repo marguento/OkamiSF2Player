@@ -3,6 +3,7 @@
 #include <juce_core/juce_core.h>
 #include <map>
 #include <optional>
+#include <set>
 #include <utility>
 #include <vector>
 
@@ -17,6 +18,11 @@ struct SoundFontInfo
     // lowest and highest over its zones: what plays with CC91 and CC93 at 0.
     struct Sends { float reverbMin = 0, reverbMax = 0, chorusMin = 0, chorusMax = 0; };
     std::map<std::pair<int, int>, Sends> sends;
+
+    // Presets laid out like a drum kit whatever their name: every zone a single key, 8 to 64
+    // keys (a piano sampled key by key has 88). "Claustrophobic Defau(lt Kit)" lost its name's
+    // "Kit" to the 20-character limit.
+    std::set<std::pair<int, int>> kitShaped;
 
     static SoundFontInfo read (const juce::File& file)
     {
@@ -149,6 +155,8 @@ private:
             const size_t at = (size_t) p * 38;
             const int number = u16 (phdr, at + 20), bank = u16 (phdr, at + 22);
             int low = 128, high = -1;
+            bool singleKeys = true;
+            std::set<int> keys;
             float reverbMin = 100, reverbMax = 0, chorusMin = 100, chorusMax = 0;
             const auto presetZones = zones (pbag, pgen, u16 (phdr, at + 24), u16 (phdr, at + 38 + 24), 41);
             // A first zone without an instrument is the global one: its values are the others' defaults.
@@ -179,13 +187,19 @@ private:
                     const Zone& instRange = instZone.hasRange ? instZone : instGlobal;
                     const int zoneLow = juce::jmax (presetRange.low, instRange.low), zoneHigh = juce::jmin (presetRange.high, instRange.high);
                     if (zoneLow <= zoneHigh)
+                    {
                         low = juce::jmin (low, zoneLow), high = juce::jmax (high, zoneHigh);
+                        singleKeys = singleKeys && zoneLow == zoneHigh;
+                        if (zoneLow == zoneHigh) keys.insert (zoneLow);
+                    }
                 }
             }
             if (low <= high)
             {
                 keyRanges[{ bank, number }] = { low, high };
                 sends[{ bank, number }] = { reverbMin, reverbMax, chorusMin, chorusMax };
+                if (singleKeys && keys.size() >= 8 && keys.size() <= 64)
+                    kitShaped.insert ({ bank, number });
             }
         }
     }
