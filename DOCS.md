@@ -319,6 +319,22 @@ the search field).
   the choice is remembered for that instrument. The pads and the Guitar panel never show together.
 - The keyboard's tooltip names the drum on each key too.
 
+## Recording what you play in the window
+
+Notes played in the plugin's window (its keyboard, the drum kit's pieces, pads and computer keys)
+sound, and are also sent out of the plugin as MIDI, so the host can record them. Notes coming
+from Ableton (clips, a MIDI keyboard) aren't sent back.
+
+In Ableton:
+1. Make a new MIDI track (no instrument needed on it).
+2. In its **MIDI From**, choose the track with Okami SF2 Player, and below it **Okami SF2 Player**
+   (the plugin's output). Set **Monitor** to **Off**.
+3. Arm that track and record, then play in the plugin's window.
+4. Drag the recorded clip to the plugin's track (or keep it there and play it back through it).
+
+If the plugin's output isn't offered in step 2, use the VST3 version of the plugin: Ableton reads
+a MIDI output from VST3 instruments more readily than from Audio Units.
+
 ## MIDI from clips
 
 - **Program Change** switches the instrument on that MIDI channel at once, so a note sent with

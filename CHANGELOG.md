@@ -21,6 +21,9 @@ release bumps it and adds an entry here: one line per change a player would noti
   ripple, the beater strikes, an open hi-hat lifts. The kit grows with the window's width.
 - Kits are also found by their layout (one sound per key), for names cut short; a new kit takes
   the computer's keys at once, and they work wherever the focus is except a text field.
+- **MIDI out:** what's played in the plugin's window (the keyboard, the drums' keys, kit and
+  pads) is now sent to the host too, so Ableton can record it on another MIDI track ("MIDI From"
+  this track). Notes from clips aren't sent back.
 - **Rename any pad** with a double-click, for kits that don't follow General MIDI; the names are
   kept for each kit of each SoundFont (an empty name goes back to General MIDI's).
 - Kits are found by themselves: the drum bank (128), or an instrument named a kit ("TR-808 Kit",

@@ -1527,6 +1527,53 @@ int main()
                     + juce::String (*std::max_element (timeOnsets.begin(), timeOnsets.end()), 1) + " ms");
     }
 
+    {
+        // MIDI out: what's played in the window (its keyboard, the drums' keys, kit and pads) leaves
+        // the plugin for the host to record, with a piano, a guitar (the panel strumming) or a kit;
+        // the host's own notes don't come back, and the window's notes still sound.
+        int kitIndex = 0;
+        {
+            Player probe (testFont);
+            const auto st = probe.p.state();
+            for (size_t i = 0; i < st->presets.size(); ++i)
+                if (st->presets[i].bank == 128) { kitIndex = (int) i; break; }
+        }
+        auto sendsOut = [&] (int preset, bool guitar, juce::String& detail)
+        {
+            Player player (testFont, preset);
+            if (guitar)
+            {
+                player.set ("guitarPanel", 1.0f);
+                player.set ("guitarDirect", 0.0f);
+                player.set ("guitarMode", (float) GuitarEngine::chords);
+            }
+            juce::AudioBuffer<float> buffer (6, block);
+            bool sentWindow = false, echoedHost = false, sentOff = false;
+            double level = 0;
+            for (int b = 0; b < 40; ++b)
+            {
+                juce::MidiBuffer midi;
+                if (b == 0) { player.p.keyboardState.noteOn (1, 48, 0.8f); midi.addEvent (juce::MidiMessage::noteOn (2, 40, (juce::uint8) 90), 10); }
+                if (b == 20) player.p.keyboardState.noteOff (1, 48, 0.0f);
+                player.p.processBlock (buffer, midi);
+                for (const auto metadata : midi)
+                {
+                    const auto m = metadata.getMessage();
+                    sentWindow = sentWindow || (m.isNoteOn() && m.getNoteNumber() == 48 && m.getChannel() == 1);
+                    sentOff = sentOff || (m.isNoteOff() && m.getNoteNumber() == 48);
+                    echoedHost = echoedHost || m.getNoteNumber() == 40;
+                }
+                if (b < 20) level = juce::jmax (level, (double) buffer.getMagnitude (0, 0, block));
+            }
+            detail << (guitar ? "guitar " : preset == kitIndex ? "kit " : "piano ") << (sentWindow && sentOff ? "sent" : "NOT sent")
+                   << (echoedHost ? " +echo" : "") << (level > 1e-3 ? "" : " silent") << "; ";
+            return sentWindow && sentOff && ! echoedHost && level > 1e-3;
+        };
+        juce::String detail;
+        const bool piano = sendsOut (testPreset, false, detail), guitar = sendsOut (testPreset, true, detail), drums = sendsOut (kitIndex, false, detail);
+        expect (piano && guitar && drums, "MIDI out: notes played in the window reach the host (piano, guitar, kit), the host's own don't echo", detail);
+    }
+
     std::printf ("\n%d of %d checks passed\n", checks - failures, checks);
     return failures == 0 ? 0 : 1;
 }

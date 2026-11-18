@@ -32,7 +32,7 @@ public:
 
     const juce::String getName() const override { return "Okami SF2 Player"; }
     bool acceptsMidi() const override { return true; }
-    bool producesMidi() const override { return false; }
+    bool producesMidi() const override { return true; }   // what's played in the window, for the host to record
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 4.0; }
 
@@ -238,6 +238,7 @@ private:
     struct GuitarItem { int position, order; juce::uint8 bytes[3]; int size; GuitarEngine::Event note; bool fromGuitar; };
     std::array<GuitarItem, 2048> guitarItems;
     // Drum Humanize's late hits (and the note-offs that must follow them), by absolute sample. Audio thread.
+    juce::MidiBuffer playedHere;   // this block's notes played in the window (reserved in prepareToPlay)
     struct LateNote { juce::int64 at; juce::uint8 bytes[3]; int size; };
     std::array<LateNote, 512> lateNotes {};
     int lateCount = 0;

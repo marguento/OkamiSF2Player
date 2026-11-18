@@ -834,6 +834,7 @@ void SF2PlayerProcessor::prepareToPlay (double newSampleRate, int maximumExpecte
 {
     work.setSize (6, juce::jmax (1, maximumExpectedSamplesPerBlock));
     lateCount = 0;   // Humanize's late notes belong to the timeline that stopped
+    playedHere.ensureSize (4096);
     shortMidi.ensureSize (32768);
     {
         const juce::SpinLock::ScopedLockType lock (engineLock);
@@ -1402,7 +1403,23 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                 shortMidi.addEvent (metadata.data, metadata.numBytes, metadata.samplePosition);
     }
     auto& midi = hasSysex ? shortMidi : hostMidi;
-    keyboardState.processNextMidiBuffer (midi, 0, numSamples, true);
+    // The host's notes update the window's keyboard and lights; what's played in the window (its
+    // keyboard, the drums' pads, kit and computer keys) joins them here, and is also the plugin's
+    // MIDI output, so the host can record it ("MIDI From" this track on another one). The
+    // host's own notes aren't sent back: they're already its own.
+    // One call takes the window's notes (a second would clear any that arrived in between); the
+    // host's update the state event by event.
+    playedHere.clear();
+    keyboardState.processNextMidiBuffer (playedHere, 0, numSamples, true);
+    for (const auto metadata : midi)
+        keyboardState.processNextMidiEvent (metadata.getMessage());
+    for (const auto metadata : playedHere)
+        midi.addEvent (metadata.data, metadata.numBytes, metadata.samplePosition);
+    struct SendPlayed   // at every way out of this block
+    {
+        juce::MidiBuffer& host; const juce::MidiBuffer& played;
+        ~SendPlayed() { host.clear(); host.addEvents (played, 0, -1, 0); }
+    } sendPlayed { hostMidi, playedHere };
 
     if (work.getNumSamples() < numSamples)   // a host sending more than it announced
         work.setSize (6, numSamples, false, false, true);
