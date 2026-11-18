@@ -1,6 +1,7 @@
 // Plays one note, releases it, and prints the output level each half second
 // afterwards, with the reverb and the chorus on and off: where a tail of noise comes from.
 #include "../Source/PluginProcessor.h"
+#include "../Source/DrumKit.h"
 #include "../Source/PluginEditor.h"
 #include <juce_events/juce_events.h>
 #include <cstdio>
@@ -206,6 +207,28 @@ int main (int argc, char** argv)
             if (auto* e = dynamic_cast<SF2PlayerEditor*> (editor.get())) EditorTestAccess::sounding (*e);
         if (auto* e = dynamic_cast<SF2PlayerEditor*> (editor.get())) EditorTestAccess::settle (*e);
         editor->setVisible (true);
+        if (std::getenv ("PAINTPERF") != nullptr)   // the drum kit's frame: ms to paint it, at rest and lit
+            for (auto* child : editor->getChildren())
+                if (auto* pads = dynamic_cast<DrumKit::Pads*> (child); pads != nullptr && pads->isVisible())
+                {
+                    juce::Image frame (juce::Image::ARGB, pads->getWidth() * 2, pads->getHeight() * 2, true);
+                    for (const int lit : { 0, 1, 2 })   // nothing, a kick and a hi-hat (a beat), everything
+                    {
+                        if (lit == 1) { p.keyboardState.noteOn (1, 36, 1.0f); p.keyboardState.noteOn (1, 42, 1.0f); }
+                        if (lit == 2) for (int note = 36; note < 66; ++note) p.keyboardState.noteOn (1, note, 1.0f);
+                        pads->tick();
+                        const auto start = juce::Time::getHighResolutionTicks();
+                        for (int i = 0; i < 60; ++i)
+                        {
+                            juce::Graphics g (frame);
+                            g.addTransform (juce::AffineTransform::scale (2.0f));
+                            pads->paintEntireComponent (g, false);
+                        }
+                        std::printf ("%s: %.2f ms a frame (%d x %d)\n", lit == 2 ? "everything lit" : lit == 1 ? "kick + hi-hat" : "at rest",
+                                     juce::Time::highResolutionTicksToSeconds (juce::Time::getHighResolutionTicks() - start) * 1000.0 / 60.0,
+                                     pads->getWidth(), pads->getHeight());
+                    }
+                }
         auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f);
         juce::FileOutputStream out { juce::File { juce::String (argv[4]) } };
         out.setPosition (0); out.truncate();

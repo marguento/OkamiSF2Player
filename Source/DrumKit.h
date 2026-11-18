@@ -191,6 +191,7 @@ namespace DrumKit
         static float shellDepth (int piece) { return piece == tomFloor ? 105.0f : piece == snare ? 42.0f : 52.0f; }
         float lightOf (int piece) const
         {
+            if (drawingRest) return 0.0f;
             float level = 0.0f;
             if (const int note = noteOf (piece); note >= 0) level = glow[(size_t) note];
             for (int note : pieces()[(size_t) piece].lights)
@@ -215,12 +216,21 @@ namespace DrumKit
                     changed = true;
                 }
             }
-            if (changed) repaint();
+            if (! changed) return;
+            if (! kitView) { repaint(); return; }
+            // Only where something moves (and where it moved last frame, to clear it).
+            juce::Rectangle<float> area;
+            for (int piece : drawOrder)
+                if (noteOf (piece) >= 0 && lightOf (piece) > 0.0f)
+                    area = area.isEmpty() ? areaOf (piece) : area.getUnion (areaOf (piece));
+            const auto both = lastMoving.isEmpty() ? area : area.isEmpty() ? lastMoving : area.getUnion (lastMoving);
+            lastMoving = area;
+            if (! both.isEmpty()) repaint (both.getSmallestIntegerContainer());
         }
 
         void paint (juce::Graphics& g) override
         {
-            if (kitView) paintKit (g); else paintPads (g);
+            if (kitView) paintKitCached (g); else paintPads (g);
             if (hasKeyboardFocus (false))   // it takes the computer's keys now
             {
                 g.setColour (juce::Colour (0xffe0a64b).withAlpha (0.55f));
@@ -261,8 +271,58 @@ namespace DrumKit
             }
         }
 
-        void paintKit (juce::Graphics& g)
+        bool isHovered (int piece) const { return ! drawingRest && hovered == piece; }
+
+        // The kit at rest is drawn once into a picture (again when the size or the kit's keys
+        // change); each frame paints it, then only what moves: the pieces lit or under the mouse,
+        // and any piece drawn after one of them that overlaps it (so the front stays in front).
+        // About 1.8 ms a frame drawn in full; the picture and a piece or two cost a fraction.
+        void paintKitCached (juce::Graphics& g)
         {
+            const float pixels = g.getInternalContext().getPhysicalPixelScaleFactor();
+            const auto key = juce::String (getWidth()) + "x" + juce::String (getHeight()) + "@" + juce::String (pixels, 2)
+                           + ":" + juce::String (lowKey) + "-" + juce::String (highKey) + (hasKeyboardFocus (false) ? "f" : "");
+            if (key != restKey || ! restImage.isValid())
+            {
+                restKey = key;
+                restImage = juce::Image (juce::Image::ARGB, juce::jmax (1, juce::roundToInt ((float) getWidth() * pixels)),
+                                         juce::jmax (1, juce::roundToInt ((float) getHeight() * pixels)), true);
+                juce::Graphics picture (restImage);
+                picture.addTransform (juce::AffineTransform::scale (pixels));
+                drawingRest = true;
+                paintKit (picture, nullptr);
+                drawingRest = false;
+            }
+            g.drawImage (restImage, getLocalBounds().toFloat());
+            std::array<bool, pieceCount> moving {};
+            bool any = false;
+            juce::Rectangle<float> dirty;
+            for (int piece : drawOrder)
+            {
+                const auto area = areaOf (piece);
+                const bool active = noteOf (piece) >= 0 && (lightOf (piece) > 0.0f || isHovered (piece));
+                if (active || (! dirty.isEmpty() && dirty.intersects (area)))
+                {
+                    moving[(size_t) piece] = true;
+                    dirty = dirty.isEmpty() ? area : dirty.getUnion (area);
+                    any = true;
+                }
+            }
+            if (any) paintKit (g, &moving);
+        }
+        static constexpr std::array<int, 11> drawOrder { china, crash2, splash, crash, ride, kick, tomHigh, tomMid, tomFloor, snare, hatClosed };
+        // Everything a piece draws (its body, stand, motion and label), in the component.
+        juce::Rectangle<float> areaOf (int piece) const
+        {
+            auto r = placeOf (piece);
+            if (piece == tomHigh || piece == tomMid || piece == tomFloor || piece == snare)
+                r = r.withHeight (r.getHeight() + shellDepth (piece));
+            return r.transformedBy (stage()).expanded (14.0f).withTrimmedTop (-18.0f);
+        }
+
+        void paintKit (juce::Graphics& g, const std::array<bool, pieceCount>* only)
+        {
+            auto wanted = [only] (int piece) { return only == nullptr || (*only)[(size_t) piece]; };
             const auto t = stage();
             const float scale = t.mat00;
             const juce::Colour accent (0xffe0a64b), ink (0xfff1e6c8), chrome (0xffb9bfcc), chromeDark (0xff5d6270);
@@ -277,6 +337,7 @@ namespace DrumKit
 
             auto floorShadow = [&] (float x, float width)
             {
+                if (only != nullptr) return;   // already in the picture (twice would darken it)
                 g.setColour (juce::Colours::black.withAlpha (0.28f));
                 g.fillEllipse (x - width / 2.0f, floorY - 4.0f * scale, width, 12.0f * scale);
             };
@@ -343,15 +404,15 @@ namespace DrumKit
                     g.setColour (accent.withAlpha (level * 0.45f));
                     g.fillPath (disc);
                 }
-                if (hovered) { g.setColour (juce::Colours::white.withAlpha (0.14f)); g.fillPath (disc); }
+                if (hovered && ! drawingRest) { g.setColour (juce::Colours::white.withAlpha (0.14f)); g.fillPath (disc); }
             };
             auto cymbal = [&] (int piece)
             {
-                if (noteOf (piece) < 0) return;
+                if (noteOf (piece) < 0 || ! wanted (piece)) return;
                 const auto r = place (piece);
                 const float level = lightOf (piece);
                 stand (r.getCentreX(), r.getCentreY());
-                cymbalShape (r, level, swing (level, 14.0f) * 0.10f, piece == hovered);
+                cymbalShape (r, level, swing (level, 14.0f) * 0.10f, isHovered (piece));
                 label (piece, r, false);
             };
             auto lugs = [&] (juce::Rectangle<float> head, float depth)
@@ -366,7 +427,7 @@ namespace DrumKit
             };
             auto drum = [&] (int piece)
             {
-                if (noteOf (piece) < 0) return;
+                if (noteOf (piece) < 0 || ! wanted (piece)) return;
                 const float level = lightOf (piece);
                 const float pulse = 1.0f + 0.05f * swing (level, 18.0f);   // the head gives under the stick
                 const auto head = place (piece);
@@ -414,7 +475,7 @@ namespace DrumKit
                     g.setColour (juce::Colours::white.withAlpha (level * 0.5f));
                     g.drawEllipse (drawn.withSizeKeepingCentre (drawn.getWidth() * (0.25f + spread), drawn.getHeight() * (0.25f + spread)), 1.2f);
                 }
-                if (piece == hovered) { g.setColour (juce::Colours::white.withAlpha (0.12f)); g.fillEllipse (drawn); }
+                if (isHovered (piece)) { g.setColour (juce::Colours::white.withAlpha (0.12f)); g.fillEllipse (drawn); }
                 g.setColour (chrome);
                 g.drawEllipse (drawn, 2.2f * scale + 0.5f);
                 g.setColour (chromeDark);
@@ -426,7 +487,7 @@ namespace DrumKit
             // floor tom, the snare, the hi-hat.
             for (int piece : { china, crash2, splash, crash, ride })
                 cymbal (piece);
-            if (noteOf (kick) >= 0)
+            if (noteOf (kick) >= 0 && wanted (kick))
             {
                 const float level = lightOf (kick);
                 const float pulse = 1.0f + 0.03f * swing (level, 16.0f);
@@ -446,7 +507,7 @@ namespace DrumKit
                 g.setGradientFill (juce::ColourGradient (juce::Colour (0xffa83030), r.getX(), r.getY(), juce::Colour (0xff4a1414), r.getRight(), r.getBottom(), false));
                 g.fillEllipse (r);
                 const auto front = r.reduced (11.0f * scale);
-                g.setGradientFill (juce::ColourGradient (juce::Colour (0xff2b2833).interpolatedWith (accent, level * 0.45f).brighter (hovered == kick ? 0.12f : 0.0f),
+                g.setGradientFill (juce::ColourGradient (juce::Colour (0xff2b2833).interpolatedWith (accent, level * 0.45f).brighter (isHovered (kick) ? 0.12f : 0.0f),
                                                          front.getCentreX(), front.getY(),
                                                          juce::Colour (0xff141218).interpolatedWith (accent, level * 0.3f), front.getCentreX(), front.getBottom(), false));
                 g.fillEllipse (front);
@@ -475,16 +536,19 @@ namespace DrumKit
             }
             for (int piece : { tomHigh, tomMid, tomFloor, snare })
                 drum (piece);
-            if (noteOf (hatClosed) >= 0)
+            if (noteOf (hatClosed) >= 0 && wanted (hatClosed))
             {
                 const auto r = place (hatClosed);
                 const float level = lightOf (hatClosed);
                 stand (r.getCentreX(), r.getCentreY());
-                const float open = glow[46] > 0.0f && plays (46) ? 10.0f * scale * glow[46] : 0.0f;   // an open hat lifts the top cymbal
-                cymbalShape (r.translated (0.0f, 8.0f * scale), level * 0.5f, 0.0f, false);
-                cymbalShape (r.translated (0.0f, -open), level, swing (level, 20.0f) * 0.05f, hovered == hatClosed);
-                label (hatClosed, r.translated (0.0f, -open), false);
+                // An open hat rings and sways wider than a closed one (it stays in place: the
+                // picture at rest is under it).
+                const float open = ! drawingRest && plays (46) ? glow[46] : 0.0f;
+                cymbalShape (r.translated (0.0f, 8.0f * scale), level * 0.5f, swing (open, 16.0f) * 0.04f, false);
+                cymbalShape (r, level, swing (level, 20.0f) * (0.05f + 0.07f * open), isHovered (hatClosed));
+                label (hatClosed, r, false);
             }
+            if (only != nullptr) return;   // the line under the stage is in the picture
             // The hi-hat's other keys, the snare's and the ride's, under the stage.
             juce::StringArray more;
             for (int piece : { hatOpen, hatPedal, sideStick, clap, rideBell })
@@ -610,6 +674,10 @@ namespace DrumKit
         }
         void handleNoteOff (juce::MidiKeyboardState*, int, int, float) override {}
         int hovered = -1, mouseNote = -1;
+        bool drawingRest = false;
+        juce::Rectangle<float> lastMoving;   // where the kit moved last frame   // drawing the resting picture: no lights, no hover
+        juce::Image restImage;
+        juce::String restKey;       // what the picture was drawn for (size, pixels, the kit's keys, focus)
         std::vector<std::pair<int, int>> keysDown;   // (key code, note) held on the computer's keyboard
         void releaseMouse()
         {

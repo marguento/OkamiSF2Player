@@ -18,7 +18,8 @@ release bumps it and adds an entry here: one line per change a player would noti
   at 0 (every hit as played); they apply to clips, the MIDI keyboard and the computer's keys.
 - **A real-looking kit:** lacquered shells with lugs and chrome hoops, cymbals with grooves and a
   bell, stands, the kick's pedal and spurs, shadows. Hits move: cymbals swing, heads give and
-  ripple, the beater strikes, an open hi-hat lifts. The kit grows with the window's width.
+  ripple, the beater strikes, an open hi-hat sways wider. The kit grows with the window's width;
+  it's drawn once at rest and only what moves is redrawn (0.14 ms a frame at rest, from 1.8).
 - Kits are also found by their layout (one sound per key), for names cut short; a new kit takes
   the computer's keys at once, and they work wherever the focus is except a text field.
 - **MIDI out:** what's played in the plugin's window (the keyboard, the drums' keys, kit and
