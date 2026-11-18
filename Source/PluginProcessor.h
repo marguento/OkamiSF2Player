@@ -118,6 +118,12 @@ public:
     // saved before they existed plays as it did. Only while the panel hasn't played yet (a start
     // given later would change what was recorded). Atomics: hosts restore state on any thread.
     std::atomic<bool> stateRestored { false }, guitarStartGiven { false };
+    // DRUM KIT: the instrument is a kit (or the editor shows its pads anyway), for Humanize.
+    std::atomic<bool> presetIsKit { false }, drumsForced { false };
+    void refreshKitFlag()   // message thread, after the preset changes
+    {
+        presetIsKit.store (juce::isPositiveAndBelow (currentPreset, (int) presetList.size()) && presetList[(size_t) currentPreset].drumKit);
+    }
     std::atomic<bool> playedGuitar { false };   // the panel already played notes: too late for the start
     juce::CriticalSection startLock;   // the start's check and edits vs. a state being restored (never the audio thread)
     // The Guitar panel is playing (shown and not Direct): what the processor's blocks go by.
@@ -231,6 +237,12 @@ private:
     // A guitar block's events (the clip's and the engine's), sorted by time. Audio thread.
     struct GuitarItem { int position, order; juce::uint8 bytes[3]; int size; GuitarEngine::Event note; bool fromGuitar; };
     std::array<GuitarItem, 2048> guitarItems;
+    // Drum Humanize's late hits (and the note-offs that must follow them), by absolute sample. Audio thread.
+    struct LateNote { juce::int64 at; juce::uint8 bytes[3]; int size; };
+    std::array<LateNote, 512> lateNotes {};
+    int lateCount = 0;
+    juce::Random humanRandom;
+    void playLateNotes (juce::int64 until, juce::int64 blockStart, int& position);
     std::array<int, 16384> overflowIndices {};   // a flood's messages past guitarItems, by their place in the block
     std::array<std::bitset<128>, 16> lateNoteOffs {};   // note-offs past even overflowIndices, played at the block's end
     // What each voice was retuned by, keyed by FluidSynth's voice (a fixed pool, so a slot per pool

@@ -281,7 +281,11 @@ private:
     // DRUM KIT: a kit's pads, in the INSTRUMENT panel under the layer row (Auto for a kit, or
     // forced on or off per instrument from the panel button's menu, remembered in "drumChoices").
     DrumKit::Pads drumPads { player.keyboardState };
-    juce::TextButton kitViewButton { "Kit" }, padsViewButton { "Pads" };   // the panel's two views (remembered: "drumView")
+    juce::TextButton kitViewButton { "Kit" }, padsViewButton { "Pads" };
+    Knob drumVelocityHuman { *this, "drumVelocityHuman", "Velocity" };   // HUMANIZE, beside the kit
+    Knob drumTimingHuman { *this, "drumTimingHuman", "Timing" };
+    static constexpr int humanizeWidth = 150;
+    juce::Rectangle<int> humanizeArea;   // its frame and title, painted   // the panel's two views (remembered: "drumView")
     void showDrumView (bool kit);
     bool drumsShown = false;
     juce::String drumKey;   // the kit the pads show (favouriteKey)
@@ -291,7 +295,8 @@ private:
     int drumChoice (const juce::String& key) const;   // 0 Auto, 1 pads on, 2 pads off
     void setDrumChoice (const juce::String& key, int choice);
     void renameDrum (int note, const juce::String& name);
-    int instrumentHeight() const { return pianoHeight + (drumsShown ? drumPads.preferredHeight() + 10 : 0); }
+    int drumStageHeight() const { return drumPads.preferredHeight (getWidth() - 52 - humanizeWidth); }
+    int instrumentHeight() const { return pianoHeight + (drumsShown ? drumStageHeight() + 10 : 0); }
 
     std::unique_ptr<juce::FileChooser> chooser;
     // The Guitar panel: shown for a guitar (Auto) or when forced on (the Guitar menu in PLAY's header).

@@ -3,6 +3,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <functional>
 #include <iterator>
 #include <map>
@@ -79,7 +80,7 @@ namespace DrumKit
     // is louder), a double-click on a pad renames it, and once clicked the panel takes the
     // computer's keys (Z kick, X snare, A/S/D hi-hat, F/G/H toms, Q/W crashes, E ride…). Every
     // piece and pad lights as its key sounds, whoever plays it.
-    struct Pads : juce::Component, juce::TooltipClient, private juce::MidiKeyboardState::Listener
+    struct Pads : juce::Component, juce::TooltipClient, private juce::MidiKeyboardState::Listener, private juce::Timer
     {
         explicit Pads (juce::MidiKeyboardState& s) : state (s)
         {
@@ -88,7 +89,11 @@ namespace DrumKit
             setMouseClickGrabsKeyboardFocus (true);
         }
         ~Pads() override { releaseAll(); state.removeListener (this); }
-        void visibilityChanged() override { if (! isVisible()) releaseAll(); }   // never a note left held
+        void visibilityChanged() override
+        {
+            if (isVisible()) startTimerHz (60);   // the lights and the hits' motion
+            else { stopTimer(); releaseAll(); }   // never a note left held
+        }
         void focusLost (FocusChangeType) override { releaseAll(); repaint(); }
         void focusGained (FocusChangeType) override { repaint(); }
 
@@ -97,10 +102,14 @@ namespace DrumKit
         std::map<int, juce::String> customNames;   // the user's names for this kit, by key
         std::function<void (int note, const juce::String& name)> onRename;   // an empty name: back to General MIDI's
 
-        static constexpr int rowHeight = 30, gap = 4, kitHeight = 250, hintHeight = 16;
+        static constexpr int rowHeight = 30, gap = 4, hintHeight = 16;
         int firstOctave() const { return lowKey / 12; }
         int rows() const { return juce::jmax (1, highKey / 12 - lowKey / 12 + 1); }
-        int preferredHeight() const { return kitView ? kitHeight : rows() * (rowHeight + gap) - gap; }
+        // The kit keeps its stage's shape: it grows with the window's width.
+        int preferredHeight (int width) const
+        {
+            return kitView ? juce::jlimit (220, 460, juce::roundToInt ((float) width * 0.44f) + hintHeight) : rows() * (rowHeight + gap) - gap;
+        }
         bool plays (int note) const { return note >= lowKey && note <= highKey; }
         juce::String nameOf (int note) const
         {
@@ -189,8 +198,9 @@ namespace DrumKit
             return level;
         }
 
-        // Called on the editor's timer: a key struck since flashes (even a hit shorter than a
-        // tick, on and off in one block), then fades; a held one stays half lit.
+        // 60 times a second: a key struck since flashes (even a hit shorter than a frame, on
+        // and off in one block), then fades; a held one stays half lit.
+        void timerCallback() override { tick(); }
         void tick()
         {
             bool changed = false;
@@ -201,7 +211,7 @@ namespace DrumKit
                 else if (level > 0.0f)
                 {
                     const bool on = state.isNoteOnForChannels (0xffff, note);
-                    level = on ? juce::jmax (level - 0.04f, 0.45f) : juce::jmax (0.0f, level - 0.12f);
+                    level = on ? juce::jmax (level - 0.015f, 0.45f) : juce::jmax (0.0f, level - 0.035f);
                     changed = true;
                 }
             }
@@ -255,126 +265,236 @@ namespace DrumKit
         {
             const auto t = stage();
             const float scale = t.mat00;
-            const juce::Colour accent (0xffe0a64b), ink (0xfff1e6c8), chrome (0xff8a90a0);
+            const juce::Colour accent (0xffe0a64b), ink (0xfff1e6c8), chrome (0xffb9bfcc), chromeDark (0xff5d6270);
+            const float floorY = (float) getHeight() - hintHeight - 8.0f;
             auto place = [&] (int piece) { return placeOf (piece).transformedBy (t); };
-            auto stand = [&] (float x, float top, float bottom)
+            auto keyText = [] (int piece)
             {
-                g.setColour (chrome.withAlpha (0.55f));
-                g.drawLine ((float) x, top, (float) x, bottom, 2.0f * scale + 0.5f);
-                g.drawLine (x, bottom, x - 26.0f * scale, bottom + 8.0f * scale, 1.5f);
-                g.drawLine (x, bottom, x + 26.0f * scale, bottom + 8.0f * scale, 1.5f);
+                return juce::String::charToString ((juce::juce_wchar) juce::CharacterFunctions::toUpperCase ((juce::juce_wchar) pieces()[(size_t) piece].key));
+            };
+            // A hit's motion: a decaying swing, from the light's level (1 at the hit, fading out).
+            auto swing = [] (float level, float speed) { return level * std::sin ((1.0f - level) * speed); };
+
+            auto floorShadow = [&] (float x, float width)
+            {
+                g.setColour (juce::Colours::black.withAlpha (0.28f));
+                g.fillEllipse (x - width / 2.0f, floorY - 4.0f * scale, width, 12.0f * scale);
+            };
+            auto stand = [&] (float x, float top)
+            {
+                floorShadow (x, 70.0f * scale);
+                g.setGradientFill (juce::ColourGradient::horizontal (chromeDark, x - 2.0f, chrome, x + 2.0f));
+                g.fillRect (x - 1.6f * scale - 0.5f, top, 3.2f * scale + 1.0f, floorY - top);
+                g.setColour (chrome.withAlpha (0.8f));
+                for (float side : { -1.0f, 1.0f })   // the tripod's legs
+                    g.drawLine (x, floorY - 24.0f * scale, x + side * 30.0f * scale, floorY + 4.0f * scale, 1.6f);
+                g.drawLine (x, floorY - 24.0f * scale, x, floorY + 6.0f * scale, 1.6f);
             };
             auto label = [&] (int piece, juce::Rectangle<float> r, bool below)
             {
-                const char key = pieces()[(size_t) piece].key;
-                const auto text = juce::String (pieces()[(size_t) piece].name);
-                auto area = below ? juce::Rectangle<float> (r.getCentreX() - 60.0f, r.getBottom() + 1.0f, 120.0f, 13.0f)
-                                  : juce::Rectangle<float> (r.getCentreX() - 60.0f, r.getY() - 14.0f, 120.0f, 13.0f);
+                const auto text = juce::String (pieces()[(size_t) piece].name) + "  ";
+                auto area = below ? juce::Rectangle<float> (r.getCentreX() - 60.0f, r.getBottom() + 2.0f, 120.0f, 13.0f)
+                                  : juce::Rectangle<float> (r.getCentreX() - 60.0f, r.getY() - 15.0f, 120.0f, 13.0f);
                 g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
-                g.setColour (ink.withAlpha (0.75f));
-                const auto keyText = juce::String::charToString ((juce::juce_wchar) juce::CharacterFunctions::toUpperCase ((juce::juce_wchar) key));
-                g.drawText (text + "  ", area, juce::Justification::centred);
-                const float width = juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), text + "  ");
-                const auto badge = juce::Rectangle<float> (area.getCentreX() + width / 2.0f - 2.0f, area.getY() + 0.5f, 12.0f, 12.0f);
-                g.setColour (accent.withAlpha (0.85f));
-                g.drawRoundedRectangle (badge, 2.5f, 1.0f);
+                const float width = juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), text);
+                const auto pill = juce::Rectangle<float> (area.getCentreX() - width / 2.0f - 5.0f, area.getY() - 1.0f, width + 22.0f, 15.0f);
+                g.setColour (juce::Colours::black.withAlpha (0.35f));
+                g.fillRoundedRectangle (pill, 7.0f);
+                g.setColour (ink.withAlpha (0.85f));
+                g.drawText (text, pill.withTrimmedLeft (5.0f), juce::Justification::centredLeft);
+                const auto badge = juce::Rectangle<float> (pill.getRight() - 15.0f, pill.getY() + 1.5f, 12.0f, 12.0f);
+                g.setColour (accent);
+                g.fillRoundedRectangle (badge, 3.0f);
+                g.setColour (juce::Colour (0xff1a1410));
                 g.setFont (juce::FontOptions (9.0f, juce::Font::bold));
-                g.drawText (keyText, badge, juce::Justification::centred);
+                g.drawText (keyText (piece), badge, juce::Justification::centred);
+            };
+
+            auto cymbalShape = [&] (juce::Rectangle<float> r, float level, float tilt, bool hovered)
+            {
+                const auto rotation = juce::AffineTransform::rotation (tilt, r.getCentreX(), r.getCentreY());
+                juce::Path disc;
+                disc.addEllipse (r);
+                disc.applyTransform (rotation);
+                juce::ColourGradient brass (juce::Colour (0xfff0d27a).brighter (level * 0.5f), r.getCentreX() - r.getWidth() * 0.15f, r.getY(),
+                                            juce::Colour (0xff6e4e1c), r.getRight(), r.getBottom(), false);
+                brass.addColour (0.45, juce::Colour (0xffc99a3e));
+                g.setGradientFill (brass);
+                g.fillPath (disc);
+                // Lathe grooves and the bell.
+                g.setColour (juce::Colour (0xff5a3f14).withAlpha (0.35f));
+                for (float k : { 0.82f, 0.64f, 0.46f })
+                {
+                    juce::Path ring;
+                    ring.addEllipse (r.withSizeKeepingCentre (r.getWidth() * k, r.getHeight() * k));
+                    ring.applyTransform (rotation);
+                    g.strokePath (ring, juce::PathStrokeType (0.7f));
+                }
+                juce::Path bell;
+                bell.addEllipse (r.withSizeKeepingCentre (r.getWidth() * 0.22f, r.getHeight() * 0.42f).translated (0.0f, -r.getHeight() * 0.08f));
+                bell.applyTransform (rotation);
+                g.setGradientFill (juce::ColourGradient (juce::Colour (0xfffff0c0), r.getCentreX(), r.getCentreY() - r.getHeight() * 0.2f,
+                                                         juce::Colour (0xffb48632), r.getCentreX(), r.getCentreY() + r.getHeight() * 0.1f, false));
+                g.fillPath (bell);
+                g.setColour (juce::Colours::black.withAlpha (0.45f));
+                g.strokePath (disc, juce::PathStrokeType (1.0f));
+                if (level > 0.0f)
+                {
+                    g.setColour (accent.withAlpha (level * 0.45f));
+                    g.fillPath (disc);
+                }
+                if (hovered) { g.setColour (juce::Colours::white.withAlpha (0.14f)); g.fillPath (disc); }
             };
             auto cymbal = [&] (int piece)
             {
                 if (noteOf (piece) < 0) return;
                 const auto r = place (piece);
                 const float level = lightOf (piece);
-                stand (r.getCentreX(), r.getCentreY(), (float) getHeight() - hintHeight - 8.0f);
-                juce::ColourGradient brass (juce::Colour (0xffd9b45a).brighter (level * 0.6f), r.getCentreX(), r.getCentreY(),
-                                            juce::Colour (0xff7a5a22), r.getRight(), r.getCentreY(), true);
-                g.setGradientFill (brass);
-                g.fillEllipse (r);
-                if (level > 0.0f) { g.setColour (accent.withAlpha (level * 0.55f)); g.fillEllipse (r.expanded (4.0f * level)); }
-                g.setColour (juce::Colours::black.withAlpha (0.35f));
-                g.drawEllipse (r, 1.0f);
-                g.setColour (juce::Colour (0xfff5e3b0).withAlpha (0.8f));
-                g.fillEllipse (r.withSizeKeepingCentre (r.getHeight() * 0.5f, r.getHeight() * 0.25f));
-                if (piece == hovered) { g.setColour (juce::Colours::white.withAlpha (0.15f)); g.fillEllipse (r); }
+                stand (r.getCentreX(), r.getCentreY());
+                cymbalShape (r, level, swing (level, 14.0f) * 0.10f, piece == hovered);
                 label (piece, r, false);
+            };
+            auto lugs = [&] (juce::Rectangle<float> head, float depth)
+            {
+                g.setColour (chrome.withAlpha (0.9f));
+                for (float k : { 0.12f, 0.37f, 0.63f, 0.88f })
+                {
+                    const float x = head.getX() + head.getWidth() * k;
+                    const float bulge = std::sqrt (juce::jmax (0.0f, 1.0f - std::pow ((k - 0.5f) * 2.0f, 2.0f))) * head.getHeight() / 2.0f;
+                    g.fillRoundedRectangle (x - 2.5f * scale, head.getCentreY() + bulge + depth * 0.25f, 5.0f * scale, depth * 0.5f, 1.5f);
+                }
             };
             auto drum = [&] (int piece)
             {
                 if (noteOf (piece) < 0) return;
+                const float level = lightOf (piece);
+                const float pulse = 1.0f + 0.05f * swing (level, 18.0f);   // the head gives under the stick
                 const auto head = place (piece);
                 const float depth = shellDepth (piece) * scale;
-                const float level = lightOf (piece);
-                const juce::Colour shell = piece == snare ? juce::Colour (0xffb8bcc8) : juce::Colour (0xff8e2b2b);
+                const juce::Colour shell = piece == snare ? juce::Colour (0xffc9ccd6) : juce::Colour (0xff9a2a26);
+                if (piece == tomFloor)   // its three legs
+                {
+                    g.setColour (chrome.withAlpha (0.85f));
+                    for (float k : { 0.12f, 0.88f })
+                        g.drawLine (head.getX() + head.getWidth() * k, head.getCentreY() + depth * 0.5f,
+                                    head.getX() + head.getWidth() * (k < 0.5f ? 0.02f : 0.98f), floorY, 2.0f);
+                    floorShadow (head.getCentreX(), head.getWidth() * 1.1f);
+                }
+                if (piece == snare)
+                    stand (head.getCentreX(), head.getCentreY() + depth);
                 juce::Path body;
                 body.startNewSubPath (head.getX(), head.getCentreY());
                 body.lineTo (head.getX(), head.getCentreY() + depth);
-                // The shell's bottom edge: the lower half of the head's ellipse, from 9 o'clock round by 6 to 3.
                 body.addCentredArc (head.getCentreX(), head.getCentreY() + depth, head.getWidth() / 2.0f, head.getHeight() / 2.0f,
                                     0.0f, 1.5f * juce::MathConstants<float>::pi, 0.5f * juce::MathConstants<float>::pi);
                 body.lineTo (head.getRight(), head.getCentreY());
                 body.closeSubPath();
-                g.setGradientFill (juce::ColourGradient::horizontal (shell.darker (0.5f), head.getX(), shell.brighter (0.2f), head.getCentreX()));
+                juce::ColourGradient wrap (shell.darker (0.7f), head.getX(), 0.0f, shell.darker (0.6f), head.getRight(), 0.0f, false);
+                wrap.addColour (0.3, shell.brighter (0.25f));
+                wrap.addColour (0.42, shell.brighter (0.6f));   // the shine on the lacquer
+                wrap.addColour (0.55, shell);
+                g.setGradientFill (wrap);
                 g.fillPath (body);
-                g.setColour (chrome.withAlpha (0.6f));
-                g.strokePath (body, juce::PathStrokeType (1.0f));
-                for (float y : { 0.15f, 0.85f })   // the hoops
-                    g.drawLine (head.getX(), head.getCentreY() + depth * y, head.getRight(), head.getCentreY() + depth * y, 1.0f);
-                g.setColour (juce::Colour (0xffe9e4d6).interpolatedWith (accent, level * 0.8f).brighter (piece == hovered ? 0.1f : 0.0f));
-                g.fillEllipse (head);
+                lugs (head, depth);
+                // The hoops, top and bottom.
                 g.setColour (chrome);
-                g.drawEllipse (head, 1.5f);
-                label (piece, piece == snare ? head.withHeight (head.getHeight() + depth) : head, piece == snare);   // the toms' above: the kick is below
+                juce::Path bottomHoop;
+                bottomHoop.addCentredArc (head.getCentreX(), head.getCentreY() + depth, head.getWidth() / 2.0f, head.getHeight() / 2.0f,
+                                          0.0f, 1.5f * juce::MathConstants<float>::pi, 0.5f * juce::MathConstants<float>::pi, true);
+                g.strokePath (bottomHoop, juce::PathStrokeType (2.0f * scale + 0.5f));
+                const auto drawn = head.withSizeKeepingCentre (head.getWidth() * pulse, head.getHeight() * pulse);
+                g.setGradientFill (juce::ColourGradient (juce::Colour (0xfff6f2e8).interpolatedWith (accent, level * 0.75f),
+                                                         drawn.getCentreX(), drawn.getY(),
+                                                         juce::Colour (0xffcfc8b6).interpolatedWith (accent, level * 0.6f),
+                                                         drawn.getCentreX(), drawn.getBottom(), false));
+                g.fillEllipse (drawn);
+                if (level > 0.2f)   // a ripple running out from the stick
+                {
+                    const float spread = 1.0f - level;
+                    g.setColour (juce::Colours::white.withAlpha (level * 0.5f));
+                    g.drawEllipse (drawn.withSizeKeepingCentre (drawn.getWidth() * (0.25f + spread), drawn.getHeight() * (0.25f + spread)), 1.2f);
+                }
+                if (piece == hovered) { g.setColour (juce::Colours::white.withAlpha (0.12f)); g.fillEllipse (drawn); }
+                g.setColour (chrome);
+                g.drawEllipse (drawn, 2.2f * scale + 0.5f);
+                g.setColour (chromeDark);
+                g.drawEllipse (drawn.reduced (2.0f * scale), 0.8f);
+                label (piece, piece == snare ? head.withHeight (head.getHeight() + depth) : head, piece == snare);
             };
 
-            // Back to front: stands and cymbals, the kick, the toms on it, the floor tom, snare, hi-hat.
+            // Back to front: the cymbals and their stands, the kick (with the toms on it), the
+            // floor tom, the snare, the hi-hat.
             for (int piece : { china, crash2, splash, crash, ride })
                 cymbal (piece);
             if (noteOf (kick) >= 0)
             {
-                const auto r = place (kick);
                 const float level = lightOf (kick);
-                g.setColour (juce::Colour (0xff6e1f1f));
+                const float pulse = 1.0f + 0.03f * swing (level, 16.0f);
+                const auto base = place (kick);
+                const auto r = base.withSizeKeepingCentre (base.getWidth() * pulse, base.getHeight() * pulse);
+                floorShadow (r.getCentreX(), r.getWidth() * 1.15f);
+                // The spurs, and the tom holder rising from the shell.
+                g.setColour (chrome.withAlpha (0.85f));
+                g.drawLine (r.getX() + r.getWidth() * 0.12f, r.getCentreY() + r.getHeight() * 0.3f, r.getX() - 12.0f * scale, floorY, 2.0f);
+                g.drawLine (r.getRight() - r.getWidth() * 0.12f, r.getCentreY() + r.getHeight() * 0.3f, r.getRight() + 12.0f * scale, floorY, 2.0f);
+                for (int tom : { tomHigh, tomMid })
+                    if (noteOf (tom) >= 0)
+                    {
+                        const auto h = place (tom);
+                        g.drawLine (r.getCentreX(), r.getY() + 6.0f * scale, h.getCentreX(), h.getCentreY() + shellDepth (tom) * scale * 0.7f, 3.0f * scale);
+                    }
+                g.setGradientFill (juce::ColourGradient (juce::Colour (0xffa83030), r.getX(), r.getY(), juce::Colour (0xff4a1414), r.getRight(), r.getBottom(), false));
                 g.fillEllipse (r);
-                g.setColour (juce::Colour (0xff1d1b22).interpolatedWith (accent, level * 0.5f).brighter (hovered == kick ? 0.12f : 0.0f));
-                g.fillEllipse (r.reduced (10.0f * scale));
+                const auto front = r.reduced (11.0f * scale);
+                g.setGradientFill (juce::ColourGradient (juce::Colour (0xff2b2833).interpolatedWith (accent, level * 0.45f).brighter (hovered == kick ? 0.12f : 0.0f),
+                                                         front.getCentreX(), front.getY(),
+                                                         juce::Colour (0xff141218).interpolatedWith (accent, level * 0.3f), front.getCentreX(), front.getBottom(), false));
+                g.fillEllipse (front);
                 g.setColour (chrome);
-                g.drawEllipse (r.reduced (5.0f * scale), 2.0f);
-                g.setColour (ink.withAlpha (0.35f + level * 0.5f));
-                g.setFont (juce::FontOptions (22.0f * scale * 2.2f, juce::Font::bold));
-                g.drawText ("OKAMI", r, juce::Justification::centred);
-                label (kick, r.withTrimmedBottom (r.getHeight() * 0.22f), true);   // inside, under OKAMI
+                g.drawEllipse (r.reduced (5.0f * scale), 3.0f * scale + 0.5f);
+                for (int i = 0; i < 10; ++i)   // the claws round the hoop
+                {
+                    const float angle = juce::MathConstants<float>::twoPi * (float) i / 10.0f;
+                    const auto p = r.getCentre() + juce::Point<float> (std::sin (angle), -std::cos (angle)) * (r.getWidth() / 2.0f - 5.0f * scale);
+                    g.fillEllipse (juce::Rectangle<float> (5.0f * scale, 5.0f * scale).withCentre (p));
+                }
+                g.setColour (ink.withAlpha (0.3f + level * 0.5f));
+                g.setFont (juce::FontOptions (48.0f * scale, juce::Font::bold));
+                g.drawText ("OKAMI", r.translated (0.0f, -r.getHeight() * 0.04f), juce::Justification::centred);
+                // The pedal in front, its beater swinging in on a hit.
+                const auto pedal = juce::Rectangle<float> (r.getCentreX() - 14.0f * scale, floorY - 10.0f * scale, 28.0f * scale, 14.0f * scale);
+                g.setColour (chromeDark);
+                g.fillRoundedRectangle (pedal, 2.0f);
+                const float beat = level > 0.0f ? juce::jlimit (0.0f, 1.0f, level * 1.4f) : 0.0f;
+                const auto beaterTop = juce::Point<float> (r.getCentreX() + (1.0f - beat) * 10.0f * scale, r.getBottom() - r.getHeight() * 0.32f + beat * 6.0f * scale);
+                g.setColour (chrome);
+                g.drawLine (juce::Line<float> (pedal.getCentre(), beaterTop), 2.0f * scale);
+                g.setColour (juce::Colour (0xffe9e4d6));
+                g.fillEllipse (juce::Rectangle<float> (12.0f * scale, 12.0f * scale).withCentre (beaterTop));
+                label (kick, r.withTrimmedBottom (r.getHeight() * 0.24f), true);
             }
             for (int piece : { tomHigh, tomMid, tomFloor, snare })
                 drum (piece);
             if (noteOf (hatClosed) >= 0)
             {
-                auto r = place (hatClosed);
+                const auto r = place (hatClosed);
                 const float level = lightOf (hatClosed);
-                stand (r.getCentreX(), r.getCentreY(), (float) getHeight() - hintHeight - 8.0f);
-                for (float dy : { 8.0f * scale, 0.0f })   // the bottom and top hats
-                {
-                    g.setGradientFill (juce::ColourGradient (juce::Colour (0xffd9b45a).brighter (level * 0.6f), r.getCentreX(), r.getCentreY() + dy,
-                                                             juce::Colour (0xff7a5a22), r.getRight(), r.getCentreY() + dy, true));
-                    g.fillEllipse (r.translated (0.0f, dy));
-                    g.setColour (juce::Colours::black.withAlpha (0.35f));
-                    g.drawEllipse (r.translated (0.0f, dy), 1.0f);
-                }
-                if (level > 0.0f) { g.setColour (accent.withAlpha (level * 0.55f)); g.fillEllipse (r.expanded (4.0f * level)); }
-                if (hovered == hatClosed) { g.setColour (juce::Colours::white.withAlpha (0.15f)); g.fillEllipse (r); }
-                label (hatClosed, r, false);
+                stand (r.getCentreX(), r.getCentreY());
+                const float open = glow[46] > 0.0f && plays (46) ? 10.0f * scale * glow[46] : 0.0f;   // an open hat lifts the top cymbal
+                cymbalShape (r.translated (0.0f, 8.0f * scale), level * 0.5f, 0.0f, false);
+                cymbalShape (r.translated (0.0f, -open), level, swing (level, 20.0f) * 0.05f, hovered == hatClosed);
+                label (hatClosed, r.translated (0.0f, -open), false);
             }
             // The hi-hat's other keys, the snare's and the ride's, under the stage.
             juce::StringArray more;
             for (int piece : { hatOpen, hatPedal, sideStick, clap, rideBell })
                 if (noteOf (piece) >= 0)
-                    more.add (juce::String::charToString ((juce::juce_wchar) juce::CharacterFunctions::toUpperCase ((juce::juce_wchar) pieces()[(size_t) piece].key))
-                              + " " + pieces()[(size_t) piece].name);
+                    more.add (keyText (piece) + " " + pieces()[(size_t) piece].name);
             g.setColour (ink.withAlpha (0.45f));
             g.setFont (juce::FontOptions (10.0f));
-            g.drawText ((hasKeyboardFocus (false) ? juce::String ("Keys on: ") : juce::String ("Click the kit to play it with your keys. Also: "))
-                            + more.joinIntoString (juce::String::fromUTF8 ("  \xc2\xb7  ")),
-                        getLocalBounds().removeFromBottom (hintHeight).reduced (6, 0), juce::Justification::centredLeft);
+            g.drawFittedText (juce::String ("Also: ") + more.joinIntoString (juce::String::fromUTF8 ("  \xc2\xb7  "))
+                                  + juce::String::fromUTF8 ("  \xc2\xb7  Shift: accent"),
+                              getLocalBounds().removeFromBottom (hintHeight).reduced (6, 0), juce::Justification::centredLeft, 1, 0.8f);
         }
 
         juce::String getTooltip() override

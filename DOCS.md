@@ -295,7 +295,19 @@ then type. Each piece shows its key:
 | A / S / D | Closed, open, pedal hi-hat | Shift + key | an accent (full velocity) |
 
 A key whose piece the kit doesn't have does nothing. In Ableton, the plugin's window takes the
-keys while it's in front; click elsewhere in Ableton to give them back.
+keys while it's in front; click elsewhere in Ableton to give them back. Turn off Ableton's
+computer MIDI keyboard (M) so the two don't share the letters.
+
+**Humanize** (at the kit's right): **Velocity** makes each hit a little louder or softer at
+random (up to 30 % either way at 100 %), **Timing** plays each hit a little late (up to 20 ms
+at 100 %; never early, so nothing waits for a look-ahead). At 0 % every hit plays exactly as it
+comes. They apply to whatever plays the kit: clips, a MIDI keyboard, clicks, the computer's keys.
+A few percent of each is usually enough for a programmed beat to stop sounding like a machine.
+
+The kit grows with the plugin window's width. A kit is found by its bank (128), its name, or its
+layout (every sound on a key of its own, as kits are), so a name cut at 20 characters still
+counts. When a kit is chosen, the computer's keys go to it right away (except while typing in
+the search field).
 
 - **Click** a pad or a piece to hear it.
 - Pads **light up** as they sound, whether a clip, a MIDI keyboard or a click plays them.

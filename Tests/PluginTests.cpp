@@ -1477,6 +1477,56 @@ int main()
                 "Drum kits: detected by bank, name or layout, pads named by General MIDI or the user, keys mapped");
     }
 
+    {
+        // Drum Humanize: off, every hit of a snare is the same; Velocity varies their level, Timing
+        // starts them late (up to 20 ms, never early), and a note-off never comes before its late hit.
+        int kitIndex = 0;
+        {
+            Player probe (testFont);
+            const auto st = probe.p.state();
+            for (size_t i = 0; i < st->presets.size(); ++i)
+                if (st->presets[i].bank == 128) { kitIndex = (int) i; break; }
+        }
+        const double gap = 0.25;
+        auto hits = [&] (float velocity, float timing, std::vector<double>& peaks, std::vector<double>& onsets)
+        {
+            Player kit (testFont, kitIndex);
+            kit.set ("drumVelocityHuman", velocity);
+            kit.set ("drumTimingHuman", timing);
+            const int every = blockOf (gap);
+            const auto out = kit.render (8 * gap, [&] (int b, juce::MidiBuffer& m)
+            {
+                if (b % every == 0) m.addEvent (juce::MidiMessage::noteOn (1, 38, (juce::uint8) 100), 0);
+                if (b % every == 1) m.addEvent (juce::MidiMessage::noteOff (1, 38), 0);   // 5 ms later: before a late hit
+            });
+            for (int h = 0; h < 8; ++h)
+            {
+                const size_t from = (size_t) (h * every * block), to = juce::jmin (out.size(), from + (size_t) (gap * rate));
+                double peak = 0; size_t onset = to;
+                for (size_t i = from; i < to; ++i)
+                {
+                    peak = juce::jmax (peak, (double) std::abs (out[i]));
+                    if (onset == to && std::abs (out[i]) > 1e-3f) onset = i;
+                }
+                peaks.push_back (peak);
+                onsets.push_back ((double) (onset - from) / rate * 1000.0);
+            }
+        };
+        auto spread = [] (const std::vector<double>& v) { return *std::max_element (v.begin(), v.end()) - *std::min_element (v.begin(), v.end()); };
+        std::vector<double> flatPeaks, flatOnsets, velPeaks, velOnsets, timePeaks, timeOnsets;
+        hits (0.0f, 0.0f, flatPeaks, flatOnsets);
+        hits (1.0f, 0.0f, velPeaks, velOnsets);
+        hits (0.0f, 1.0f, timePeaks, timeOnsets);
+        const bool ok = spread (flatPeaks) < 1e-6 && spread (velPeaks) > flatPeaks[0] * 0.05 && spread (flatOnsets) < 0.5
+                        && spread (timeOnsets) > 2.0 && *std::max_element (timeOnsets.begin(), timeOnsets.end()) < 21.0
+                        && *std::min_element (timeOnsets.begin(), timeOnsets.end()) >= flatOnsets[0] - 0.1
+                        && *std::min_element (timePeaks.begin(), timePeaks.end()) > flatPeaks[0] * 0.5;   // a late hit still sounds
+        expect (ok, "Drum Humanize: off plays every hit alike; Velocity varies them, Timing delays them (0-20 ms)",
+                "level spread " + juce::String (spread (velPeaks) / flatPeaks[0] * 100.0, 0) + " %, onsets "
+                    + juce::String (*std::min_element (timeOnsets.begin(), timeOnsets.end()), 1) + "-"
+                    + juce::String (*std::max_element (timeOnsets.begin(), timeOnsets.end()), 1) + " ms");
+    }
+
     std::printf ("\n%d of %d checks passed\n", checks - failures, checks);
     return failures == 0 ? 0 : 1;
 }

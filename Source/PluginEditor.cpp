@@ -666,6 +666,13 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     drumPads.onRename = [this] (int note, const juce::String& name) { renameDrum (note, name); };
     addChildComponent (drumPads);
     setWantsKeyboardFocus (true);   // keys with no focused child reach keyPressed (the drums)
+    for (auto* knob : { &drumVelocityHuman, &drumTimingHuman })
+    {
+        knob->slider.setVisible (false);
+        knob->label.setVisible (false);
+    }
+    drumVelocityHuman.slider.setTooltip ("Each hit a little louder or softer at random (up to 30 % either way at 100 %)");
+    drumTimingHuman.slider.setTooltip ("Each hit a little late at random, as a drummer plays (up to 20 ms at 100 %)");
     for (auto* button : { &kitViewButton, &padsViewButton })
     {
         button->setClickingTogglesState (false);
@@ -1518,7 +1525,6 @@ void SF2PlayerEditor::timerCallback()
     refreshGuitarPanel();
     refreshDrumPads (*player.state());   // a guitar shown or gone changes whether the pads show
     refreshPanelButton();
-    if (drumsShown) drumPads.tick();
     // The neck: what the Guitar panel's engine played last, and its lights fading.
     auto& view = player.guitarView;
     if (const int sequence = view.sequence.load (std::memory_order_acquire); sequence != shownGuitarSequence)
@@ -1759,8 +1765,15 @@ void SF2PlayerEditor::paint (juce::Graphics& g)
         {
             g.setColour (juce::Colour (0xffa9b4d6).withAlpha (0.55f));
             g.setFont (juce::FontOptions (10.0f));
-            g.drawText (drumPads.kitView ? "click a piece to hear it" : "click a pad to hear it, double-click to rename it",
+            g.drawText (drumPads.kitView ? "click a piece or type its key" : "click a pad to hear it, double-click to rename it",
                         pianoPanel.getX() + 90, pianoPanel.getY() + 7, pianoPanel.getWidth() - 102 - 126, 14, juce::Justification::centredRight);
+            // HUMANIZE: a quiet frame and title around its knobs.
+            const auto frame = humanizeArea.withTrimmedLeft (6).toFloat();
+            g.setColour (juce::Colours::black.withAlpha (0.18f));
+            g.fillRoundedRectangle (frame, 6.0f);
+            g.setColour (juce::Colour (0xffa9b4d6));
+            g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
+            g.drawText ("HUMANIZE", frame.withHeight (20.0f).translated (0.0f, 2.0f), juce::Justification::centred);
         }
     }
     // PIANO: a deep green-black under the keyboard.
@@ -2066,7 +2079,17 @@ void SF2PlayerEditor::resized()
         pianoPanel = area.removeFromTop (instrumentHeight());
         if (drumsShown)
         {
-            drumPads.setBounds (pianoPanel.reduced (10, 0).withTrimmedTop (pianoHeight).withHeight (drumPads.preferredHeight()));
+            auto stage = pianoPanel.reduced (10, 0).withTrimmedTop (pianoHeight).withHeight (drumStageHeight());
+            if (getHeight() != minimumHeight())   // the window got wider or narrower: the kit (and the window's height) follows
+                juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<SF2PlayerEditor> (this)]
+                                                 { if (safe != nullptr) { safe->applyHeight(); safe->resized(); } });
+            // HUMANIZE at the right of the kit: its two knobs, one above the other.
+            auto human = stage.removeFromRight (humanizeWidth).withTrimmedLeft (10).withTrimmedTop (18);
+            const int knobHeight = juce::jmin (90, human.getHeight() / 2);
+            drumVelocityHuman.setBounds (human.removeFromTop (knobHeight));
+            drumTimingHuman.setBounds (human.removeFromTop (knobHeight));
+            humanizeArea = stage.withX (stage.getRight()).withWidth (humanizeWidth);
+            drumPads.setBounds (stage);
             padsViewButton.setBounds (pianoPanel.getRight() - 10 - 56, pianoPanel.getY() + 5, 56, 19);
             kitViewButton.setBounds (padsViewButton.getX() - 58, pianoPanel.getY() + 5, 56, 19);
         }
@@ -2640,6 +2663,7 @@ void SF2PlayerEditor::refreshDrumPads (const SF2PlayerProcessor::State& st)
     if (key != choiceKey) { choiceKey = key; shownChoice = drumChoice (key); }   // the settings read once per instrument
     const int choice = shownChoice;
     const bool show = valid && ! guitarShown && (choice == 1 || (choice == 0 && st.presets[(size_t) st.preset].drumKit));
+    player.drumsForced.store (show && ! st.presets[(size_t) st.preset].drumKit);   // Humanize plays on a kit the name hid
     const int rowsBefore = drumPads.rows();
     if (show && key != drumKey)
     {
@@ -2675,6 +2699,11 @@ void SF2PlayerEditor::refreshDrumPads (const SF2PlayerProcessor::State& st)
     }
     drumsShown = show;
     drumPads.setVisible (show);
+    for (auto* knob : { &drumVelocityHuman, &drumTimingHuman })
+    {
+        knob->slider.setVisible (show);
+        knob->label.setVisible (show);
+    }
     kitViewButton.setVisible (show);
     padsViewButton.setVisible (show);
     showDrumView (settings->getValue ("drumView", "kit") == "kit");
