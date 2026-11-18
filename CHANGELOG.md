@@ -22,6 +22,11 @@ release bumps it and adds an entry here: one line per change a player would noti
   it's drawn once at rest and only what moves is redrawn (0.14 ms a frame at rest, from 1.8).
 - Kits are also found by their layout (one sound per key), for names cut short; a new kit takes
   the computer's keys at once, and they work wherever the focus is except a text field.
+- **REC and Drag MIDI** (top of the window, for every instrument): record what you play in the
+  window (the keyboard, the drums' keys, kit and pads), then drag the take onto a track as a MIDI
+  clip. Hosts don't record what an instrument plays inside itself on its own track (Ableton
+  needs a second track, and Audio Units have no MIDI out there at all); this works on one track,
+  AU or VST3. Played with the transport running, the take keeps its place in the bars.
 - **MIDI out:** what's played in the plugin's window (the keyboard, the drums' keys, kit and
   pads) is now sent to the host too, so Ableton can record it on another MIDI track ("MIDI From"
   this track). Notes from clips aren't sent back.

@@ -558,6 +558,7 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     helpButton.setTooltip ("The guide, About, and the hints at the top");
     helpButton.onClick = [this] { showHelpMenu(); };
     addAndMakeVisible (helpButton);
+    addAndMakeVisible (recorder);
     hintLabel.setFont (juce::FontOptions (12.0f));
     hintLabel.setColour (juce::Label::textColourId, SF2Look::dim);
     hintLabel.setJustificationType (juce::Justification::centredLeft);
@@ -1941,6 +1942,8 @@ void SF2PlayerEditor::resized()
 
     auto header = area.removeFromTop (46);
     helpButton.setBounds (header.removeFromRight (24).withSizeKeepingCentre (24, 22));
+    header.removeFromRight (8);
+    recorder.setBounds (header.removeFromRight (200).withSizeKeepingCentre (200, 26));
     hintLabel.setBounds (header.withTrimmedLeft (220).withTrimmedRight (10).withSizeKeepingCentre (header.getWidth() - 230, 30));
     if (guide != nullptr) guide->setBounds (getLocalBounds());
 

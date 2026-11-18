@@ -321,7 +321,18 @@ the search field).
 
 ## Recording what you play in the window
 
-Notes played in the plugin's window (its keyboard, the drum kit's pieces, pads and computer keys)
+**REC and Drag MIDI** (top of the window, every instrument): click **● REC**, play in the
+window (the keyboard, the drum kit's pieces, pads or computer keys), click **REC** again. A chip
+says **⇩ Drag MIDI · N notes**: drag it onto a MIDI track and the host makes a clip of the take.
+With the host's transport running while you played, the clip starts at the bar your first note
+fell in: drop it at that bar and every note lands where you played it. Otherwise the first note
+starts the clip, timed at the host's tempo. A guitar's take holds the keys you pressed, not the
+strummed strings: played back through the Guitar panel, it strums them again.
+
+Notes from a MIDI keyboard or a MIDI controller don't need any of this: the host records them
+on the plugin's track as usual.
+
+**MIDI out**, for hosts that read it: notes played in the plugin's window (its keyboard, the drum kit's pieces, pads and computer keys)
 sound, and are also sent out of the plugin as MIDI, so the host can record them. Notes coming
 from Ableton (clips, a MIDI keyboard) aren't sent back.
 

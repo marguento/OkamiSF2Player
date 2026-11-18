@@ -5,6 +5,7 @@
 #include "Guide.h"
 #include "GuitarPresets.h"
 #include "DrumKit.h"
+#include "TakeRecorder.h"
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_audio_utils/juce_audio_utils.h>
 
@@ -481,6 +482,7 @@ private:
     // Help: the "?" menu (the guide, About, hints on or off) and the hint line in the header,
     // which explains whatever control the mouse is over.
     juce::TextButton helpButton { "?" };
+    Take::Recorder recorder { player };   // REC and Drag MIDI, left of "?"
     juce::Label hintLabel;
     bool showHints = true;
     // Reverb and chorus show only their switches, as the plugin this one follows did; their knobs

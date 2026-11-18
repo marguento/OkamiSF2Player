@@ -239,6 +239,16 @@ private:
     std::array<GuitarItem, 2048> guitarItems;
     // Drum Humanize's late hits (and the note-offs that must follow them), by absolute sample. Audio thread.
     juce::MidiBuffer playedHere;   // this block's notes played in the window (reserved in prepareToPlay)
+public:
+    // REC: while on, what's played in the window goes to the editor (a FIFO, no locks), which
+    // makes a MIDI file of it to drag into the host. Times both in seconds and, while the host's
+    // transport runs, in quarter notes of its timeline (for a take that lands on its bars).
+    struct TakeEvent { double seconds = 0, ppq = 0; bool onGrid = false; juce::uint8 bytes[3] {}; int size = 0; };
+    std::atomic<bool> takeRecording { false };
+    juce::AbstractFifo takeFifo { 8192 };
+    std::vector<TakeEvent> takeEvents = std::vector<TakeEvent> (8192);   // on the heap: hosts and tests may keep the processor on the stack
+    std::atomic<double> takeBpm { 120.0 }, takeBarQuarters { 4.0 };
+private:
     struct LateNote { juce::int64 at; juce::uint8 bytes[3]; int size; };
     std::array<LateNote, 512> lateNotes {};
     int lateCount = 0;

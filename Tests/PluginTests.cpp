@@ -8,6 +8,7 @@
 #include "../Source/SoundFontInfo.h"
 #include "../Source/GuitarNeck.h"
 #include "../Source/DrumKit.h"
+#include "../Source/TakeRecorder.h"
 #include <fluidsynth.h>
 #include <juce_events/juce_events.h>
 #include <algorithm>
@@ -1572,6 +1573,58 @@ int main()
         juce::String detail;
         const bool piano = sendsOut (testPreset, false, detail), guitar = sendsOut (testPreset, true, detail), drums = sendsOut (kitIndex, false, detail);
         expect (piano && guitar && drums, "MIDI out: notes played in the window reach the host (piano, guitar, kit), the host's own don't echo", detail);
+    }
+
+    {
+        // REC: notes played in the window reach the take's FIFO only while recording, and a take
+        // becomes a MIDI file: on the host's bars it starts at the bar of its first note; off the
+        // transport its first note is at 0 at the host's tempo; a note still held gets its end.
+        Player player (testFont);
+        juce::AudioBuffer<float> buffer (6, block);
+        auto play = [&] (int key)
+        {
+            player.p.keyboardState.noteOn (1, key, 0.8f);
+            juce::MidiBuffer midi; player.p.processBlock (buffer, midi);
+            player.p.keyboardState.noteOff (1, key, 0.0f);
+            juce::MidiBuffer more; player.p.processBlock (buffer, more);
+        };
+        play (60);                                  // not recording: nothing kept
+        const int before = player.p.takeFifo.getNumReady();
+        player.p.takeRecording.store (true);
+        play (62);
+        player.p.takeRecording.store (false);
+        const bool captured = before == 0 && player.p.takeFifo.getNumReady() == 2;
+
+        using E = Take::Event;
+        auto event = [] (double seconds, double ppq, bool grid, juce::MidiMessage m)
+        {
+            E e; e.seconds = seconds; e.ppq = ppq; e.onGrid = grid; e.size = m.getRawDataSize();
+            std::copy (m.getRawData(), m.getRawData() + e.size, e.bytes); return e;
+        };
+        int notes = 0;
+        // On the grid: played in bar 3 (quarters 8-12 in 4/4), at quarter 9.5 then 10.
+        auto onBars = Take::build ({ event (0, 9.5, true, juce::MidiMessage::noteOn (1, 36, (juce::uint8) 100)),
+                                     event (0, 9.75, true, juce::MidiMessage::noteOff (1, 36)),
+                                     event (0, 10.0, true, juce::MidiMessage::noteOn (1, 38, (juce::uint8) 90)) }, 120.0, 4.0, notes);
+        const auto* track = onBars.getTrack (0);
+        double firstOn = -1, lastOff = -1;
+        int offs = 0;
+        for (const auto* holder : *track)
+        {
+            if (holder->message.isNoteOn() && firstOn < 0) firstOn = holder->message.getTimeStamp();
+            if (holder->message.isNoteOff()) { ++offs; lastOff = holder->message.getTimeStamp(); }
+        }
+        const bool grid = notes == 2 && std::abs (firstOn - 1.5 * 960) < 1 && offs == 2 && std::abs (lastOff - (2.0 * 960 + 240)) < 1;
+        // Off the transport: the first note at 0, half a second later at 120 BPM = one quarter.
+        auto free = Take::build ({ event (5.0, 0, false, juce::MidiMessage::noteOn (1, 42, (juce::uint8) 100)),
+                                   event (5.5, 0, false, juce::MidiMessage::noteOn (1, 42, (juce::uint8) 100)) }, 120.0, 4.0, notes);
+        std::vector<double> ons;
+        for (const auto* holder : *free.getTrack (0))
+            if (holder->message.isNoteOn()) ons.push_back (holder->message.getTimeStamp());
+        const bool loose = notes == 2 && ons.size() == 2 && ons[0] == 0.0 && std::abs (ons[1] - 960) < 1;
+        juce::MemoryOutputStream bytes;
+        const bool writes = free.writeTo (bytes) && bytes.getDataSize() > 20;
+        expect (captured && grid && loose && writes, "REC: window notes kept only while recording, a take as a MIDI file on the bars or from 0");
     }
 
     std::printf ("\n%d of %d checks passed\n", checks - failures, checks);

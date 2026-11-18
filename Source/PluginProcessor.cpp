@@ -1415,6 +1415,32 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         keyboardState.processNextMidiEvent (metadata.getMessage());
     for (const auto metadata : playedHere)
         midi.addEvent (metadata.data, metadata.numBytes, metadata.samplePosition);
+    if (takeRecording.load (std::memory_order_relaxed) && ! playedHere.isEmpty())
+    {
+        const double sr = juce::jmax (1.0, getSampleRate());
+        double bpm = 120.0, barQuarters = 4.0;
+        juce::Optional<double> ppq;
+        if (blockPosition)
+        {
+            if (const auto tempo = blockPosition->getBpm()) bpm = juce::jlimit (20.0, 400.0, *tempo);
+            if (const auto sig = blockPosition->getTimeSignature(); sig && sig->numerator > 0 && sig->denominator > 0)
+                barQuarters = juce::jlimit (0.25, 64.0, 4.0 * sig->numerator / sig->denominator);
+            if (blockPosition->getIsPlaying()) ppq = blockPosition->getPpqPosition();
+        }
+        takeBpm.store (bpm, std::memory_order_relaxed);
+        takeBarQuarters.store (barQuarters, std::memory_order_relaxed);
+        for (const auto metadata : playedHere)
+        {
+            if (metadata.numBytes > 3) continue;
+            TakeEvent event;
+            event.seconds = (double) (blockStart + metadata.samplePosition) / sr;
+            event.onGrid = ppq.hasValue();
+            event.ppq = ppq ? *ppq + metadata.samplePosition / sr * bpm / 60.0 : 0.0;
+            event.size = metadata.numBytes;
+            std::copy (metadata.data, metadata.data + metadata.numBytes, event.bytes);
+            takeFifo.write (1).forEach ([&] (int index) { takeEvents[(size_t) index] = event; });   // full: dropped
+        }
+    }
     struct SendPlayed   // at every way out of this block
     {
         juce::MidiBuffer& host; const juce::MidiBuffer& played;
