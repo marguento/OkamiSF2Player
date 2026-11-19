@@ -266,15 +266,15 @@ private:
     // A guitar block's events (the clip's and the engine's), sorted by time. Audio thread.
     struct GuitarItem { int position, order; juce::uint8 bytes[3]; int size; GuitarEngine::Event note; bool fromGuitar; };
     std::array<GuitarItem, 2048> guitarItems;
-    // Drum Humanize's late hits (and the note-offs that must follow them), by absolute sample. Audio thread.
     juce::MidiBuffer playedHere;   // this block's notes played in the window (reserved in prepareToPlay)
 public:
+    // A note-on in raw bytes (velocity 0 is a note-off): the processor and REC count notes alike.
+    static bool isNoteOnBytes (const juce::uint8* data, int size) { return size == 3 && (data[0] & 0xf0) == 0x90 && data[2] > 0; }
     // REC: while on, what's played in the window goes to the editor (a FIFO, no locks), which
     // makes a MIDI file of it to drag into the host. Times both in seconds and, while the host's
     // transport runs, in quarter notes of its timeline (for a take that lands on its bars).
     // ppq: where the host's transport was (onGrid); barStart: the ppq its current bar began at
     // (-1: the host didn't say), so time-signature changes before the take still land right.
-    static bool isNoteOnBytes (const juce::uint8* data, int size) { return size == 3 && (data[0] & 0xf0) == 0x90 && data[2] > 0; }
     struct TakeEvent { double seconds = 0, ppq = 0, barStart = -1; bool onGrid = false; juce::uint8 bytes[3] {}; int size = 0; };
     // REC's state, one atomic so the window and the audio thread never disagree: idle, waiting
     // for the host's play (the take starts with the transport), recording with the transport
@@ -287,6 +287,7 @@ public:
     std::vector<TakeEvent> takeEvents = std::vector<TakeEvent> (8192);   // on the heap: hosts and tests may keep the processor on the stack
     std::atomic<double> takeBpm { 120.0 }, takeBarQuarters { 4.0 };
 private:
+    // Drum Humanize's late hits, and what follows them on their channel, by absolute sample. Audio thread.
     struct LateNote { juce::int64 at; juce::uint8 bytes[3]; int size; };
     std::array<LateNote, 512> lateNotes {};
     int lateCount = 0;
@@ -294,7 +295,7 @@ private:
     std::bitset<16> channelMoved;   // a clip's program change took this channel off the kit (no Humanize there)
     int seenKitGeneration = -1;
     void playLateNotesNow();
-    bool takeEarliestLate (juce::int64 until, LateNote& out, int channel = -1, bool skipNoteOffs = false);
+    bool takeEarliestLate (juce::int64 until, LateNote& out);
     void playLateNotes (juce::int64 until, juce::int64 blockStart, int& position);
     std::array<int, 16384> overflowIndices {};   // a flood's messages past guitarItems, by their place in the block
     std::array<std::bitset<128>, 16> lateNoteOffs {};   // note-offs past even overflowIndices, played at the block's end

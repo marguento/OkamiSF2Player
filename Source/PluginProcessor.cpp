@@ -915,11 +915,6 @@ void SF2PlayerProcessor::handleMidi (const juce::MidiMessage& m)
         // At once, as FluidSynth does, so a note sent with it plays the new instrument and an
         // export renders it exactly. The first switch to an instrument not in memory reads its
         // samples from disk here (dynamic sample loading): a possible glitch live, once.
-        // Humanize's late hits on this channel play first, on the kit they were meant for (from
-        // every path: the block's events, deferred ones, the guitar's). Their note-offs keep
-        // their own time, so a hit isn't cut short.
-        for (LateNote late; takeEarliestLate (std::numeric_limits<juce::int64>::max(), late, channel, true);)
-            handleMidi (juce::MidiMessage (late.bytes, late.size));
         fluid_synth_program_change (synth, channel, m.getProgramChangeNumber());
         // The Guitar panel's Double plays the same instrument: it follows the clip's bank and program.
         fluid_synth_program_change (synth, channel + doubleChannelOffset, m.getProgramChangeNumber());
@@ -966,17 +961,11 @@ void SF2PlayerProcessor::handleMidi (const juce::MidiMessage& m)
 }
 
 // The earliest late note due before `until`, taken off the list (false: none).
-// channel: only that channel's (-1: any); skipNoteOffs: note-offs stay, at their own time.
-bool SF2PlayerProcessor::takeEarliestLate (juce::int64 until, LateNote& out, int channel, bool skipNoteOffs)
+bool SF2PlayerProcessor::takeEarliestLate (juce::int64 until, LateNote& out)
 {
     int first = -1;
     for (int i = 0; i < lateCount; ++i)
-    {
-        const auto& late = lateNotes[(size_t) i];
-        if (channel >= 0 && (late.bytes[0] & 0x0f) != channel) continue;
-        if (skipNoteOffs && ((late.bytes[0] & 0xf0) == 0x80 || ((late.bytes[0] & 0xf0) == 0x90 && late.size == 3 && late.bytes[2] == 0))) continue;
-        if (first < 0 || late.at < lateNotes[(size_t) first].at) first = i;
-    }
+        if (first < 0 || lateNotes[(size_t) i].at < lateNotes[(size_t) first].at) first = i;
     if (first < 0 || lateNotes[(size_t) first].at >= until) return false;
     out = lateNotes[(size_t) first];
     lateNotes[(size_t) first] = lateNotes[(size_t) --lateCount];
@@ -1611,15 +1600,20 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                         if (panelShown) playedGuitar = true;           // the panel played (in Direct): too late for the start
                     }
                     juce::int64 lateAt = -1;   // when this message must wait for
-                    // Half the list stays for note-offs: one that can't wait would end a note before its late hit.
-                    if (kitNote && maxDelay >= 1.0 && lateCount < (int) lateNotes.size() / 2)
+                    // Half the list stays for the rest: one that can't wait would overtake what it follows.
+                    const bool humanized = kitNote && maxDelay >= 1.0 && lateCount < (int) lateNotes.size() / 2;
+                    if (humanized)
                         lateAt = blockStart + eventTime + (juce::int64) (humanRandom.nextDouble() * maxDelay);
-                    else if (message.isNoteOff())   // after its own late hit, never before it
-                        for (int i = 0; i < lateCount; ++i)
-                            if (lateNotes[(size_t) i].size == 3 && (lateNotes[(size_t) i].bytes[0] & 0xf0) == 0x90
-                                && (lateNotes[(size_t) i].bytes[0] & 0x0f) == (juce::uint8) (message.getChannel() - 1)
-                                && lateNotes[(size_t) i].bytes[1] == (juce::uint8) message.getNoteNumber())
-                                lateAt = juce::jmax (lateAt, lateNotes[(size_t) i].at + 1);
+                    // Nothing on a channel overtakes what waits on it: a note-off, a program change or a
+                    // controller follows the late hits before it (so a hit ends after it starts, and plays
+                    // on the kit it was meant for). Late hits only keep behind those, not each other.
+                    for (int i = 0; i < lateCount; ++i)
+                    {
+                        const auto& waiting = lateNotes[(size_t) i];
+                        if ((waiting.bytes[0] & 0x0f) != channel) continue;
+                        if (humanized && isNoteOnBytes (waiting.bytes, waiting.size)) continue;
+                        lateAt = juce::jmax (lateAt, waiting.at + 1);
+                    }
                     if (lateAt > blockStart + eventTime && lateCount < (int) lateNotes.size())
                     {
                         auto& late = lateNotes[(size_t) lateCount++];

@@ -147,8 +147,6 @@ namespace Take
             chip.recording = true;   // no drag while recording
             player.takeState.store (player.hostHasTransport.load() ? SF2PlayerProcessor::takeArmed : SF2PlayerProcessor::takeFree);
             seenState = player.takeState.load();
-            auto* peer = getPeer();
-            armedWithKeys = peer != nullptr && peer->isFocused();   // the keys come back at the song's start only if they were here
             started = juce::Time::getMillisecondCounterHiRes();
             update();
             startTimerHz (20);
@@ -201,7 +199,6 @@ namespace Take
         double started = 0;
         juce::String lastText;
         int seenState = SF2PlayerProcessor::takeIdle;
-        bool armedWithKeys = false;
 
         void drain()
         {
@@ -232,7 +229,7 @@ namespace Take
             if (seenState == SF2PlayerProcessor::takeArmed && state != SF2PlayerProcessor::takeArmed)
             {
                 started = juce::Time::getMillisecondCounterHiRes();   // the clock starts with the take
-                if (state == SF2PlayerProcessor::takeWithHost && armedWithKeys && onSongStarted) onSongStarted();
+                if (state == SF2PlayerProcessor::takeWithHost && onSongStarted) onSongStarted();
             }
             seenState = state;
             update();
