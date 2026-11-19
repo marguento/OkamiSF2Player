@@ -1610,7 +1610,7 @@ int main()
             if (tail (out, 1.5) > 0.01) sustained = (int) i;
         }
         bool allEnd = sustained >= 0;
-        juce::String detail;
+        juce::String detail = sustained < 0 ? "no sustained instrument in the test font" : "";
         for (int trial = 0; allEnd && trial < 40; ++trial)
         {
             Player kit (testFont, sustained);
@@ -1621,7 +1621,8 @@ int main()
             // switch, or the hit again) on exactly the hit's sample, the rest around it.
             kit.p.seedHumanize (1000 + trial);
             juce::Random same (1000 + trial);
-            const int hitAt = (int) (same.nextDouble() * rate * 0.020);
+            const double maxDelay = rate * 0.020 * (double) 1.0f;   // as the processor works it out
+            const int hitAt = (int) (juce::int64) (same.nextDouble() * maxDelay);
             const int offAt = trial % 2 == 0 ? hitAt : (trial * 37) % (4 * block);
             const auto out = kit.render (2.5, [&] (int b, juce::MidiBuffer& m)
             {

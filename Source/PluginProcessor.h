@@ -291,9 +291,17 @@ private:
     // Drum Humanize's late hits, the notes of the same key that follow them, and an instrument
     // switch (with what comes after it on its channel) that must wait for them, by absolute
     // sample. Audio thread.
-    struct LateNote { juce::int64 at; juce::uint64 order; juce::uint8 bytes[3]; int size; };
+    struct LateNote { juce::int64 at; juce::uint64 order; bool hit; juce::uint8 bytes[3]; int size; };   // hit: Humanize delayed it
+    static int channelOf (const LateNote& late) { return late.bytes[0] & 0x0f; }
     // A message about one key (note-on, note-off, its pressure): it waits for that key only.
-    static bool isKeyBytes (const juce::uint8* data) { const int status = data[0] & 0xf0; return status == 0x80 || status == 0x90 || status == 0xa0; }
+    static bool isKeyBytes (const juce::uint8* data, int size)
+    {
+        const int status = data[0] & 0xf0;
+        return size == 3 && (status == 0x80 || status == 0x90 || status == 0xa0);
+    }
+    // When what waits is due, per channel (anything), per channel behind an instrument switch, per key.
+    std::array<juce::int64, 16> channelDue {}, switchDue {};
+    std::array<std::array<juce::int64, 128>, 16> keyDue {};
     std::array<LateNote, 512> lateNotes {};
     int lateCount = 0;
     juce::uint64 lateOrder = 0;   // arrival order, for messages waiting until the same sample
