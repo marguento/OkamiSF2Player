@@ -1655,9 +1655,40 @@ int main()
                 if (b == 0) m.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
                 if (b == offAt / block) m.addEvent (juce::MidiMessage::allNotesOff (1), offAt % block);
             });
-            if (tail (out, 0.0) > 1.0e-4) { silenced = false; detail = "a hit sounded on the all-notes-off's sample " + juce::String (hitAt); }
+            if (tail (out, 0.0) > 1.0e-4)
+            {
+                silenced = false;
+                detail = "a hit due at sample " + juce::String (hitAt) + " sounded after an all-notes-off at " + juce::String (offAt);
+            }
         }
-        expect (allEnd && silenced, "Drum Humanize: a note-off, a hit again or a switch next to a late hit never leaves a note on; an all-notes-off on its sample silences it", detail);
+        // The host restarts the audio (an export starting, a new buffer size) while a sounding note's
+        // note-off waits behind its key's next late hit: the hit is dropped, the note-off still ends it.
+        bool restarted = sustained >= 0;
+        for (int seed = 3000; restarted && seed < 3100; ++seed)
+        {
+            juce::Random same (seed);
+            const int first = (int) (juce::int64) (same.nextDouble() * (rate * 0.020));
+            const int second = (int) (juce::int64) (same.nextDouble() * (rate * 0.020));
+            const int secondAt = 4 * block;   // the first hit is sounding by then
+            if (second < 16) continue;        // the note-off must have to wait
+            Player kit (testFont, sustained);
+            makeKit (kit, seed);
+            kit.render ((double) (5 * block) / rate, [&] (int b, juce::MidiBuffer& m)
+            {
+                if (b == 0) m.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
+                if (b == secondAt / block)
+                {
+                    m.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);   // waits `second` samples
+                    m.addEvent (juce::MidiMessage::noteOff (1, 60), 1);                       // the first hit's end: waits behind it
+                }
+            });
+            kit.p.prepareToPlay (rate, block);
+            const auto after = kit.render (2.0, [] (int, juce::MidiBuffer&) {});
+            if (tail (after, 1.5) > 1.0e-3) { restarted = false; detail = "a note kept sounding after the audio restarted (seed " + juce::String (seed) + ")"; }
+            juce::ignoreUnused (first);
+            break;   // one seed where the note-off waits is enough
+        }
+        expect (allEnd && silenced && restarted, "Drum Humanize: a note-off, a hit again or a switch next to a late hit never leaves a note on; an all-notes-off on or before its sample silences it; an audio restart keeps the note-off", detail);
     }
 
     {
