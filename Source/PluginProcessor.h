@@ -287,11 +287,13 @@ public:
     std::vector<TakeEvent> takeEvents = std::vector<TakeEvent> (8192);   // on the heap: hosts and tests may keep the processor on the stack
     std::atomic<double> takeBpm { 120.0 }, takeBarQuarters { 4.0 };
 private:
-    // Drum Humanize's late hits, and what follows them on their channel, by absolute sample. Audio thread.
+    // Drum Humanize's late hits, the note-offs that follow them, and an instrument switch (with
+    // what comes after it on its channel) that must wait for them, by absolute sample. Audio thread.
     struct LateNote { juce::int64 at; juce::uint8 bytes[3]; int size; };
     std::array<LateNote, 512> lateNotes {};
     int lateCount = 0;
     juce::Random humanRandom;
+    std::array<juce::int64, 16> channelLatestAt {}, channelSwitchAt {};   // per channel: the last waiting message's time, a waiting instrument switch's
     std::bitset<16> channelMoved;   // a clip's program change took this channel off the kit (no Humanize there)
     int seenKitGeneration = -1;
     void playLateNotesNow();
