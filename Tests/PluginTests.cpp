@@ -1589,6 +1589,58 @@ int main()
     }
 
     {
+        // Drum Humanize never leaves a note on: whatever sample a note-off, a hit again or an
+        // instrument switch lands on next to a late hit, everything ends. A sustained instrument
+        // (one that rings while held) with the pads turned on shows a stuck note as sound that
+        // never stops; Timing at 100 % moves hits around the note-offs.
+        Player probe (testFont);
+        const auto st = probe.p.state();
+        auto tail = [] (const std::vector<float>& out, double from)
+        {
+            double energy = 0;
+            for (size_t i = (size_t) (from * rate); i < out.size(); ++i) energy = juce::jmax (energy, (double) std::abs (out[i]));
+            return energy;
+        };
+        int sustained = -1;
+        for (size_t i = 0; i < st->presets.size() && sustained < 0; ++i)
+        {
+            if (st->presets[i].drumKit) continue;
+            Player held (testFont, (int) i);
+            const auto out = held.render (2.0, [] (int b, juce::MidiBuffer& m) { if (b == 0) m.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0); });
+            if (tail (out, 1.5) > 0.01) sustained = (int) i;
+        }
+        bool allEnd = sustained >= 0;
+        juce::String detail;
+        for (int trial = 0; allEnd && trial < 40; ++trial)
+        {
+            Player kit (testFont, sustained);
+            const auto& preset = st->presets[(size_t) sustained];
+            kit.p.setDrumChoice (preset.bank, preset.number, 1, false);
+            kit.set ("drumTimingHuman", 1.0f);
+            // The hit's delay is known from the seed: half the trials land the note-off (or the
+            // switch, or the hit again) on exactly the hit's sample, the rest around it.
+            kit.p.seedHumanize (1000 + trial);
+            juce::Random same (1000 + trial);
+            const int hitAt = (int) (same.nextDouble() * rate * 0.020);
+            const int offAt = trial % 2 == 0 ? hitAt : (trial * 37) % (4 * block);
+            const auto out = kit.render (2.5, [&] (int b, juce::MidiBuffer& m)
+            {
+                if (b == 0) m.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
+                if (b == offAt / block) m.addEvent (juce::MidiMessage::noteOff (1, 60), offAt % block);
+                if (b == offAt / block && trial % 3 == 1)   // the same key again, at once
+                {
+                    m.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 90), offAt % block);
+                    m.addEvent (juce::MidiMessage::noteOff (1, 60), juce::jmin (block - 1, offAt % block + 3));
+                }
+                if (b == offAt / block && trial % 3 == 2)   // an instrument switch on the same sample
+                    m.addEvent (juce::MidiMessage::programChange (1, preset.number), offAt % block);
+            });
+            if (tail (out, 2.0) > 1.0e-3) { allEnd = false; detail = "stuck with the note-off at sample " + juce::String (offAt) + ", trial " + juce::String (trial); }
+        }
+        expect (allEnd, "Drum Humanize: a note-off, a hit again or a switch next to a late hit never leaves a note on", detail);
+    }
+
+    {
         // A take on the host's bars starts at the host's own bar (a 3/4 bar before it moves the
         // bar lines), and a take the host looped through is timed by the clock instead.
         using E = Take::Event;

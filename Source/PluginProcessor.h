@@ -148,6 +148,7 @@ public:
         const int packed = drumChoice.load();
         return packed >= 0 && packed / 4 == bank * 128 + number ? packed % 4 : -1;
     }
+    void seedHumanize (juce::int64 seed) { humanRandom.setSeed (seed); }   // tests: a known sequence of delays
     bool drumsActive() const   // any thread
     {
         const int packed = drumChoice.load();
@@ -290,10 +291,12 @@ private:
     // Drum Humanize's late hits, the notes of the same key that follow them, and an instrument
     // switch (with what comes after it on its channel) that must wait for them, by absolute
     // sample. Audio thread.
-    struct LateNote { juce::int64 at; juce::uint32 order; juce::uint8 bytes[3]; int size; };
+    struct LateNote { juce::int64 at; juce::uint64 order; juce::uint8 bytes[3]; int size; };
+    // A message about one key (note-on, note-off, its pressure): it waits for that key only.
+    static bool isKeyBytes (const juce::uint8* data) { const int status = data[0] & 0xf0; return status == 0x80 || status == 0x90 || status == 0xa0; }
     std::array<LateNote, 512> lateNotes {};
     int lateCount = 0;
-    juce::uint32 lateOrder = 0;   // arrival order, for messages waiting until the same sample
+    juce::uint64 lateOrder = 0;   // arrival order, for messages waiting until the same sample
     juce::Random humanRandom;
     std::bitset<16> channelMoved;   // a clip's program change took this channel off the kit (no Humanize there)
     int seenKitGeneration = -1;

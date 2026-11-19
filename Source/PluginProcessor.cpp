@@ -835,15 +835,16 @@ void SF2PlayerProcessor::selectPreset (int presetIndex)
 void SF2PlayerProcessor::prepareToPlay (double newSampleRate, int maximumExpectedSamplesPerBlock)
 {
     work.setSize (6, juce::jmax (1, maximumExpectedSamplesPerBlock));
-    // Humanize's late notes belong to the timeline that stopped; an instrument switch that waited
-    // for them still happens, first thing in the next block.
+    // Humanize's late hits belong to the timeline that stopped (an export starting shouldn't play
+    // one); everything else that waited for them (their note-offs, an instrument switch and what
+    // followed it) still happens, in order, first thing in the next block.
     {
         int kept = 0;
         for (int i = 0; i < lateCount; ++i)
-            if ((lateNotes[(size_t) i].bytes[0] & 0xe0) != 0x80)
+            if (! isNoteOnBytes (lateNotes[(size_t) i].bytes, lateNotes[(size_t) i].size))
             {
                 lateNotes[(size_t) kept] = lateNotes[(size_t) i];
-                lateNotes[(size_t) kept++].at = std::numeric_limits<juce::int64>::min();
+                lateNotes[(size_t) kept++].at = 0;
             }
         lateCount = kept;
     }
@@ -1594,7 +1595,9 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
             for (const auto metadata : midi)
             {
                 const int eventTime = juce::jlimit (0, numSamples, metadata.samplePosition);
-                playLateNotes (blockStart + eventTime, blockStart, position);   // late hits due before it
+                // What waits until this sample or before it plays first (it came in earlier), so what
+                // still waits is due strictly later and an event that must follow it can wait for it.
+                playLateNotes (blockStart + eventTime + 1, blockStart, position);
                 render (position, eventTime);
                 position = eventTime;
                 if (metadata.numBytes <= 3)   // sysex isn't played: building its message could allocate
@@ -1606,7 +1609,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                     {
                         // Its late notes are dropped; what else waits there (an instrument switch) plays now, in order.
                         for (int i = lateCount; --i >= 0;)
-                            if ((lateNotes[(size_t) i].bytes[0] & 0x0f) == channel && (lateNotes[(size_t) i].bytes[0] & 0xe0) == 0x80)
+                            if ((lateNotes[(size_t) i].bytes[0] & 0x0f) == channel && isKeyBytes (lateNotes[(size_t) i].bytes))
                                 lateNotes[(size_t) i] = lateNotes[(size_t) --lateCount];
                         for (LateNote late; takeEarliestLate (std::numeric_limits<juce::int64>::max(), late, channel);)
                             handleMidi (juce::MidiMessage (late.bytes, late.size));
@@ -1641,9 +1644,9 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                         const auto& waiting = lateNotes[(size_t) i];
                         if ((waiting.bytes[0] & 0x0f) != channel) continue;
                         latest = juce::jmax (latest, waiting.at);
-                        const bool waitingNote = (waiting.bytes[0] & 0xe0) == 0x80;
+                        const bool waitingNote = isKeyBytes (waiting.bytes);
                         switchWaits = switchWaits || ! waitingNote;
-                        if (waitingNote && (message.isNoteOnOrOff()) && waiting.bytes[1] == (juce::uint8) message.getNoteNumber())
+                        if (waitingNote && (message.isNoteOnOrOff() || message.isAftertouch()) && waiting.bytes[1] == (juce::uint8) message.getNoteNumber())
                             lateAt = juce::jmax (lateAt, waiting.at);
                     }
                     if (latest > now && (switches || switchWaits))
