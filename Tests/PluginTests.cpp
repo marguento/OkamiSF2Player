@@ -1668,13 +1668,16 @@ int main()
         {
             // A seed whose second hit still waits when the audio restarts at the end of block 4.
             const int secondAt = 4 * block;   // the first hit is sounding by then
-            int seed = 3000;
-            for (;; ++seed)
+            int seed = -1;
+            for (int candidate = 3000; candidate < 3200 && seed < 0; ++candidate)
             {
-                juce::Random same (seed);
+                juce::Random same (candidate);
                 same.nextDouble();   // the first hit's delay
-                if (secondAt + (int) (juce::int64) (same.nextDouble() * (rate * 0.020)) >= 5 * block) break;
+                if (secondAt + (int) (juce::int64) (same.nextDouble() * (rate * 0.020)) >= 5 * block) seed = candidate;
             }
+            if (seed < 0) { restarted = false; detail = "no seed leaves the second hit waiting past the block"; }
+            else
+            {
             Player kit (testFont, sustained);
             makeKit (kit, seed);
             kit.render ((double) (5 * block) / rate, [&] (int b, juce::MidiBuffer& m)
@@ -1689,6 +1692,7 @@ int main()
             kit.p.prepareToPlay (rate, block);
             const auto after = kit.render (2.0, [] (int, juce::MidiBuffer&) {});
             if (tail (after, 1.5) > 1.0e-3) { restarted = false; detail = "a note kept sounding after the audio restarted (seed " + juce::String (seed) + ")"; }
+            }
         }
         // A flood on one key fills the list: what can't wait plays after that key's waiting messages,
         // so nothing is left on.
@@ -1699,17 +1703,19 @@ int main()
             makeKit (kit, 4000);
             kit.render (2.0, [&] (int b, juce::MidiBuffer& m)
             {
-                if (b == 0)   // more hits than the list holds, then one note-off for the key
+                if (b == 0)   // a hit on another key, more hits than the list holds on one key, then each key's note-off
                 {
+                    m.addEvent (juce::MidiMessage::noteOn (1, 64, (juce::uint8) 100), 0);
                     for (int i = 0; i < 600; ++i)
-                        m.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), i % (block - 1));
+                        m.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 1 + i % (block - 2));
                     m.addEvent (juce::MidiMessage::noteOff (1, 60), block - 1);
+                    m.addEvent (juce::MidiMessage::noteOff (1, 64), block - 1);
                 }
             });
             const auto after = kit.render (1.0, [] (int, juce::MidiBuffer&) {});
             if (tail (after, 0.5) > 1.0e-3) { flooded = false; detail = "a note kept sounding after a flood filled the list"; }
         }
-        expect (allEnd && silenced && restarted && flooded, "Drum Humanize: a note-off, a hit again or a switch next to a late hit never leaves a note on; an all-notes-off on or before its sample silences it; an audio restart keeps the note-off; a flood keeps each key's order", detail);
+        expect (allEnd && silenced && restarted && flooded, "Drum Humanize: a note-off, a hit again or a switch next to a late hit never leaves a note on; an all-notes-off on or before its sample silences it; an audio restart keeps the note-off; a flood (one key past the list, another waiting) ends every note", detail);
     }
 
     {

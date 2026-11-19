@@ -850,7 +850,7 @@ void SF2PlayerProcessor::prepareToPlay (double newSampleRate, int maximumExpecte
         // on the new timeline.
         int kept = 0;
         for (int i = 0; i < lateCount; ++i)
-            if (const auto& late = lateNotes[(size_t) i]; ! isNoteOnBytes (late.bytes, late.size) && (late.bytes[0] & 0xf0) != 0xa0)
+            if (const auto& late = lateNotes[(size_t) i]; isNoteOffBytes (late.bytes, late.size))
             {
                 lateNotes[(size_t) kept] = lateNotes[(size_t) i];
                 lateNotes[(size_t) kept++].at = 0;
@@ -984,7 +984,7 @@ bool SF2PlayerProcessor::takeEarliestLate (juce::int64 until, LateNote& out)
     {
         const auto& late = lateNotes[(size_t) i];
         const auto& best = lateNotes[(size_t) first];
-        if (late.at < best.at || (late.at == best.at && late.order < best.order))
+        if (earlier (late, best))
         {
             next = juce::jmin (next, best.at);
             first = i;
@@ -992,8 +992,9 @@ bool SF2PlayerProcessor::takeEarliestLate (juce::int64 until, LateNote& out)
         else
             next = juce::jmin (next, late.at);
     }
-    if (lateNotes[(size_t) first].at >= until)   // nextLateAt out of date: never play early
+    if (lateNotes[(size_t) first].at >= until)   // nextLateAt out of date (a removal that didn't refresh it): never play early
     {
+        jassertfalse;
         nextLateAt = lateNotes[(size_t) first].at;
         return false;
     }
@@ -1003,25 +1004,22 @@ bool SF2PlayerProcessor::takeEarliestLate (juce::int64 until, LateNote& out)
     return true;
 }
 
-// A key's waiting messages, now, in order (the list is full and one more must follow them).
+// A key's waiting messages, now, in order (the list is full and one more must follow them). One
+// pass picks them out, then they play by arrival (a key's times only grow with it), then the list
+// closes up once.
 void SF2PlayerProcessor::playKeyNow (int channel, int key)
 {
-    for (;;)
+    int picked = 0, kept = 0;
+    for (int i = 0; i < lateCount; ++i)
     {
-        int first = -1;
-        for (int i = 0; i < lateCount; ++i)
-        {
-            const auto& late = lateNotes[(size_t) i];
-            if (channelOf (late) != channel || late.bytes[1] != (juce::uint8) key) continue;
-            if (first < 0 || late.at < lateNotes[(size_t) first].at
-                || (late.at == lateNotes[(size_t) first].at && late.order < lateNotes[(size_t) first].order))
-                first = i;
-        }
-        if (first < 0) break;
-        const auto late = lateNotes[(size_t) first];
-        lateNotes[(size_t) first] = lateNotes[(size_t) --lateCount];
-        handleMidi (juce::MidiMessage (late.bytes, late.size));
+        const auto& late = lateNotes[(size_t) i];
+        if (channelOf (late) == channel && late.bytes[1] == (juce::uint8) key) keyPicked[(size_t) picked++] = late;
+        else lateNotes[(size_t) kept++] = late;
     }
+    lateCount = kept;
+    std::sort (keyPicked.begin(), keyPicked.begin() + picked, [] (const LateNote& a, const LateNote& b) { return a.order < b.order; });
+    for (int i = 0; i < picked; ++i)
+        handleMidi (juce::MidiMessage (keyPicked[(size_t) i].bytes, keyPicked[(size_t) i].size));
     keyDue[(size_t) channel][(size_t) key] = -1;
     refreshNextLate();
 }
@@ -1682,9 +1680,15 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                     const int key = keyMessage ? message.getNoteNumber() & 0x7f : 0;
                     if (keyMessage)
                     {
-                        if (kitNote && maxDelay >= 1.0 && lateCount < (int) lateNotes.size())
+                        // A quarter of the list stays for what must follow a waiting hit (its note-off,
+                        // a hit again): Humanize's own delay and a key's pressure wait only above it.
+                        const bool spare = lateCount < (int) lateNotes.size() * 3 / 4;
+                        const auto waits = keyDue[(size_t) channel][(size_t) key];
+                        if (message.isAftertouch() && waits > now && ! spare)
+                            continue;   // pressure for a hit that hasn't sounded, with no room to spare: dropped
+                        if (kitNote && maxDelay >= 1.0 && spare)
                             lateAt = now + (juce::int64) (humanRandom.nextDouble() * maxDelay);
-                        if (const auto waits = keyDue[(size_t) channel][(size_t) key]; waits > now)
+                        if (waits > now)
                             lateAt = juce::jmax (lateAt, waits);
                         if (lateAt > now && lateCount == (int) lateNotes.size())
                         {
@@ -1694,7 +1698,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                             lateAt = -1;
                         }
                     }
-                    if (lateAt > now)
+                    if (lateAt > now && lateCount < (int) lateNotes.size())
                     {
                         keyDue[(size_t) channel][(size_t) key] = lateAt;
                         nextLateAt = juce::jmin (nextLateAt, lateAt);

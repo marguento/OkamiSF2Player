@@ -292,12 +292,18 @@ private:
     // sample. Audio thread.
     struct LateNote { juce::int64 at; juce::uint64 order; juce::uint8 bytes[3]; int size; };
     static int channelOf (const LateNote& late) { return late.bytes[0] & 0x0f; }
+    static bool earlier (const LateNote& a, const LateNote& b) { return a.at < b.at || (a.at == b.at && a.order < b.order); }
+    static bool isNoteOffBytes (const juce::uint8* data, int size)
+    {
+        return size == 3 && ((data[0] & 0xf0) == 0x80 || ((data[0] & 0xf0) == 0x90 && data[2] == 0));
+    }
     // When each key's last waiting message is due (a time already past: nothing waits). Cleared
     // where messages leave the list early (playLateNotesNow, an all-notes-off, playKeyNow) and in
     // prepareToPlay, whose kept note-offs wait at time 0, ahead of anything new.
     std::array<std::array<juce::int64, 128>, 16> keyDue {};
     std::array<LateNote, 512> lateNotes {};
     int lateCount = 0;
+    std::array<LateNote, 512> keyPicked {};   // playKeyNow's scratch (no allocation on the audio thread)
     juce::uint64 lateOrder = 0;   // arrival order, for messages waiting until the same sample
     juce::int64 nextLateAt = std::numeric_limits<juce::int64>::max();   // the earliest waiting time (none: max)
     juce::Random humanRandom;
