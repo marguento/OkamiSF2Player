@@ -559,6 +559,14 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     helpButton.onClick = [this] { showHelpMenu(); };
     addAndMakeVisible (helpButton);
     addAndMakeVisible (recorder);
+    // REC waiting for the song: pressing play in the host gives the host the keys, so the window
+    // takes them back the moment the take starts (it was the user who armed it).
+    recorder.onSongStarted = [this]
+    {
+        if (auto* peer = getPeer()) peer->grabFocus();
+        if (drumsShown && drumPads.isShowing()) drumPads.grabKeyboardFocus();
+        else grabKeyboardFocus();
+    };
     hintLabel.setFont (juce::FontOptions (12.0f));
     hintLabel.setColour (juce::Label::textColourId, SF2Look::dim);
     hintLabel.setJustificationType (juce::Justification::centredLeft);
@@ -2665,7 +2673,13 @@ void SF2PlayerEditor::refreshDrumPads (const SF2PlayerProcessor::State& st)
 {
     const bool valid = juce::isPositiveAndBelow (st.preset, (int) st.presets.size());
     const auto key = valid ? favouriteKey (st, st.preset) : juce::String();
-    if (key != choiceKey) { choiceKey = key; shownChoice = drumChoice (key); }   // the settings read once per instrument
+    if (key != choiceKey)   // the settings read once per instrument; the project's choice when they have none (another Mac)
+    {
+        choiceKey = key;
+        shownChoice = drumChoice (key);
+        if (shownChoice == 0 && valid)
+            shownChoice = juce::jmax (0, player.drumChoiceOf (st.presets[(size_t) st.preset].bank, st.presets[(size_t) st.preset].number));
+    }
     const int choice = shownChoice;
     const bool show = valid && ! guitarShown && (choice == 1 || (choice == 0 && st.presets[(size_t) st.preset].drumKit));
     if (valid)   // Humanize plays where the pads show, even once the window is closed (saved with the project)

@@ -919,9 +919,13 @@ void SF2PlayerProcessor::handleMidi (const juce::MidiMessage& m)
         // The Guitar panel's Double plays the same instrument: it follows the clip's bank and program.
         fluid_synth_program_change (synth, channel + doubleChannelOffset, m.getProgramChangeNumber());
         // The preset FluidSynth actually chose (it falls back to bank 0 when the bank is missing).
+        if (juce::isPositiveAndBelow (channel, 16))   // the kit's Humanize stays on this channel only while it plays the kit
+            channelMoved.set ((size_t) channel);
         if (auto* preset = fluid_synth_get_channel_preset (synth, channel))
         {
             const int key = fluid_preset_get_banknum (preset) * 128 + fluid_preset_get_num (preset);
+            if (juce::isPositiveAndBelow (channel, 16) && key == presetId.load (std::memory_order_relaxed))
+                channelMoved.reset ((size_t) channel);
             if (key != lastPinRequest[(size_t) channel])   // a repeated program change queues nothing
                 pinFifo.write (1).forEach ([this, key, channel] (int index)
                 {
@@ -959,16 +963,24 @@ void SF2PlayerProcessor::handleMidi (const juce::MidiMessage& m)
 
 // Drum Humanize's late notes due before `until`, earliest first, each at its own sample of this
 // block (rendering up to it); one already overdue (a block skipped) plays at once.
+// The earliest late note due before `until`, taken off the list (false: none).
+bool SF2PlayerProcessor::takeEarliestLate (juce::int64 until, LateNote& out)
+{
+    if (lateCount == 0) return false;
+    int first = 0;
+    for (int i = 1; i < lateCount; ++i)
+        if (lateNotes[(size_t) i].at < lateNotes[(size_t) first].at) first = i;
+    if (lateNotes[(size_t) first].at >= until) return false;
+    out = lateNotes[(size_t) first];
+    lateNotes[(size_t) first] = lateNotes[(size_t) --lateCount];
+    return true;
+}
+
 void SF2PlayerProcessor::playLateNotes (juce::int64 until, juce::int64 blockStart, int& position)
 {
-    while (lateCount > 0)
+    LateNote late;
+    while (takeEarliestLate (until, late))
     {
-        int first = 0;
-        for (int i = 1; i < lateCount; ++i)
-            if (lateNotes[(size_t) i].at < lateNotes[(size_t) first].at) first = i;
-        const auto late = lateNotes[(size_t) first];
-        if (late.at >= until) return;
-        lateNotes[(size_t) first] = lateNotes[(size_t) --lateCount];
         const int at = (int) juce::jlimit ((juce::int64) position, (juce::int64) work.getNumSamples(), late.at - blockStart);
         render (position, at);
         position = juce::jmax (position, at);
@@ -979,15 +991,9 @@ void SF2PlayerProcessor::playLateNotes (juce::int64 until, juce::int64 blockStar
 // Every late note at once, in time order, rendering nothing (whoever renders the block next plays them).
 void SF2PlayerProcessor::playLateNotesNow()
 {
-    while (lateCount > 0)
-    {
-        int first = 0;
-        for (int i = 1; i < lateCount; ++i)
-            if (lateNotes[(size_t) i].at < lateNotes[(size_t) first].at) first = i;
-        const auto late = lateNotes[(size_t) first];
-        lateNotes[(size_t) first] = lateNotes[(size_t) --lateCount];
+    LateNote late;
+    while (takeEarliestLate (std::numeric_limits<juce::int64>::max(), late))
         handleMidi (juce::MidiMessage (late.bytes, late.size));
-    }
 }
 
 // Renders [start, end) of `work`: FluidSynth adds to the buffers, which processBlock cleared.
@@ -1438,6 +1444,9 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         hostPlaying.store (playingNow, std::memory_order_relaxed);
         int expected = playingNow ? takeArmed : takeWithHost;
         takeState.compare_exchange_strong (expected, playingNow ? takeWithHost : takeEndedByHost);
+        expected = takeArmed;   // played without starting the song: a take of its own, at once (a jam)
+        if (! playingNow && ! playedHere.isEmpty())
+            takeState.compare_exchange_strong (expected, takeFree);
     }
     if (const int take = takeState.load (std::memory_order_relaxed); (take == takeWithHost || take == takeFree) && ! playedHere.isEmpty())
     {
@@ -1576,8 +1585,6 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                             if ((lateNotes[(size_t) i].bytes[0] & 0x0f) == channel)
                                 lateNotes[(size_t) i] = lateNotes[(size_t) --lateCount];
                     }
-                    if (message.isProgramChange() && juce::isPositiveAndBelow (channel, 16))
-                        channelMoved.set ((size_t) channel);
                     const bool kitNote = message.isNoteOn() && juce::isPositiveAndBelow (channel, 16) && ! channelMoved.test ((size_t) channel)
                                       && message.getNoteNumber() >= splitBelow;
                     if (kitNote && velocityHuman > 0.0f)
@@ -1875,8 +1882,7 @@ void SF2PlayerProcessor::getStateInformation (juce::MemoryBlock& destData)
         saved.setProperty ("layerBank", st->layerBank, nullptr);
         saved.setProperty ("layerNumber", st->layerNumber, nullptr);
     }
-    saved.setProperty ("drumChoiceFor", drumChoiceFor.load(), nullptr);
-    saved.setProperty ("drumChoice", drumChoiceValue.load(), nullptr);
+    saved.setProperty ("drumChoice", drumChoice.load(), nullptr);
     {
         juce::StringArray frets;
         for (int fret : guitarShapeFrets()) frets.add (juce::String (fret));
@@ -1912,10 +1918,11 @@ void SF2PlayerProcessor::setStateInformation (const void* data, int sizeInBytes)
     savedNumber = (int) state.getProperty ("presetNumber", -1);
     savedLayerBank = (int) state.getProperty ("layerBank", -1);
     savedLayerNumber = (int) state.getProperty ("layerNumber", -1);
-    drumChoiceValue.store (juce::jlimit (0, 2, (int) state.getProperty ("drumChoice", 0)));
-    drumChoiceFor.store ((int) state.getProperty ("drumChoiceFor", -1));
-    state.removeProperty ("drumChoice", nullptr);
-    state.removeProperty ("drumChoiceFor", nullptr);
+    {
+        const int packed = (int) state.getProperty ("drumChoice", -1);
+        drumChoice.store (packed >= 0 && packed % 4 <= 2 && packed / 4 < 129 * 128 ? packed : -1);
+        state.removeProperty ("drumChoice", nullptr);
+    }
     {
         std::array<int, 6> frets { -1, -1, -1, -1, -1, -1 };
         const auto parts = juce::StringArray::fromTokens (state.getProperty ("guitarShape").toString(), ",", "");

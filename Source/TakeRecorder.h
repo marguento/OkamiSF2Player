@@ -3,6 +3,7 @@
 #include "PluginProcessor.h"
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
+#include <functional>
 #include <map>
 #include <vector>
 
@@ -31,19 +32,24 @@ namespace Take
             file.addTrack (sequence);
             return file;
         }
-        // On the grid only while the host's position only moved forward: a loop (or a jump back)
-        // during the take would put later notes before earlier ones, so it's timed by the clock.
-        bool grid = std::all_of (events.begin(), events.end(), [] (const Event& e) { return e.onGrid; });
-        for (size_t i = 1; grid && i < events.size(); ++i)
-            grid = events[i].ppq >= events[i - 1].ppq - 1.0e-6;
+        // On the host's bars, a take starts at the bar the first note fell in: the host's own bar
+        // (a new one may start inside the block), else counted from 0 in the current signature.
+        // Its notes keep the host's positions while those only moved forward; a loop (or a jump
+        // back) during the take would put later notes before earlier ones, so they're timed by
+        // the clock from the first note instead, which still sits where it fell in its bar.
+        const bool onBars = std::all_of (events.begin(), events.end(), [] (const Event& e) { return e.onGrid; });
+        bool forward = onBars;
+        for (size_t i = 1; forward && i < events.size(); ++i)
+            forward = events[i].ppq >= events[i - 1].ppq - 1.0e-6;
         const auto& first = events.front();
-        const double base = ! grid ? 0.0
-                          : first.barStart >= 0.0 && first.barStart <= first.ppq   // the host's own bar (a new one may start inside the block)
-                              ? first.barStart + std::floor ((first.ppq - first.barStart) / barQuarters) * barQuarters
-                          : std::floor (first.ppq / barQuarters) * barQuarters;
+        const double bar = ! onBars ? 0.0
+                         : first.barStart >= 0.0 && first.barStart <= first.ppq
+                             ? first.barStart + std::floor ((first.ppq - first.barStart) / barQuarters) * barQuarters
+                             : std::floor (first.ppq / barQuarters) * barQuarters;
+        const double firstInBar = onBars ? first.ppq - bar : 0.0;
         auto ticksOf = [&] (const Event& e)
         {
-            const double quarters = grid ? e.ppq - base : (e.seconds - events.front().seconds) * bpm / 60.0;
+            const double quarters = forward ? e.ppq - bar : firstInBar + (e.seconds - first.seconds) * bpm / 60.0;
             return juce::jmax (0.0, quarters * tpq);
         };
         std::map<int, double> open;   // channel * 128 + note -> its note-on's tick
@@ -127,21 +133,23 @@ namespace Take
             chip.setBounds (r.withSizeKeepingCentre (r.getWidth(), 22));
         }
 
-        // REC with the host stopped waits for its play, so the take is played along with the song
-        // and lands on its bars; stopping the song ends it. With the host already playing it
-        // records at once (and still ends with the song); a host without a transport, at once.
+        // REC in a host with a transport waits for its play (at once if it's playing: the audio
+        // thread decides, from the next block), so the take is played along with the song and
+        // lands on its bars; stopping the song ends it. Played before any play, it's a take of its
+        // own at once, ended with REC. A host without a transport records at once.
+        std::function<void()> onSongStarted;   // the take started with the host's play: the window takes the keys back
+
         void start()
         {
             drain();   // anything left from before is dropped
             events.clear();
-            chip.file = juce::File();   // the last take's file isn't offered while a new one records
-            chip.recording = true;
-            const bool wait = player.hostHasTransport.load() && ! player.hostPlaying.load();
-            player.takeState.store (wait ? SF2PlayerProcessor::takeArmed
-                                         : player.hostPlaying.load() ? SF2PlayerProcessor::takeWithHost : SF2PlayerProcessor::takeFree);
+            lastText = chip.text;   // the last take stays on disk; offered again if this one is called off before it starts
+            chip.recording = true;   // no drag while recording
+            player.takeState.store (player.hostHasTransport.load() ? SF2PlayerProcessor::takeArmed : SF2PlayerProcessor::takeFree);
+            seenState = player.takeState.load();
             started = juce::Time::getMillisecondCounterHiRes();
             update();
-            startTimerHz (10);
+            startTimerHz (20);
         }
         void stop()
         {
@@ -150,12 +158,13 @@ namespace Take
             drain();
             stopTimer();
             chip.recording = false;
-            if (was == SF2PlayerProcessor::takeArmed)   // stopped before the host ever played: nothing to hand over
+            if (was == SF2PlayerProcessor::takeArmed)   // called off before it started: the last take is offered again
             {
-                chip.text = {};
+                chip.text = chip.file.existsAsFile() ? lastText : juce::String();
                 chip.repaint();
                 return;
             }
+            chip.file = juce::File();
             int notes = 0;
             const auto midi = build (events, player.takeBpm.load(), player.takeBarQuarters.load(), notes);
             if (notes > 0)
@@ -178,7 +187,7 @@ namespace Take
             chip.repaint();
         }
 
-        const juce::File& takeFile() const { return chip.file; }   // what dragging the chip hands over
+        juce::File takeFile() const { return chip.recording ? juce::File() : chip.file; }   // what dragging the chip hands over
 
     private:
         SF2PlayerProcessor& player;
@@ -186,6 +195,8 @@ namespace Take
         DragChip chip;
         std::vector<Event> events;
         double started = 0;
+        juce::String lastText;
+        int seenState = SF2PlayerProcessor::takeIdle;
 
         void drain()
         {
@@ -197,7 +208,6 @@ namespace Take
             const int take = player.takeState.load();
             if (take == SF2PlayerProcessor::takeArmed)
             {
-                started = juce::Time::getMillisecondCounterHiRes();   // the clock starts with the song
                 chip.text = juce::String::fromUTF8 ("\xe2\x97\x8f Waiting for play");
                 chip.repaint();
                 return;
@@ -212,8 +222,15 @@ namespace Take
         void timerCallback() override
         {
             drain();
-            if (player.takeState.load() == SF2PlayerProcessor::takeEndedByHost) stop();   // the song stopped: the take is ready
-            else update();
+            const int state = player.takeState.load();
+            if (state == SF2PlayerProcessor::takeEndedByHost) { stop(); return; }   // the song stopped: the take is ready
+            if (seenState == SF2PlayerProcessor::takeArmed && state != SF2PlayerProcessor::takeArmed)
+            {
+                started = juce::Time::getMillisecondCounterHiRes();   // the clock starts with the take
+                if (state == SF2PlayerProcessor::takeWithHost && onSongStarted) onSongStarted();
+            }
+            seenState = state;
+            update();
         }
     };
 }

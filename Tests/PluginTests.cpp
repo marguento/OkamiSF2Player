@@ -1548,7 +1548,7 @@ int main()
         a.p.getStateInformation (saved);
         Player b (testFont, kit);
         b.p.setStateInformation (saved.getData(), (int) saved.getSize());
-        const bool restored = ! b.p.drumsActive() && b.p.drumChoiceValue.load() == 2;
+        const bool restored = ! b.p.drumsActive() && b.p.drumChoiceOf (k.bank, k.number) == 2;
         Player c (testFont, melodic);
         const auto& m = st->presets[(size_t) melodic];
         const bool notKit = ! c.p.drumsActive();
@@ -1594,8 +1594,8 @@ int main()
             if (holder->message.isNoteOff()) offAt = holder->message.getTimeStamp();
         }
         expect (shifted.size() == 1 && std::abs (shifted[0] - 480) < 1 && nextBar.size() == 1 && std::abs (nextBar[0] - 480) < 1
-                    && on == 0.0 && std::abs (offAt - 0.2 * 2 * 960) < 1,
-                "REC: a take starts at the host's bar, and one the host looped through is timed by the clock");
+                    && std::abs (on - 3.9 * 960) < 1 && std::abs (offAt - on - 0.2 * 2 * 960) < 1,
+                "REC: a take starts at the host's bar, and one the host looped through is timed by the clock from its first note's place in the bar");
     }
 
     {
@@ -1735,10 +1735,9 @@ int main()
             }
         } head;
         player.p.setPlayHead (&head);
-        { juce::MidiBuffer none; player.p.processBlock (buffer, none); }   // the window learns the host is stopped
+        { juce::MidiBuffer none; player.p.processBlock (buffer, none); }   // the window learns the host has a transport
         recorder.start();
         const bool armed = player.p.takeState.load() == SF2PlayerProcessor::takeArmed;
-        play (60);                                     // before play: not in the take
         head.playing = true;
         play (67);                                     // the song plays: recorded
         head.playing = false;
@@ -1746,10 +1745,20 @@ int main()
         const bool ended = player.p.takeState.load() == SF2PlayerProcessor::takeEndedByHost;
         recorder.stop();   // what the window's timer does once the host stopped
         const auto synced = recorder.takeFile();
-        const bool withSong = armed && ended && keysIn (synced) == std::vector<int> { 67 };
-        synced.deleteFile();
+        bool withSong = armed && ended && keysIn (synced) == std::vector<int> { 67 };
+        // Called off while waiting: the last take is still offered. Played without the song: a take at once.
+        recorder.start();
+        recorder.stop();
+        withSong = withSong && recorder.takeFile() == synced && synced.existsAsFile();
+        recorder.start();
+        play (62);
+        const bool jam = player.p.takeState.load() == SF2PlayerProcessor::takeFree;
+        recorder.stop();
+        const auto jammed = recorder.takeFile();
+        withSong = withSong && jam && keysIn (jammed) == std::vector<int> { 62 };
+        synced.deleteFile(); jammed.deleteFile();
         player.p.setPlayHead (nullptr);
-        expect (withSong, "REC: with the host stopped it waits for play, records with the song and ends when it stops");
+        expect (withSong, "REC: waits for the host's play and ends with it; played without the song it records at once; called off, the last take stays");
     }
 
     std::printf ("\n%d of %d checks passed\n", checks - failures, checks);

@@ -123,8 +123,9 @@ public:
     // 2 off; the editor keeps it per instrument and hands it over, the project saves it), so
     // Humanize plays exactly where the panel shows, with or without the window open.
     std::atomic<bool> presetIsKit { false };
-    std::atomic<int> presetId { -1 }, drumChoiceFor { -1 }, drumChoiceValue { 0 };   // ids: bank * 128 + program
+    std::atomic<int> presetId { -1 };   // bank * 128 + program of the instrument
     std::atomic<int> kitGeneration { 0 };   // a new instrument: channels a clip moved elsewhere play the kit again
+    std::atomic<int> drumChoice { -1 };   // (instrument id) * 4 + choice, in one atomic so the pair is never torn; -1: none
     void refreshKitFlag()   // message thread, after the preset changes
     {
         const bool valid = juce::isPositiveAndBelow (currentPreset, (int) presetList.size());
@@ -132,14 +133,22 @@ public:
         presetId.store (valid ? presetList[(size_t) currentPreset].bank * 128 + presetList[(size_t) currentPreset].number : -1);
         kitGeneration.fetch_add (1);
     }
-    void setDrumChoice (int bank, int number, int choice)
+    void setDrumChoice (int bank, int number, int choice)   // message thread; a change is the project's
     {
-        drumChoiceValue.store (juce::jlimit (0, 2, choice));
-        drumChoiceFor.store (bank * 128 + number);
+        const int packed = (bank * 128 + number) * 4 + juce::jlimit (0, 2, choice);
+        if (drumChoice.exchange (packed) != packed)
+            updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
+    }
+    // The choice the project holds for that instrument (-1: none, the editor's settings decide).
+    int drumChoiceOf (int bank, int number) const
+    {
+        const int packed = drumChoice.load();
+        return packed >= 0 && packed / 4 == bank * 128 + number ? packed % 4 : -1;
     }
     bool drumsActive() const   // any thread
     {
-        const int choice = drumChoiceFor.load() == presetId.load() ? drumChoiceValue.load() : 0;
+        const int packed = drumChoice.load();
+        const int choice = packed >= 0 && packed / 4 == presetId.load() ? packed % 4 : 0;
         return choice == 1 || (choice == 0 && presetIsKit.load());
     }
     std::atomic<bool> playedGuitar { false };   // the panel already played notes: too late for the start
@@ -282,6 +291,7 @@ private:
     std::bitset<16> channelMoved;   // a clip's program change took this channel off the kit (no Humanize there)
     int seenKitGeneration = -1;
     void playLateNotesNow();
+    bool takeEarliestLate (juce::int64 until, LateNote& out);
     void playLateNotes (juce::int64 until, juce::int64 blockStart, int& position);
     std::array<int, 16384> overflowIndices {};   // a flood's messages past guitarItems, by their place in the block
     std::array<std::bitset<128>, 16> lateNoteOffs {};   // note-offs past even overflowIndices, played at the block's end

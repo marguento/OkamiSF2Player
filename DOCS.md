@@ -330,16 +330,15 @@ the search field).
 5. Drag the chip onto a MIDI track and the host makes a clip of the take. It starts at the bar
    your first note fell in: drop it at that bar and every note lands where you played it.
 
-Clicking **REC** with the song already playing records at once (and still ends when the song
-stops); clicking it again ends the take whenever you like. A host without a transport records
-at once, the first note starting the clip at the host's tempo. If the host loops while you play,
-the take keeps the order you played it in, timed by the clock. A guitar's take holds the keys
+When the song starts, the plugin's window takes the computer's keys back from the host, so you
+can play at once. Clicking **REC** with the song already playing records from the next moment
+(and still ends when the song stops); clicking it again ends the take whenever you like, and
+clicking it again while it waits calls it off (the last take stays to drag). To record without
+the song, click **REC** and just play: the take starts with your first note and ends with REC. A
+host without a transport records at once. If the host loops while you play, the take keeps the
+order you played it in, timed by the clock from your first note. A guitar's take holds the keys
 you pressed, not the strummed strings: played back through the Guitar panel, it strums them
 again.
-
-In Ableton, Space reaches Ableton even while the plugin's window is in front (the plugin doesn't
-use it), so you can start the song without leaving the window. If it doesn't, start the song
-first and click the plugin's window to give it the keys back.
 
 Notes from a MIDI keyboard or a MIDI controller don't need any of this: the host records them
 on the plugin's track as usual.

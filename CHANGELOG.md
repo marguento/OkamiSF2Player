@@ -14,7 +14,8 @@ release bumps it and adds an entry here: one line per change a player would noti
   stick, V clap, A/S/D closed, open and pedal hi-hat, F/G/H toms, Q/W crashes, E ride, R ride
   bell, T china, Y splash (Shift for an accent). Each piece shows its key.
 - **REC plays along with your song:** with the song stopped, REC waits for the host's play, and
-  stopping the song ends the take; the clip lands on the song's bars.
+  stopping the song ends the take; the clip lands on the song's bars. The window takes the keys
+  back when the song starts, and playing without the song records at once.
 - **Drums page in the guide** (? → Guide → Drums): the kit, its keys, Humanize, names and
   recording a beat.
 - **Humanize** for drums, beside the kit: **Velocity** varies each hit's strength at random (up
