@@ -287,17 +287,18 @@ public:
     std::vector<TakeEvent> takeEvents = std::vector<TakeEvent> (8192);   // on the heap: hosts and tests may keep the processor on the stack
     std::atomic<double> takeBpm { 120.0 }, takeBarQuarters { 4.0 };
 private:
-    // Drum Humanize's late hits, the note-offs that follow them, and an instrument switch (with
-    // what comes after it on its channel) that must wait for them, by absolute sample. Audio thread.
-    struct LateNote { juce::int64 at; juce::uint8 bytes[3]; int size; };
+    // Drum Humanize's late hits, the notes of the same key that follow them, and an instrument
+    // switch (with what comes after it on its channel) that must wait for them, by absolute
+    // sample. Audio thread.
+    struct LateNote { juce::int64 at; juce::uint32 order; juce::uint8 bytes[3]; int size; };
     std::array<LateNote, 512> lateNotes {};
     int lateCount = 0;
+    juce::uint32 lateOrder = 0;   // arrival order, for messages waiting until the same sample
     juce::Random humanRandom;
-    std::array<juce::int64, 16> channelLatestAt {}, channelSwitchAt {};   // per channel: the last waiting message's time, a waiting instrument switch's
     std::bitset<16> channelMoved;   // a clip's program change took this channel off the kit (no Humanize there)
     int seenKitGeneration = -1;
     void playLateNotesNow();
-    bool takeEarliestLate (juce::int64 until, LateNote& out);
+    bool takeEarliestLate (juce::int64 until, LateNote& out, int channel = -1);
     void playLateNotes (juce::int64 until, juce::int64 blockStart, int& position);
     std::array<int, 16384> overflowIndices {};   // a flood's messages past guitarItems, by their place in the block
     std::array<std::bitset<128>, 16> lateNoteOffs {};   // note-offs past even overflowIndices, played at the block's end
