@@ -110,8 +110,8 @@ or credential file, or a personal pattern (listed in the ignored `scripts/releas
 | File | What it holds |
 |---|---|
 | `CMakeLists.txt` | the plugin target, three console test targets, ctest, the version |
-| `Source/PluginProcessor.h/.cpp` | parameters, the FluidSynth engine (created, swapped under a lock), MIDI routing (transpose, velocity curve, layer/split, program changes), MIDI kept while the engine is busy, rendering into six channels, tone filter, gain, outputs, saved state, missing-file handling |
-| `Source/PluginEditor.h/.cpp` | the look (`SF2Look`), the keyboard with key ranges and the split tint, every control, instrument lists by family with favorites, effect presets, preview |
+| `Source/PluginProcessor.h/.cpp` | parameters, the FluidSynth engine (created, swapped under a lock), MIDI routing (transpose, velocity curve, layer/split, program changes), MIDI kept while the engine is busy, rendering into six channels, tone filter, gain, outputs, saved state, missing-file handling, drum Humanize (late hits kept in order per key), the window's notes sent as MIDI out and to REC |
+| `Source/PluginEditor.h/.cpp` | the look (`SF2Look`), the keyboard with key ranges and the split tint, every control, instrument lists by family with favorites, effect presets, preview, the DRUM KIT panel's layout and choices, REC's place in the title row |
 | `Source/ChordName.h` | chord names from pitch classes (about 45 types, partial chords, slash chords) |
 | `Source/GuitarNeck.h` | the Guitar panel's strip: chord name, six-string neck, strum arrow, palm and FX lights, the pattern's name |
 | `Source/DrumKit.h` | drum kits: which instruments are kits, General MIDI's drum names, the DRUM KIT panel (kit, pads, computer keys) |
@@ -240,7 +240,7 @@ Settings file `~/Library/Application Support/SF2 Player/SF2 Player.settings`: `r
 
 ## Tests
 
-`ctest` runs `PluginTests` (71 checks). Each renders through the real processor and fails on a
+`ctest` runs `PluginTests` (80 checks). Each renders through the real processor and fails on a
 wrong result:
 
 - **Fidelity:** bit-identical output to FluidSynth at the defaults.
@@ -254,6 +254,15 @@ wrong result:
   load, a missing file kept, a file lost during a rate change reported then reloaded, a failed
   rebuild not undoing a newer file, global key ranges, hostile files refused quickly.
 - **Guitar panel:** chord recognition and Chord Position voicings, each mode's keys (Repeat strums, basses, picked strings, Harmony's intervals, Solo's repeats, Velo Mute, Hold, Strings, slow strums), Velocity FX in every mode (Velo Mute on soft chords, Slide Down from above, Slow if Hard on Pattern's strokes), Humanize varying every stroke, PLAY's Mono and Glide set aside while the guitar strums, old projects staying Direct, a held chord stopping with the transport, a held chord let go when the mode leaves the chord modes, presets (real parameters, each different, the user's kept through the settings), strum order and timing, every string ended on release, Direct bit-identical, chord names (full, partial, intervals), notes never left on by a release mid-strum or a palm cut, strumming spreading a chord's start, Double's twin later on the right, tremolo swinging, chord names and the neck's string placement.
+- **Drums:** kits found by bank, name or layout; pads named by General MIDI or the user; the
+  computer's keys; pieces only on keys the kit has; Humanize varying hits and delaying them up to
+  20 ms, only where the pads show (the user's choice, saved and migrated); late hits never leaving
+  a note on (a note-off, a hit again or a switch on the hit's own sample, an all-notes-off before
+  or on it, an audio restart, a flood past the list).
+- **REC and MIDI out:** window notes reach the host (piano, guitar, kit) and the take only while
+  recording; takes as MIDI files on the host's bars (its own bar lines, a loop timed by the clock);
+  a new take never hands over the last one while recording; REC waits for the host's play, ends
+  with it, and records at once when played without it.
 - **CPU:** 64 string notes under 30 % of a 128-sample block (reported, not judged, under
   Rosetta).
 

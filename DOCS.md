@@ -283,8 +283,9 @@ or an instrument with "Kit", "Drums" or "Percussion" in its name), the INSTRUMEN
   at the bottom. Each pad says what General MIDI puts on that key (C1 Kick, D1 Snare, F#1 Closed
   Hat, A#1 Open Hat, C#2 Crash…) and its note. Lower on a pad plays louder.
 
-**Play it with the computer's keys:** click the panel (a thin orange line says it has the keys),
-then type. Each piece shows its key:
+**Play it with the computer's keys:** they go to the kit as soon as it's chosen (a thin orange
+line on the panel says it has them); if they went elsewhere, click the panel. Each piece shows
+its key:
 
 | Key | Plays | Key | Plays |
 |---|---|---|---|
@@ -303,6 +304,10 @@ random (up to 30 % either way at 100 %), **Timing** plays each hit a little late
 at 100 %; never early, so nothing waits for a look-ahead). At 0 % every hit plays exactly as it
 comes. They apply to whatever plays the kit: clips, a MIDI keyboard, clicks, the computer's keys.
 A few percent of each is usually enough for a programmed beat to stop sounding like a machine.
+A late hit never cuts the one before it on its key short, and a note-off always comes after its
+hit, so nothing is left ringing; controllers and program changes play as they come. Humanize is
+on only while the pads show (not for a Split's lower instrument, nor on a channel a clip switched
+to another instrument).
 
 The kit grows with the plugin window's width. A kit is found by its bank (128), its name, or its
 layout (every sound on a key of its own, as kits are), so a name cut at 20 characters still
@@ -316,7 +321,8 @@ the search field).
   kit of each SoundFont, in the plugin's settings; an empty name goes back to General MIDI's.
 - The panel button (next to the instrument) says **Drums** while the pads show. Its menu has
   **Drum pads**, to turn them off for a kit or on for an instrument the name doesn't give away;
-  the choice is remembered for that instrument. The pads and the Guitar panel never show together.
+  the choice is remembered for that instrument and saved with the project. The pads and the
+Guitar panel never show together.
 - The keyboard's tooltip names the drum on each key too.
 
 ## Recording what you play in the window
@@ -343,9 +349,9 @@ again.
 Notes from a MIDI keyboard or a MIDI controller don't need any of this: the host records them
 on the plugin's track as usual.
 
-**MIDI out**, for hosts that read it: notes played in the plugin's window (its keyboard, the drum kit's pieces, pads and computer keys)
-sound, and are also sent out of the plugin as MIDI, so the host can record them. Notes coming
-from Ableton (clips, a MIDI keyboard) aren't sent back.
+**MIDI out**, for hosts that read it: notes played in the plugin's window (its keyboard, the drum
+kit's pieces, pads and computer keys) sound, and are also sent out of the plugin as MIDI, so the
+host can record them. Notes coming from Ableton (clips, a MIDI keyboard) aren't sent back.
 
 In Ableton:
 1. Make a new MIDI track (no instrument needed on it).

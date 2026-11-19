@@ -3,44 +3,46 @@
 The version shows next to the title (`project(... VERSION x.y.z)` in CMakeLists.txt). Each
 release bumps it and adds an entry here: one line per change a player would notice.
 
-## 1.4.0 — Nov 17, 2026
+## 1.4.0 — Nov 19, 2026
 
-- **Drum Kit panel:** with a drum kit loaded, the INSTRUMENT panel shows the kit as a **drum set**
-  (kick, snare, hi-hat, toms, crashes, ride, splash, china: the pieces the kit has) or as **pads**,
-  one per key, named by the General MIDI drum map (Kick, Snare, Closed Hat, Crash…). Click a piece
-  or a pad to hear it (lower on a pad is louder); everything lights up as it plays, from a clip, a
-  MIDI keyboard or a click. **Kit / Pads** switch the view, remembered.
-- **Play the drums with the computer's keys:** click the panel, then Z kick, X snare, C side
-  stick, V clap, A/S/D closed, open and pedal hi-hat, F/G/H toms, Q/W crashes, E ride, R ride
-  bell, T china, Y splash (Shift for an accent). Each piece shows its key.
-- **REC plays along with your song:** with the song stopped, REC waits for the host's play, and
-  stopping the song ends the take; the clip lands on the song's bars. The window takes the keys
-  back when the song starts, and playing without the song records at once.
-- **Drums page in the guide** (? → Guide → Drums): the kit, its keys, Humanize, names and
-  recording a beat.
-- **Humanize** for drums, beside the kit: **Velocity** varies each hit's strength at random (up
-  to ±30 %), **Timing** plays each hit a little late (up to 20 ms), as a drummer does. Both start
-  at 0 (every hit as played); they apply to clips, the MIDI keyboard and the computer's keys.
+**Drums**
+- **Drum Kit panel:** with a drum kit loaded, the panel shows it as a **drum set** (kick, snare,
+  hi-hat, toms, crashes, ride, splash, china: the pieces the kit has) or as **pads**, one per key,
+  named by the General MIDI drum map (Kick, Snare, Closed Hat, Crash…). Click a piece or a pad to
+  hear it (lower on a pad is louder); everything lights up as it plays, from a clip, a MIDI
+  keyboard or a click. **Kit / Pads** switch the view, remembered.
 - **A real-looking kit:** lacquered shells with lugs and chrome hoops, cymbals with grooves and a
-  bell, stands, the kick's pedal and spurs, shadows. Hits move: cymbals swing, heads give and
-  ripple, the beater strikes, an open hi-hat sways wider. The kit grows with the window's width;
-  it's drawn once at rest and only what moves is redrawn (0.14 ms a frame at rest, from 1.8).
-- Kits are also found by their layout (one sound per key), for names cut short; a new kit takes
-  the computer's keys at once, and they work wherever the focus is except a text field.
-- **REC and Drag MIDI** (top of the window, for every instrument): record what you play in the
-  window (the keyboard, the drums' keys, kit and pads), then drag the take onto a track as a MIDI
-  clip. Hosts don't record what an instrument plays inside itself on its own track (Ableton
-  needs a second track, and Audio Units have no MIDI out there at all); this works on one track,
-  AU or VST3. Played with the transport running, the take keeps its place in the bars.
-- **MIDI out:** what's played in the plugin's window (the keyboard, the drums' keys, kit and
-  pads) is now sent to the host too, so Ableton can record it on another MIDI track ("MIDI From"
-  this track). Notes from clips aren't sent back.
-- **Rename any pad** with a double-click, for kits that don't follow General MIDI; the names are
-  kept for each kit of each SoundFont (an empty name goes back to General MIDI's).
-- Kits are found by themselves: the drum bank (128), or an instrument named a kit ("TR-808 Kit",
-  "Rock Drums", "Latin Percussion"). The panel button's menu turns the pads on or off for any
-  instrument, remembered; the button says **Drums** while they show.
-- The keyboard's tooltip names the drum on each key.
+  bell, stands, the kick's pedal. Hits move: cymbals swing, heads give and ripple, the beater
+  strikes. The kit grows with the window's width, and only what moves is redrawn.
+- **Play it with the computer's keys:** Z kick, X snare, C side stick, V clap, A/S/D closed, open
+  and pedal hi-hat, F/G/H toms, Q/W crashes, E ride, R ride bell, T china, Y splash (Shift for an
+  accent). Each piece shows its key; a new kit takes the keys at once (except while typing in
+  Search).
+- **Humanize**, beside the kit: **Velocity** varies each hit's strength at random (up to ±30 %),
+  **Timing** plays each hit a little late (up to 20 ms), as a drummer does. Both start at 0
+  (every hit as played) and apply to clips, a MIDI keyboard and the computer's keys.
+- **Kits are found by themselves:** the drum bank (128), an instrument named a kit ("TR-808 Kit",
+  "Rock Drums", "Latin Percussion"), or one laid out like a kit (one sound per key), so a name
+  cut short still counts. The panel button says **Drums**; its menu turns the pads off for a kit
+  or on for any instrument, remembered, and saved with the project.
+- **Rename any pad** with a double-click, for kits that don't follow General MIDI; names are kept
+  for each kit of each SoundFont. The keyboard's tooltip names the drum on each key.
+
+**Recording what you play in the window**
+- **REC and Drag MIDI** (top of the window, every instrument): hosts don't record what an
+  instrument plays inside its own window on its track (Ableton needs a second track, and Audio
+  Units have no MIDI out there at all), so the plugin keeps the take and hands it over as a MIDI
+  clip to drag onto a track. Notes from a MIDI keyboard record in the host as always.
+- **It plays along with your song:** with the song stopped, REC waits for the host's play, and
+  stopping the song ends the take; the clip lands on the song's bars (the host's own bars, even
+  after a change of time signature). The window takes the computer's keys back when the song
+  starts, and playing without the song records at once.
+- **MIDI out:** what's played in the window is also sent to the host, for hosts that record a
+  plugin's output on another track. Notes from clips aren't sent back.
+
+**Guide**
+- **A Drums page** (? → Guide → Drums): the kit, its keys, Humanize, names and recording a beat.
+- The SoundFont's author no longer shows over the guide.
 
 ## 1.3.0 — Nov 17, 2026
 
