@@ -292,8 +292,9 @@ private:
     // sample. Audio thread.
     struct LateNote { juce::int64 at; juce::uint64 order; juce::uint8 bytes[3]; int size; };
     static int channelOf (const LateNote& late) { return late.bytes[0] & 0x0f; }
-    // When each key's waiting note is due (a time already past: nothing waits; cleared when the
-    // list is emptied early: prepareToPlay, playLateNotesNow, an all-notes-off).
+    // When each key's last waiting message is due (a time already past: nothing waits). Cleared
+    // where messages leave the list early (playLateNotesNow, an all-notes-off, playKeyNow) and in
+    // prepareToPlay, whose kept note-offs wait at time 0, ahead of anything new.
     std::array<std::array<juce::int64, 128>, 16> keyDue {};
     std::array<LateNote, 512> lateNotes {};
     int lateCount = 0;
@@ -305,6 +306,7 @@ private:
     void playLateNotesNow();
     bool takeEarliestLate (juce::int64 until, LateNote& out);
     void refreshNextLate();   // after taking messages off the list other than through takeEarliestLate
+    void playKeyNow (int channel, int key);
     void playLateNotes (juce::int64 until, juce::int64 blockStart, int& position);
     std::array<int, 16384> overflowIndices {};   // a flood's messages past guitarItems, by their place in the block
     std::array<std::bitset<128>, 16> lateNoteOffs {};   // note-offs past even overflowIndices, played at the block's end

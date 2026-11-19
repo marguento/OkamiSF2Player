@@ -845,11 +845,12 @@ void SF2PlayerProcessor::prepareToPlay (double newSampleRate, int maximumExpecte
         guitarEngaged = false;
         sampleClock = 0;
         tremoloPhase = 0.0;
-        // Humanize's late hits belong to the timeline that stopped (an export starting shouldn't
-        // play one); a waiting note-off still ends its note, first thing on the new timeline.
+        // Humanize's late hits (and pressure for them) belong to the timeline that stopped (an
+        // export starting shouldn't play one); a waiting note-off still ends its note, first thing
+        // on the new timeline.
         int kept = 0;
         for (int i = 0; i < lateCount; ++i)
-            if (const auto* bytes = lateNotes[(size_t) i].bytes; (bytes[0] & 0xf0) == 0x80 || ((bytes[0] & 0xf0) == 0x90 && bytes[2] == 0))
+            if (const auto& late = lateNotes[(size_t) i]; ! isNoteOnBytes (late.bytes, late.size) && (late.bytes[0] & 0xf0) != 0xa0)
             {
                 lateNotes[(size_t) kept] = lateNotes[(size_t) i];
                 lateNotes[(size_t) kept++].at = 0;
@@ -991,10 +992,38 @@ bool SF2PlayerProcessor::takeEarliestLate (juce::int64 until, LateNote& out)
         else
             next = juce::jmin (next, late.at);
     }
+    if (lateNotes[(size_t) first].at >= until)   // nextLateAt out of date: never play early
+    {
+        nextLateAt = lateNotes[(size_t) first].at;
+        return false;
+    }
     out = lateNotes[(size_t) first];
     lateNotes[(size_t) first] = lateNotes[(size_t) --lateCount];
     nextLateAt = next;
     return true;
+}
+
+// A key's waiting messages, now, in order (the list is full and one more must follow them).
+void SF2PlayerProcessor::playKeyNow (int channel, int key)
+{
+    for (;;)
+    {
+        int first = -1;
+        for (int i = 0; i < lateCount; ++i)
+        {
+            const auto& late = lateNotes[(size_t) i];
+            if (channelOf (late) != channel || late.bytes[1] != (juce::uint8) key) continue;
+            if (first < 0 || late.at < lateNotes[(size_t) first].at
+                || (late.at == lateNotes[(size_t) first].at && late.order < lateNotes[(size_t) first].order))
+                first = i;
+        }
+        if (first < 0) break;
+        const auto late = lateNotes[(size_t) first];
+        lateNotes[(size_t) first] = lateNotes[(size_t) --lateCount];
+        handleMidi (juce::MidiMessage (late.bytes, late.size));
+    }
+    keyDue[(size_t) channel][(size_t) key] = -1;
+    refreshNextLate();
 }
 
 void SF2PlayerProcessor::refreshNextLate()
@@ -1642,26 +1671,30 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                         lastPlayedVelocity = message.getVelocity();   // Direct: the note as played
                         if (panelShown) playedGuitar = true;           // the panel played (in Direct): too late for the start
                     }
-                    // Only notes wait, and only for their own key (ties keep the order they came in): a
-                    // late hit (Humanize) after its key's waiting note-off, a note-off after its key's
-                    // late hit, so a hit ends after it starts and a hit again starts after the last one
-                    // ended. Everything else (controllers, program changes) plays as it comes.
+                    // Only a key's messages wait, and only for that key (ties keep the order they came
+                    // in): a late hit (Humanize) after its key's waiting note-off, a note-off or the key's
+                    // pressure after its late hit, so a hit ends after it starts and a hit again starts
+                    // after the last one ended. Everything else (controllers, program changes) plays as
+                    // it comes.
                     juce::int64 lateAt = -1;
                     const auto now = blockStart + eventTime;
                     const bool keyMessage = onChannel && message.getRawDataSize() == 3 && (message.isNoteOnOrOff() || message.isAftertouch());
                     const int key = keyMessage ? message.getNoteNumber() & 0x7f : 0;
                     if (keyMessage)
                     {
-                        const auto waits = keyDue[(size_t) channel][(size_t) key];
-                        if (message.isAftertouch() && waits > now)
-                            continue;   // pressure on a key whose hit hasn't sounded yet: nothing to press
-                        // Humanize's own delay only while half the list is free, so note-offs always find room.
-                        if (kitNote && maxDelay >= 1.0 && lateCount < (int) lateNotes.size() / 2)
+                        if (kitNote && maxDelay >= 1.0 && lateCount < (int) lateNotes.size())
                             lateAt = now + (juce::int64) (humanRandom.nextDouble() * maxDelay);
-                        if (waits > now)
+                        if (const auto waits = keyDue[(size_t) channel][(size_t) key]; waits > now)
                             lateAt = juce::jmax (lateAt, waits);
+                        if (lateAt > now && lateCount == (int) lateNotes.size())
+                        {
+                            // No room to wait: the key's waiting messages play now, in order, then this
+                            // one, so its order holds whatever the list holds (a rare flood).
+                            playKeyNow (channel, key);
+                            lateAt = -1;
+                        }
                     }
-                    if (lateAt > now && lateCount < (int) lateNotes.size())
+                    if (lateAt > now)
                     {
                         keyDue[(size_t) channel][(size_t) key] = lateAt;
                         nextLateAt = juce::jmin (nextLateAt, lateAt);
