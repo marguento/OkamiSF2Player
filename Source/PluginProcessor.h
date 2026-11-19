@@ -297,12 +297,13 @@ private:
     std::array<std::array<juce::int64, 128>, 16> keyDue {};
     std::array<LateNote, 512> lateNotes {};
     int lateCount = 0;
-    juce::uint64 lateOrder = 0;   // arrival order, for messages waiting until the same sample
+    juce::uint64 lateOrder = 0;
+    juce::int64 nextLateAt = std::numeric_limits<juce::int64>::max();   // the earliest waiting time (none: max)   // arrival order, for messages waiting until the same sample
     juce::Random humanRandom;
     std::bitset<16> channelMoved;   // a clip's program change took this channel off the kit (no Humanize there)
     int seenKitGeneration = -1;
     void playLateNotesNow();
-    bool takeEarliestLate (juce::int64 until, LateNote& out, int channel = -1);
+    bool takeEarliestLate (juce::int64 until, LateNote& out);
     void playLateNotes (juce::int64 until, juce::int64 blockStart, int& position);
     std::array<int, 16384> overflowIndices {};   // a flood's messages past guitarItems, by their place in the block
     std::array<std::bitset<128>, 16> lateNoteOffs {};   // note-offs past even overflowIndices, played at the block's end

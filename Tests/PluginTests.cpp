@@ -1609,20 +1609,25 @@ int main()
             const auto out = held.render (2.0, [] (int b, juce::MidiBuffer& m) { if (b == 0) m.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0); });
             if (tail (out, 1.5) > 0.01) sustained = (int) i;
         }
+        // The sustained instrument with the pads on and Timing at 100 %, its delays from a seed; returns
+        // the first hit's delay in samples, worked out as the processor does.
+        auto makeKit = [&] (Player& kit, int seed)
+        {
+            const auto& preset = st->presets[(size_t) sustained];
+            kit.p.setDrumChoice (preset.bank, preset.number, 1, false);
+            kit.set ("drumTimingHuman", 1.0f);
+            kit.p.seedHumanize (seed);
+            juce::Random same (seed);
+            return (int) (juce::int64) (same.nextDouble() * (rate * 0.020 * (double) 1.0f));
+        };
         bool allEnd = sustained >= 0;
         juce::String detail = sustained < 0 ? "no sustained instrument in the test font" : "";
         for (int trial = 0; allEnd && trial < 40; ++trial)
         {
             Player kit (testFont, sustained);
             const auto& preset = st->presets[(size_t) sustained];
-            kit.p.setDrumChoice (preset.bank, preset.number, 1, false);
-            kit.set ("drumTimingHuman", 1.0f);
-            // The hit's delay is known from the seed: half the trials land the note-off (or the
-            // switch, or the hit again) on exactly the hit's sample, the rest around it.
-            kit.p.seedHumanize (1000 + trial);
-            juce::Random same (1000 + trial);
-            const double maxDelay = rate * 0.020 * (double) 1.0f;   // as the processor works it out
-            const int hitAt = (int) (juce::int64) (same.nextDouble() * maxDelay);
+            // Half the trials land the note-off (or the switch, or the hit again) on exactly the hit's sample, the rest around it.
+            const int hitAt = makeKit (kit, 1000 + trial);
             const int offAt = trial % 2 == 0 ? hitAt : (trial * 37) % (4 * block);
             const auto out = kit.render (2.5, [&] (int b, juce::MidiBuffer& m)
             {
@@ -1638,21 +1643,17 @@ int main()
             });
             if (tail (out, 2.0) > 1.0e-3) { allEnd = false; detail = "stuck with the note-off at sample " + juce::String (offAt) + ", trial " + juce::String (trial); }
         }
-        // An all-notes-off on exactly a late hit's sample: the hit never sounds.
+        // An all-notes-off on a late hit's own sample, or before it (a transport stop): the hit never sounds.
         bool silenced = sustained >= 0;
         for (int trial = 0; silenced && trial < 6; ++trial)
         {
             Player kit (testFont, sustained);
-            const auto& preset = st->presets[(size_t) sustained];
-            kit.p.setDrumChoice (preset.bank, preset.number, 1, false);
-            kit.set ("drumTimingHuman", 1.0f);
-            kit.p.seedHumanize (2000 + trial);
-            juce::Random same (2000 + trial);
-            const int hitAt = (int) (juce::int64) (same.nextDouble() * (rate * 0.020 * (double) 1.0f));
+            const int hitAt = makeKit (kit, 2000 + trial);
+            const int offAt = trial % 2 == 0 ? hitAt : hitAt / 2;
             const auto out = kit.render (0.5, [&] (int b, juce::MidiBuffer& m)
             {
                 if (b == 0) m.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
-                if (b == hitAt / block) m.addEvent (juce::MidiMessage::allNotesOff (1), hitAt % block);
+                if (b == offAt / block) m.addEvent (juce::MidiMessage::allNotesOff (1), offAt % block);
             });
             if (tail (out, 0.0) > 1.0e-4) { silenced = false; detail = "a hit sounded on the all-notes-off's sample " + juce::String (hitAt); }
         }
