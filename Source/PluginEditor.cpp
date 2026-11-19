@@ -2675,7 +2675,15 @@ void SF2PlayerEditor::refreshDrumPads (const SF2PlayerProcessor::State& st)
 {
     const bool valid = juce::isPositiveAndBelow (st.preset, (int) st.presets.size());
     const auto key = valid ? favouriteKey (st, st.preset) : juce::String();
-    if (key != choiceKey)   // the settings read once per instrument; the project's choice when they have none (another Mac)
+    // The settings read once per instrument; the project's choice when they have none (another
+    // Mac). Read again when the project's choice changes behind the window's back (a state
+    // restored into the open plugin: a preset recall, undo).
+    if (const int projectChoice = player.drumChoice.load(); projectChoice != seenProjectChoice)
+    {
+        seenProjectChoice = projectChoice;
+        choiceKey = {};
+    }
+    if (key != choiceKey)
     {
         choiceKey = key;
         shownChoice = drumChoice (key);   // -1: this Mac has no choice for it
@@ -2685,7 +2693,10 @@ void SF2PlayerEditor::refreshDrumPads (const SF2PlayerProcessor::State& st)
     const int choice = shownChoice;
     const bool show = valid && ! guitarShown && (choice == 1 || (choice == 0 && st.presets[(size_t) st.preset].drumKit));
     if (valid)   // Humanize plays where the pads show, even once the window is closed (saved with the project)
+    {
         player.setDrumChoice (st.presets[(size_t) st.preset].bank, st.presets[(size_t) st.preset].number, choice, false);
+        seenProjectChoice = player.drumChoice.load();   // the window's own write isn't a change from elsewhere
+    }
     const int rowsBefore = drumPads.rows();
     if (show && key != drumKey)
     {

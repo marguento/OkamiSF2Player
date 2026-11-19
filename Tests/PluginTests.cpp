@@ -1455,7 +1455,9 @@ int main()
         const bool detected = DrumKit::isKit (128, "Standard") && DrumKit::isKit (0, "TR-808 Kit") && DrumKit::isKit (0, "Rock Drums")
                               && DrumKit::isKit (3, "Latin Percussion") && ! DrumKit::isKit (0, "Toolkit Pad") && ! DrumKit::isKit (0, "Grand Piano")
                               && ! DrumKit::isKit (0, "Steel Drum Kitten")
-                              && ! DrumKit::isKit (0, "Steel Drums") && ! DrumKit::isKit (0, "Taiko Drum") && ! DrumKit::isKit (0, "Synth Drum");
+                              && ! DrumKit::isKit (0, "Steel Drums") && ! DrumKit::isKit (0, "Taiko Drum") && ! DrumKit::isKit (0, "Synth Drum")
+                              && ! DrumKit::isKit (0, "Melodic Drums") && ! DrumKit::isKit (0, "Pitched Percussion") && ! DrumKit::isKit (0, "Taiko Drums")
+                              && DrumKit::soundsMelodic ("Glockenspiel") && DrumKit::soundsMelodic ("Tubular Bells") && ! DrumKit::soundsMelodic ("Room Kit");
         juce::MidiKeyboardState state;
         DrumKit::Pads pads (state);
         pads.lowKey = 36; pads.highKey = 65;
@@ -1643,6 +1645,56 @@ int main()
             });
             if (tail (out, 2.0) > 1.0e-3) { allEnd = false; detail = "stuck with the note-off at sample " + juce::String (offAt) + ", trial " + juce::String (trial); }
         }
+        // A late hit keeps the length it was played with: Timing shifts the whole note (its note-off
+        // too), so the humanized output is the plain one moved by the hit's delay. In Layer (both
+        // instruments play the same notes) Humanize stays out.
+        bool shifted = sustained >= 0, layerPlain = sustained >= 0;
+        if (shifted)
+        {
+            auto play = [&] (Player& kit)
+            {
+                return kit.render (1.0, [] (int b, juce::MidiBuffer& m)
+                {
+                    if (b == 0) m.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
+                    if (b == 10) m.addEvent (juce::MidiMessage::noteOff (1, 60), 0);   // ~53 ms later
+                });
+            };
+            const int seed = 5000;   // a 447-sample delay: a note-off left behind ends 180+ samples early
+            Player plain (testFont, sustained);
+            makeKit (plain, seed);
+            plain.set ("drumTimingHuman", 0.0f);
+            const auto a = play (plain);
+            Player late (testFont, sustained);
+            const int delay = makeKit (late, seed);
+            const auto b = play (late);
+            // Where the sound starts and where it has died away (FluidSynth applies events on its
+            // 64-sample grid, so the shift is compared within that).
+            auto edges = [] (const std::vector<float>& out)
+            {
+                int first = -1, last = -1;
+                for (size_t i = 0; i < out.size(); ++i)
+                    if (std::abs (out[i]) > 1.0e-3f) { if (first < 0) first = (int) i; last = (int) i; }
+                return std::pair<int, int> { first, last };
+            };
+            const auto [aStart, aEnd] = edges (a);
+            const auto [bStart, bEnd] = edges (b);
+            const double worst = juce::jmax (std::abs ((bStart - aStart) - delay), std::abs ((bEnd - aEnd) - delay));
+            shifted = delay > 300 && aEnd > aStart && worst <= 64;
+            Player layered (testFont, sustained);
+            makeKit (layered, seed);
+            layered.set ("layerMode", 1.0f);
+            Player layeredPlain (testFont, sustained);
+            makeKit (layeredPlain, seed);
+            layeredPlain.set ("drumTimingHuman", 0.0f);
+            layeredPlain.set ("layerMode", 1.0f);
+            const auto c = play (layered), d = play (layeredPlain);
+            double diff = 0;
+            for (size_t i = 0; i < c.size(); ++i) diff = juce::jmax (diff, (double) std::abs (c[i] - d[i]));
+            layerPlain = diff < 1.0e-6;
+            if (! shifted) detail = "the humanized hit isn't the plain one moved by " + juce::String (delay) + " samples (start "
+                                    + juce::String (bStart - aStart) + ", end " + juce::String (bEnd - aEnd) + ")";
+            else if (! layerPlain) detail = "Humanize reached a Layer";
+        }
         // An all-notes-off on a late hit's own sample, or before it (a transport stop): the hit never sounds.
         bool silenced = sustained >= 0;
         for (int trial = 0; silenced && trial < 6; ++trial)
@@ -1715,7 +1767,7 @@ int main()
             const auto after = kit.render (1.0, [] (int, juce::MidiBuffer&) {});
             if (tail (after, 0.5) > 1.0e-3) { flooded = false; detail = "a note kept sounding after a flood filled the list"; }
         }
-        expect (allEnd && silenced && restarted && flooded, "Drum Humanize: a note-off, a hit again or a switch next to a late hit never leaves a note on; an all-notes-off on or before its sample silences it; an audio restart keeps the note-off; a flood (one key past the list, another waiting) ends every note", detail);
+        expect (allEnd && silenced && restarted && flooded && shifted && layerPlain, "Drum Humanize: a note-off, a hit again or a switch next to a late hit never leaves a note on; an all-notes-off on or before its sample silences it; an audio restart keeps the note-off; a flood (one key past the list, another waiting) ends every note; a hit keeps its length; none in Layer", detail);
     }
 
     {
@@ -1910,7 +1962,29 @@ int main()
         withSong = withSong && jam && keysIn (jammed) == std::vector<int> { 62 };
         synced.deleteFile(); jammed.deleteFile();
         player.p.setPlayHead (nullptr);
-        expect (withSong, "REC: waits for the host's play and ends with it; played without the song it records at once; called off, the last take stays");
+        // Closing the window mid-take ends it like REC would, and the take is still there when it opens again.
+        juce::File closedTake;
+        {
+            auto closing = std::make_unique<Take::Recorder> (player.p);
+            closing->start();
+            play (69);
+            closing.reset();
+            Take::Recorder reopened (player.p);
+            closedTake = reopened.takeFile();
+        }
+        withSong = withSong && player.p.takeState.load() == SF2PlayerProcessor::takeIdle && keysIn (closedTake) == std::vector<int> { 69 };
+        closedTake.deleteFile();
+        // Bypassed: silence and no MIDI out, though the block still runs.
+        {
+            juce::MidiBuffer m;
+            m.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
+            player.p.keyboardState.noteOn (1, 64, 0.8f);
+            player.p.processBlockBypassed (buffer, m);
+            withSong = withSong && m.isEmpty() && buffer.getMagnitude (0, buffer.getNumSamples()) == 0.0f;
+            player.p.keyboardState.noteOff (1, 64, 0.0f);
+            juce::MidiBuffer none; player.p.processBlockBypassed (buffer, none);
+        }
+        expect (withSong, "REC: waits for the host's play and ends with it; played without the song it records at once; called off, the last take stays; closing the window keeps the take; bypass sends nothing");
     }
 
     std::printf ("\n%d of %d checks passed\n", checks - failures, checks);

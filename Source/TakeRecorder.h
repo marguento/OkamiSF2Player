@@ -122,8 +122,21 @@ namespace Take
             rec.onClick = [this] { rec.getToggleState() ? start() : stop(); };
             addAndMakeVisible (rec);
             addAndMakeVisible (chip);
+            if (player.lastTakeFile.existsAsFile())
+            {
+                chip.file = player.lastTakeFile;
+                chip.text = player.lastTakeText;
+            }
         }
-        ~Recorder() override { player.takeState.store (SF2PlayerProcessor::takeIdle); }
+        // Closing the window mid-take ends it (written like REC would), and the last take is kept
+        // with the plugin, so the chip is still there to drag when the window opens again.
+        ~Recorder() override
+        {
+            if (player.takeState.load() != SF2PlayerProcessor::takeIdle)
+                stop();
+            player.lastTakeFile = chip.file;
+            player.lastTakeText = chip.text;
+        }
 
         void resized() override
         {

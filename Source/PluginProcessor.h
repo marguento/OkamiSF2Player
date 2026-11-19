@@ -26,6 +26,14 @@ public:
     void releaseResources() override {}   // deferred note-offs still belong to sounding voices
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+    // Bypassed: silence and no MIDI out (JUCE's default would pass the host's notes out as ours),
+    // but the block still runs, so a key let go meanwhile still ends its note and nothing waits.
+    void processBlockBypassed (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) override
+    {
+        processBlock (buffer, midi);
+        buffer.clear();
+        midi.clear();
+    }
 
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
@@ -236,6 +244,7 @@ private:
     std::atomic<int> pinGeneration { 0 };   // bumped when the engine or a channel's preset changes: pin afresh
     int seenGeneration = 0;                    // audio thread only
     juce::MidiBuffer shortMidi;   // a block's MIDI without sysex (reserved in prepareToPlay)
+    juce::MidiBuffer blockMidi;   // the host's MIDI plus the window's notes, as played (reserved in prepareToPlay)
 
     // Guitar panel (audio thread, under engineLock): the strum timeline and its clock.
     GuitarEngine guitar;
@@ -283,6 +292,8 @@ public:
     // then hands the take over).
     enum TakeState { takeIdle = 0, takeArmed, takeWithHost, takeFree, takeEndedByHost };
     std::atomic<int> takeState { takeIdle };
+    juce::File lastTakeFile;   // message thread: the last take, kept while the window is closed
+    juce::String lastTakeText;
     std::atomic<bool> hostPlaying { false }, hostHasTransport { false };   // the last block's transport (for the window)
     juce::AbstractFifo takeFifo { 8192 };
     std::vector<TakeEvent> takeEvents = std::vector<TakeEvent> (8192);   // on the heap: hosts and tests may keep the processor on the stack
@@ -301,6 +312,7 @@ private:
     // where messages leave the list early (playLateNotesNow, an all-notes-off, playKeyNow) and in
     // prepareToPlay, whose kept note-offs wait at time 0, ahead of anything new.
     std::array<std::array<juce::int64, 128>, 16> keyDue {};
+    std::array<std::array<juce::int32, 128>, 16> keyDelay {};   // the Humanize delay of each key's last hit (its note-off waits as long)
     std::array<LateNote, 512> lateNotes {};
     int lateCount = 0;
     juce::uint64 lateOrder = 0;   // arrival order, for messages waiting until the same sample

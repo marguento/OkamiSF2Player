@@ -38,9 +38,24 @@ namespace DrumKit
         juce::StringArray words;
         words.addTokens (name.toLowerCase(), " -_/()[].,:", "");
         // "Drum" alone is one instrument (General MIDI's Taiko Drum, Synth Drum), and Steel Drums too.
+        // Melodic Drums, Pitched or Tuned Percussion, Taiko Drums, Timpani and Steel Drums play notes.
+        for (const char* tuned : { "melodic", "pitched", "tuned", "taiko", "timpani", "steel" })
+            if (words.contains (tuned)) return false;
         if (words.contains ("kit") || words.contains ("drumkit") || words.contains ("drumset") || words.contains ("percussion"))
             return true;
-        return words.contains ("drums") && ! words.contains ("steel");
+        return words.contains ("drums");
+    }
+
+    // A name that says a melodic instrument: one sampled key by key (a glockenspiel, a celesta)
+    // has a kit's layout, so the layout alone doesn't make it a kit.
+    inline bool soundsMelodic (const juce::String& name)
+    {
+        const auto lower = name.toLowerCase();
+        for (const char* melodic : { "glock", "celest", "marimba", "xylo", "vibra", "bell", "chime", "piano", "harp", "music box",
+                                     "kalimba", "mallet", "timpani", "tubular", "organ", "guitar", "bass", "string", "voice",
+                                     "choir", "flute", "horn", "trumpet", "sax", "violin", "cello", "synth lead", "pad" })
+            if (lower.contains (melodic)) return true;
+        return false;
     }
 
     // A drum set's pieces, each played by the first of its keys the kit has (General MIDI's map),

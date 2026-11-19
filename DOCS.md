@@ -304,14 +304,17 @@ random (up to 30 % either way at 100 %), **Timing** plays each hit a little late
 at 100 %; never early, so nothing waits for a look-ahead). At 0 % every hit plays exactly as it
 comes. They apply to whatever plays the kit: clips, a MIDI keyboard, clicks, the computer's keys.
 A few percent of each is usually enough for a programmed beat to stop sounding like a machine.
-A late hit never cuts the one before it on its key short, and a note-off always comes after its
-hit, so nothing is left ringing; controllers and program changes play as they come. Humanize is
-on only while the pads show (not for a Split's lower instrument, nor on a channel a clip switched
-to another instrument).
+A late hit keeps the length it was played with (its note-off waits as long), never cuts the one
+before it on its key short, and nothing is left ringing; controllers and program changes play as
+they come. Humanize is on only while the pads show, and only on the kit's own notes: not a
+Split's lower instrument, not in Layer (both instruments play the same notes), not on a channel a
+clip switched to another instrument.
 
 The kit grows with the plugin window's width. A kit is found by its bank (128), its name, or its
-layout (every sound on a key of its own, as kits are), so a name cut at 20 characters still
-counts. When a kit is chosen, the computer's keys go to it right away (except while typing in
+layout (every sound on a key of its own, mostly on General MIDI's drum keys, as kits are), so a
+name cut at 20 characters still counts. Names that say a melodic instrument (Melodic Drums,
+Pitched Percussion, Taiko, Timpani, Steel Drums, a glockenspiel or bells sampled key by key)
+don't count. When a kit is chosen, the computer's keys go to it right away (except while typing in
 the search field).
 
 - **Click** a pad or a piece to hear it.
@@ -339,7 +342,8 @@ Guitar panel never show together.
 When the song starts, the plugin's window takes the computer's keys back from the host, so you
 can play at once. Clicking **REC** with the song already playing records from the next moment
 (and still ends when the song stops); clicking it again ends the take whenever you like, and
-clicking it again while it waits calls it off (the last take stays to drag). To record without
+clicking it again while it waits calls it off (the last take stays to drag). Closing the
+plugin's window ends a take as REC would; the chip is still there when the window opens again. To record without
 the song, click **REC** and just play: the take starts with your first note and ends with REC. A
 host without a transport records at once. If the host loops while you play, the take keeps the
 order you played it in, timed by the clock from your first note. A guitar's take holds the keys

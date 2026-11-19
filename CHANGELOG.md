@@ -20,7 +20,8 @@ release bumps it and adds an entry here: one line per change a player would noti
   Search).
 - **Humanize**, beside the kit: **Velocity** varies each hit's strength at random (up to ±30 %),
   **Timing** plays each hit a little late (up to 20 ms), as a drummer does. Both start at 0
-  (every hit as played) and apply to clips, a MIDI keyboard and the computer's keys.
+  (every hit as played) and apply to clips, a MIDI keyboard and the computer's keys; a late hit
+  keeps the length it was played with.
 - **Kits are found by themselves:** the drum bank (128), an instrument named a kit ("TR-808 Kit",
   "Rock Drums", "Latin Percussion"), or one laid out like a kit (one sound per key), so a name
   cut short still counts. The panel button says **Drums**; its menu turns the pads off for a kit
@@ -38,7 +39,8 @@ release bumps it and adds an entry here: one line per change a player would noti
   after a change of time signature). The window takes the computer's keys back when the song
   starts, and playing without the song records at once.
 - **MIDI out:** what's played in the window is also sent to the host, for hosts that record a
-  plugin's output on another track. Notes from clips aren't sent back.
+  plugin's output on another track. Notes from clips aren't sent back, nor anything while the
+  plugin is bypassed. Closing the window mid-take keeps the take.
 
 **Guide**
 - **A Drums page** (? → Guide → Drums): the kit, its keys, Humanize, names and recording a beat.

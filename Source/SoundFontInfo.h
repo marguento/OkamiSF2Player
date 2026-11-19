@@ -158,7 +158,6 @@ private:
             const int number = u16 (phdr, at + 20), bank = u16 (phdr, at + 22);
             int low = 128, high = -1;
             bool singleKeys = true;
-            std::set<int> keys;
             std::bitset<128> covered;
             float reverbMin = 100, reverbMax = 0, chorusMin = 100, chorusMax = 0;
             const auto presetZones = zones (pbag, pgen, u16 (phdr, at + 24), u16 (phdr, at + 38 + 24), 41);
@@ -193,7 +192,6 @@ private:
                     {
                         low = juce::jmin (low, zoneLow), high = juce::jmax (high, zoneHigh);
                         singleKeys = singleKeys && zoneLow == zoneHigh;
-                        if (zoneLow == zoneHigh) keys.insert (zoneLow);
                         for (int key = juce::jmax (0, zoneLow); key <= juce::jmin (127, zoneHigh); ++key) covered.set ((size_t) key);
                     }
                 }
@@ -203,7 +201,11 @@ private:
                 keyRanges[{ bank, number }] = { low, high };
                 keySets[{ bank, number }] = covered;
                 sends[{ bank, number }] = { reverbMin, reverbMax, chorusMin, chorusMax };
-                if (singleKeys && keys.size() >= 8 && keys.size() <= 64)
+                // One sound per key, mostly on General MIDI's drum keys (27-87), like a kit.
+                size_t onDrumKeys = 0;   // when every zone is one key, `covered` holds exactly those keys
+                for (size_t k = 27; k <= 87; ++k) onDrumKeys += covered.test (k) ? 1 : 0;
+                const auto count = covered.count();
+                if (singleKeys && count >= 8 && count <= 64 && onDrumKeys * 4 >= count * 3)
                     kitShaped.insert ({ bank, number });
             }
         }
