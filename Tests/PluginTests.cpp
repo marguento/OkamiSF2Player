@@ -1625,6 +1625,29 @@ int main()
         juce::MemoryOutputStream bytes;
         const bool writes = free.writeTo (bytes) && bytes.getDataSize() > 20;
         expect (captured && grid && loose && writes, "REC: window notes kept only while recording, a take as a MIDI file on the bars or from 0");
+
+        // A second take holds only its own notes, in its own file, and while it records the
+        // chip doesn't hand over the first one.
+        Take::Recorder recorder (player.p);
+        auto keysIn = [] (const juce::File& file)
+        {
+            std::vector<int> keys;
+            juce::FileInputStream in (file);
+            juce::MidiFile midiFile;
+            if (in.openedOk() && midiFile.readFrom (in))
+                for (const auto* holder : *midiFile.getTrack (0))
+                    if (holder->message.isNoteOn()) keys.push_back (holder->message.getNoteNumber());
+            return keys;
+        };
+        recorder.start(); play (64); recorder.stop();
+        const auto first = recorder.takeFile();
+        recorder.start();
+        const bool hiddenWhileRecording = ! recorder.takeFile().exists();
+        play (65); recorder.stop();
+        const auto second = recorder.takeFile();
+        const bool separate = first != second && keysIn (first) == std::vector<int> { 64 } && keysIn (second) == std::vector<int> { 65 };
+        first.deleteFile(); second.deleteFile();
+        expect (hiddenWhileRecording && separate, "REC: a new take starts empty, gets its own file, and the last one can't be dragged while it records");
     }
 
     std::printf ("\n%d of %d checks passed\n", checks - failures, checks);

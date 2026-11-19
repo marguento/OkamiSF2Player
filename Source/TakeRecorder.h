@@ -80,12 +80,12 @@ namespace Take
         }
         juce::String getTooltip() override
         {
-            return file.existsAsFile() ? "Drag this onto a MIDI track to make a clip of the take (drop it at the bar it started on)"
+            return ! recording && file.existsAsFile() ? "Drag this onto a MIDI track to make a clip of the take (drop it at the bar it started on)"
                                        : juce::String();
         }
         void mouseDrag (const juce::MouseEvent& e) override
         {
-            if (! dragging && file.existsAsFile() && e.getDistanceFromDragStart() > 4)
+            if (! dragging && ! recording && file.existsAsFile() && e.getDistanceFromDragStart() > 4)
             {
                 dragging = true;
                 juce::DragAndDropContainer::performExternalDragDropOfFiles ({ file.getFullPathName() }, false, this,
@@ -122,6 +122,7 @@ namespace Take
         {
             drain();   // anything left from before is dropped
             events.clear();
+            chip.file = juce::File();   // the last take's file isn't offered while a new one records
             player.takeRecording.store (true);
             chip.recording = true;
             started = juce::Time::getMillisecondCounterHiRes();
@@ -143,7 +144,8 @@ namespace Take
                 folder.createDirectory();
                 for (const auto& old : folder.findChildFiles (juce::File::findFiles, false, "*.mid"))   // a day's worth kept
                     if (old.getLastModificationTime() < juce::Time::getCurrentTime() - juce::RelativeTime::days (1)) old.deleteFile();
-                auto file = folder.getChildFile ("Okami Take " + juce::Time::getCurrentTime().formatted ("%H-%M-%S") + ".mid");
+                auto file = folder.getChildFile ("Okami Take " + juce::Time::getCurrentTime().formatted ("%H-%M-%S") + ".mid")
+                                .getNonexistentSibling();   // two takes in one second never share a file
                 if (juce::FileOutputStream out (file); out.openedOk())
                 {
                     out.setPosition (0);
@@ -155,6 +157,8 @@ namespace Take
                                                  : juce::String ("Nothing played");
             chip.repaint();
         }
+
+        const juce::File& takeFile() const { return chip.file; }   // what dragging the chip hands over
 
     private:
         SF2PlayerProcessor& player;

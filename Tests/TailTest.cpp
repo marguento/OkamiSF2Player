@@ -193,7 +193,7 @@ int main (int argc, char** argv)
         if (const char* fold = std::getenv ("FOLD"))   // "effects,play,guitar": those sections folded
             EditorTestAccess::fold (*dynamic_cast<SF2PlayerEditor*> (editor.get()), juce::String (fold));
         EditorTestAccess::controllers (*dynamic_cast<SF2PlayerEditor*> (editor.get()), std::getenv ("CONTROLLERS") != nullptr);
-        if (const char* page = std::getenv ("GUIDE"))   // the guide open at that page (0-3)
+        if (const char* page = std::getenv ("GUIDE"))   // the guide open at that page (0-4)
             EditorTestAccess::guide (*dynamic_cast<SF2PlayerEditor*> (editor.get()), std::atoi (page));
         if (const char* hint = std::getenv ("HINT"))
             EditorTestAccess::hint (*dynamic_cast<SF2PlayerEditor*> (editor.get()), juce::String (hint));

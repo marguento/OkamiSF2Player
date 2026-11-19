@@ -5,20 +5,21 @@
 #include <vector>
 #include <array>
 
-// The "?" button's guide: a card over the whole window with four pages (Start, Guitar,
+// The "?" button's guide: a card over the whole window with five pages (Start, Guitar, Drums,
 // Controls, About). Esc, the close button or a click outside the card closes it.
 class Guide : public juce::Component
 {
 public:
     struct Colours { juce::Colour background, panel, line, text, dim, accent; };
 
-    enum Page { start = 0, guitar = 1, controls = 2, about = 3 };
+    enum Page { start = 0, guitar = 1, drums = 2, controls = 3, about = 4 };
+    static constexpr int pageCount = 5;
 
     Guide (Colours c, juce::String versionText) : colours (c), version (std::move (versionText))
     {
         setWantsKeyboardFocus (true);
-        const char* const names[] = { "Start", "Guitar", "Controls", "About" };
-        for (int i = 0; i < 4; ++i)
+        const char* const names[] = { "Start", "Guitar", "Drums", "Controls", "About" };
+        for (int i = 0; i < pageCount; ++i)
         {
             auto& tab = tabs[(size_t) i];
             tab.setButtonText (names[i]);
@@ -76,9 +77,10 @@ public:
         auto top = area.removeFromTop (26);
         closeButton.setBounds (top.removeFromRight (26));
         top.removeFromRight (10);
-        for (int i = 3; i >= 0; --i)
+        const int tabWidth = juce::jlimit (60, 84, (top.getWidth() - 120) / pageCount - 4);   // the title keeps its room
+        for (int i = pageCount - 1; i >= 0; --i)
         {
-            tabs[(size_t) i].setBounds (top.removeFromRight (84));
+            tabs[(size_t) i].setBounds (top.removeFromRight (tabWidth));
             top.removeFromRight (4);
         }
         area.removeFromTop (14);
@@ -157,6 +159,7 @@ private:
                 { "Good to know", "" },
                 { "Nothing changes the sound until you move it", "Every control starts where the SoundFont plays exactly as it was made. Each panel says which values leave it untouched." },
                 { "Fold what you don't use", "Click a panel's title (GUITAR, REVERB, PLAY...) to fold it, and Keyboard to hide the keyboard. The window remembers." },
+                { "Record what you play in the window", "Notes from a MIDI keyboard record in the host as usual. For the window's own keyboard, the drum kit or the computer's keys: click REC at the top, play, click REC again, and drag the Drag MIDI chip onto a track." },
                 { "Hints", "Point at any control and its explanation shows at the top of the window. Turn it off in the ? menu." },
             };
             case guitar: return {
@@ -190,6 +193,22 @@ private:
                 { "Drawing chords", "Click a string at a fret to place a finger (again to lift it). Left of the nut, a click switches a string between open and not played. The name appears as you draw; click it to hear the chord. Playing shows what's played instead." },
                 { "Reading it", "The display names the last chord played (G/B: B in the bass). The lights show the strum's direction and palm-muted notes." },
             };
+            case drums: return {
+                { "The Drum Kit panel", "" },
+                { "When it shows", "By itself for a kit: General MIDI's drum bank (128), an instrument named Kit, Drums or Percussion, or one laid out like a kit (every sound on a key of its own), so a name cut short still counts. The button beside the instrument says Drums; its menu's Drum pads turns the panel off for a kit, or on for an instrument that isn't detected. Remembered for that instrument. It never shows with the Guitar panel." },
+                { "Kit and Pads", "The two buttons at the panel's top right, remembered. Kit: a drum set with the pieces the kit has, on General MIDI's keys. Pads: a pad for every key the kit plays, a row per octave, the lowest at the bottom; lower on a pad plays louder. Click a piece or a pad to hear it." },
+                { "Playing with the computer's keys", "" },
+                { "Giving the kit the keys", "Choosing a kit gives it the keys right away (not while typing in Search); otherwise click the panel. A thin orange line says it has them. In Ableton, turn off the computer MIDI keyboard (M) so both don't take the same letters." },
+                { "The keys", "Z kick, X snare, C side stick, V clap. A S D: closed, open and pedal hi-hat. F G H: high, mid and floor tom. Q W: crash, crash 2. E R: ride, ride bell. T Y: china, splash. Each piece shows its key; a piece the kit doesn't have does nothing." },
+                { "Accents", "Hold Shift with a key for a full-velocity hit. Without it, keys play a little softer, like a normal hit." },
+                { "Humanize (at the kit's right)", "" },
+                { "Velocity", "Each hit a little louder or softer at random: up to 30 % either way at 100 %." },
+                { "Timing", "Each hit a little late, up to 20 ms at 100 % (never early). Keep it at 0 while recording a part you want tight." },
+                { "What it applies to", "Everything that plays the kit: clips, a MIDI keyboard, clicks, the computer's keys. At 0 % every hit plays exactly as it comes; a few percent of each is usually enough for a programmed beat to stop sounding like a machine." },
+                { "Names and recording", "" },
+                { "Renaming", "In Pads, double-click a pad to name it. Many kits follow General MIDI only in part; name their extra keys yourself. Names are kept per kit and SoundFont; an empty name goes back to General MIDI's." },
+                { "Recording a beat", "Click REC at the top of the window, play the kit, click REC again, and drag the Drag MIDI chip onto a track. With the host playing, the clip starts at the bar of your first hit: drop it there and every hit lands where you played it." },
+            };
             case controls: return {
                 { "Guitar", "" },
                 { "Pattern, Hold, Direct", "Together in the title bar: how the panel plays. Direct, set apart, turns the rest off." },
@@ -216,7 +235,7 @@ private:
                 { "Glide, Mode", "Slide between notes; Poly, Mono or Legato." },
             };
             case about: return {
-                { "Okami SF2 Player " + version, "A SoundFont player for Ableton and any AU or VST3 host, made to play the HQ Orchestral SoundFont collection faithfully, with a Guitar panel for guitar SoundFonts." },
+                { "Okami SF2 Player " + version, "A SoundFont player for Ableton and any AU or VST3 host, made to play the HQ Orchestral SoundFont collection faithfully, with a Guitar panel for guitar SoundFonts and a Drum Kit for drum kits." },
                 { "Built on", "FluidSynth (LGPL-2.1), the synth engine. JUCE, the plugin framework. libvorbis and libogg (BSD), for .sf3 files. tonal (MIT), the method behind the chord names." },
                 { "Thanks", "To Edirol HQ Orchestral, the plugin that inspired this one (no affiliation with Roland). To the authors of the SoundFonts you play." },
                 { "License", "Free and open source under the GNU AGPL v3. The full credits are in CREDITS.md." },
@@ -229,7 +248,7 @@ private:
     juce::String version;
     Page current = start;
     juce::Rectangle<int> card;
-    std::array<juce::TextButton, 4> tabs;
+    std::array<juce::TextButton, pageCount> tabs;
     juce::TextButton closeButton { juce::String::fromUTF8 ("\xc3\x97") };
     juce::HyperlinkButton link { "github.com/marguento/OkamiSF2Player", juce::URL ("https://github.com/marguento/OkamiSF2Player") };
     Content content { *this };

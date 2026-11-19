@@ -13,6 +13,8 @@ release bumps it and adds an entry here: one line per change a player would noti
 - **Play the drums with the computer's keys:** click the panel, then Z kick, X snare, C side
   stick, V clap, A/S/D closed, open and pedal hi-hat, F/G/H toms, Q/W crashes, E ride, R ride
   bell, T china, Y splash (Shift for an accent). Each piece shows its key.
+- **Drums page in the guide** (? → Guide → Drums): the kit, its keys, Humanize, names and
+  recording a beat.
 - **Humanize** for drums, beside the kit: **Velocity** varies each hit's strength at random (up
   to ±30 %), **Timing** plays each hit a little late (up to 20 ms), as a drummer does. Both start
   at 0 (every hit as played); they apply to clips, the MIDI keyboard and the computer's keys.

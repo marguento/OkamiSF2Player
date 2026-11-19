@@ -2815,7 +2815,8 @@ void SF2PlayerEditor::placeAuthor()
     const int textEnd = fileBox.getX() + 6 + juce::roundToInt (glyphs.getBoundingBox (0, -1, true).getWidth()) + 10;
     const int right = fileBox.getRight() - 30;   // the arrow
     authorLabel.setBounds (textEnd, fileBox.getY(), juce::jmax (0, right - textEnd), fileBox.getHeight());
-    authorLabel.toFront (false);
+    authorLabel.toBehind (&fileBox);   // just above the file box, never over the guide or popups
+    fileBox.toBehind (&authorLabel);
 }
 
 // GENERAL folded to its title (the meter, the levels in words) or open; the window follows.
