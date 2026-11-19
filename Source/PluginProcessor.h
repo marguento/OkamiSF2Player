@@ -264,7 +264,13 @@ public:
     // ppq: where the host's transport was (onGrid); barStart: the ppq its current bar began at
     // (-1: the host didn't say), so time-signature changes before the take still land right.
     struct TakeEvent { double seconds = 0, ppq = 0, barStart = -1; bool onGrid = false; juce::uint8 bytes[3] {}; int size = 0; };
-    std::atomic<bool> takeRecording { false };
+    // REC's state, one atomic so the window and the audio thread never disagree: idle, waiting
+    // for the host's play (the take starts with the transport), recording with the transport
+    // (it ends when the host stops), recording on its own, or ended by the host (the window
+    // then hands the take over).
+    enum TakeState { takeIdle = 0, takeArmed, takeWithHost, takeFree, takeEndedByHost };
+    std::atomic<int> takeState { takeIdle };
+    std::atomic<bool> hostPlaying { false }, hostHasTransport { false };   // the last block's transport (for the window)
     juce::AbstractFifo takeFifo { 8192 };
     std::vector<TakeEvent> takeEvents = std::vector<TakeEvent> (8192);   // on the heap: hosts and tests may keep the processor on the stack
     std::atomic<double> takeBpm { 120.0 }, takeBarQuarters { 4.0 };

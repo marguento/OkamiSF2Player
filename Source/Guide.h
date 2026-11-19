@@ -159,7 +159,7 @@ private:
                 { "Good to know", "" },
                 { "Nothing changes the sound until you move it", "Every control starts where the SoundFont plays exactly as it was made. Each panel says which values leave it untouched." },
                 { "Fold what you don't use", "Click a panel's title (GUITAR, REVERB, PLAY...) to fold it, and Keyboard to hide the keyboard. The window remembers." },
-                { "Record what you play in the window", "Notes from a MIDI keyboard record in the host as usual. For the window's own keyboard, the drum kit or the computer's keys: click REC at the top, play, click REC again, and drag the Drag MIDI chip onto a track." },
+                { "Record what you play in the window", "Notes from a MIDI keyboard record in the host as usual. For the window's own keyboard, the drum kit or the computer's keys: click REC at the top with the song stopped, press play in the host and play along; stopping the song ends the take. Drag the Drag MIDI chip onto a track, at the bar the take started." },
                 { "Hints", "Point at any control and its explanation shows at the top of the window. Turn it off in the ? menu." },
             };
             case guitar: return {
@@ -207,7 +207,7 @@ private:
                 { "What it applies to", "Everything that plays the kit: clips, a MIDI keyboard, clicks, the computer's keys. At 0 % every hit plays exactly as it comes; a few percent of each is usually enough for a programmed beat to stop sounding like a machine." },
                 { "Names and recording", "" },
                 { "Renaming", "In Pads, double-click a pad to name it. Many kits follow General MIDI only in part; name their extra keys yourself. Names are kept per kit and SoundFont; an empty name goes back to General MIDI's." },
-                { "Recording a beat", "Click REC at the top of the window, play the kit, click REC again, and drag the Drag MIDI chip onto a track. With the host playing, the clip starts at the bar of your first hit: drop it there and every hit lands where you played it." },
+                { "Recording a beat", "Click REC at the top with the song stopped: it waits for the host's play. Play the kit along with the song, then stop the song: the take ends. Drag the Drag MIDI chip onto a track; the clip starts at the bar of your first hit, so drop it there and every hit lands where you played it." },
             };
             case controls: return {
                 { "Guitar", "" },

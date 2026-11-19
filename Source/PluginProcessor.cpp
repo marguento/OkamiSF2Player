@@ -1431,7 +1431,15 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         keyboardState.processNextMidiEvent (metadata.getMessage());
     for (const auto metadata : playedHere)
         midi.addEvent (metadata.data, metadata.numBytes, metadata.samplePosition);
-    if (takeRecording.load (std::memory_order_relaxed) && ! playedHere.isEmpty())
+    {
+        // REC waiting for play starts with the transport; a take with the transport ends with it.
+        const bool playingNow = blockPosition && blockPosition->getIsPlaying();
+        hostHasTransport.store (blockPosition.hasValue(), std::memory_order_relaxed);
+        hostPlaying.store (playingNow, std::memory_order_relaxed);
+        int expected = playingNow ? takeArmed : takeWithHost;
+        takeState.compare_exchange_strong (expected, playingNow ? takeWithHost : takeEndedByHost);
+    }
+    if (const int take = takeState.load (std::memory_order_relaxed); (take == takeWithHost || take == takeFree) && ! playedHere.isEmpty())
     {
         const double sr = juce::jmax (1.0, getSampleRate());
         double bpm = 120.0, barQuarters = 4.0;

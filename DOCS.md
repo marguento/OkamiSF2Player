@@ -321,13 +321,25 @@ the search field).
 
 ## Recording what you play in the window
 
-**REC and Drag MIDI** (top of the window, every instrument): click **● REC**, play in the
-window (the keyboard, the drum kit's pieces, pads or computer keys), click **REC** again. A chip
-says **⇩ Drag MIDI · N notes**: drag it onto a MIDI track and the host makes a clip of the take.
-With the host's transport running while you played, the clip starts at the bar your first note
-fell in: drop it at that bar and every note lands where you played it. Otherwise the first note
-starts the clip, timed at the host's tempo. A guitar's take holds the keys you pressed, not the
-strummed strings: played back through the Guitar panel, it strums them again.
+**REC and Drag MIDI** (top of the window, every instrument), to play along with your song:
+1. Click **● REC** with the song stopped. The chip says **● Waiting for play**.
+2. Press play in the host (Space). The take starts with the song, so you hear what you're
+   playing over.
+3. Play in the window (the keyboard, the drum kit's pieces, pads or computer keys).
+4. Stop the song: the take ends by itself, and the chip says **⇩ Drag MIDI · N notes**.
+5. Drag the chip onto a MIDI track and the host makes a clip of the take. It starts at the bar
+   your first note fell in: drop it at that bar and every note lands where you played it.
+
+Clicking **REC** with the song already playing records at once (and still ends when the song
+stops); clicking it again ends the take whenever you like. A host without a transport records
+at once, the first note starting the clip at the host's tempo. If the host loops while you play,
+the take keeps the order you played it in, timed by the clock. A guitar's take holds the keys
+you pressed, not the strummed strings: played back through the Guitar panel, it strums them
+again.
+
+In Ableton, Space reaches Ableton even while the plugin's window is in front (the plugin doesn't
+use it), so you can start the song without leaving the window. If it doesn't, start the song
+first and click the plugin's window to give it the keys back.
 
 Notes from a MIDI keyboard or a MIDI controller don't need any of this: the host records them
 on the plugin's track as usual.

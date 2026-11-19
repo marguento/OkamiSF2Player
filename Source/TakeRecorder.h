@@ -111,12 +111,13 @@ namespace Take
         {
             rec.setClickingTogglesState (true);
             rec.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffb83232));
-            rec.setTooltip ("Record what you play in this window (keyboard, drums), then drag it onto a track as a MIDI clip");
+            rec.setTooltip ("Record what you play in this window (keyboard, drums) along with the song: REC waits for the host's play "
+                            "and stops with it. Then drag the take onto a track as a MIDI clip");
             rec.onClick = [this] { rec.getToggleState() ? start() : stop(); };
             addAndMakeVisible (rec);
             addAndMakeVisible (chip);
         }
-        ~Recorder() override { player.takeRecording.store (false); }
+        ~Recorder() override { player.takeState.store (SF2PlayerProcessor::takeIdle); }
 
         void resized() override
         {
@@ -126,26 +127,37 @@ namespace Take
             chip.setBounds (r.withSizeKeepingCentre (r.getWidth(), 22));
         }
 
+        // REC with the host stopped waits for its play, so the take is played along with the song
+        // and lands on its bars; stopping the song ends it. With the host already playing it
+        // records at once (and still ends with the song); a host without a transport, at once.
         void start()
         {
             drain();   // anything left from before is dropped
             events.clear();
             chip.file = juce::File();   // the last take's file isn't offered while a new one records
-            player.takeRecording.store (true);
             chip.recording = true;
+            const bool wait = player.hostHasTransport.load() && ! player.hostPlaying.load();
+            player.takeState.store (wait ? SF2PlayerProcessor::takeArmed
+                                         : player.hostPlaying.load() ? SF2PlayerProcessor::takeWithHost : SF2PlayerProcessor::takeFree);
             started = juce::Time::getMillisecondCounterHiRes();
             update();
             startTimerHz (10);
         }
         void stop()
         {
-            player.takeRecording.store (false);
+            const int was = player.takeState.exchange (SF2PlayerProcessor::takeIdle);
+            rec.setToggleState (false, juce::dontSendNotification);
             drain();
             stopTimer();
             chip.recording = false;
+            if (was == SF2PlayerProcessor::takeArmed)   // stopped before the host ever played: nothing to hand over
+            {
+                chip.text = {};
+                chip.repaint();
+                return;
+            }
             int notes = 0;
             const auto midi = build (events, player.takeBpm.load(), player.takeBarQuarters.load(), notes);
-            chip.file = juce::File();
             if (notes > 0)
             {
                 auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("Okami SF2 Player takes");
@@ -182,6 +194,14 @@ namespace Take
         }
         void update()
         {
+            const int take = player.takeState.load();
+            if (take == SF2PlayerProcessor::takeArmed)
+            {
+                started = juce::Time::getMillisecondCounterHiRes();   // the clock starts with the song
+                chip.text = juce::String::fromUTF8 ("\xe2\x97\x8f Waiting for play");
+                chip.repaint();
+                return;
+            }
             int notes = 0;
             for (const auto& e : events) notes += (e.size == 3 && (e.bytes[0] & 0xf0) == 0x90 && e.bytes[2] > 0) ? 1 : 0;
             const int seconds = (int) ((juce::Time::getMillisecondCounterHiRes() - started) / 1000.0);
@@ -189,6 +209,11 @@ namespace Take
                       + juce::String::fromUTF8 (" \xc2\xb7 ") + juce::String (notes) + (notes == 1 ? " note" : " notes");
             chip.repaint();
         }
-        void timerCallback() override { drain(); update(); }
+        void timerCallback() override
+        {
+            drain();
+            if (player.takeState.load() == SF2PlayerProcessor::takeEndedByHost) stop();   // the song stopped: the take is ready
+            else update();
+        }
     };
 }
