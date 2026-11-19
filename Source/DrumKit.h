@@ -1,5 +1,7 @@
 #pragma once
 
+#include <bitset>
+
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <array>
 #include <atomic>
@@ -98,6 +100,7 @@ namespace DrumKit
         void focusGained (FocusChangeType) override { repaint(); }
 
         int lowKey = 36, highKey = 60;
+        std::bitset<128> keys = std::bitset<128>().set();   // the keys the kit has samples on (gaps in its range are silent)
         bool kitView = true;   // the drum set; false: the pads
         std::map<int, juce::String> customNames;   // the user's names for this kit, by key
         std::function<void (int note, const juce::String& name)> onRename;   // an empty name: back to General MIDI's
@@ -110,7 +113,7 @@ namespace DrumKit
         {
             return kitView ? juce::jlimit (220, 460, juce::roundToInt ((float) width * 0.44f) + hintHeight) : rows() * (rowHeight + gap) - gap;
         }
-        bool plays (int note) const { return note >= lowKey && note <= highKey; }
+        bool plays (int note) const { return note >= lowKey && note <= highKey && keys.test ((size_t) note); }
         juce::String nameOf (int note) const
         {
             if (auto it = customNames.find (note); it != customNames.end() && it->second.isNotEmpty()) return it->second;
@@ -204,6 +207,14 @@ namespace DrumKit
         void timerCallback() override { tick(); }
         void tick()
         {
+            // A key held as the window lost focus (Cmd-Tab, a click in the host) never gets its
+            // key-up here, wherever the window's focus was: let it go.
+            if (! keysDown.empty())
+                if (auto* peer = getPeer(); peer == nullptr || ! peer->isFocused())
+                {
+                    for (const auto& [code, note] : keysDown) state.noteOff (1, note, 0.0f);
+                    keysDown.clear();
+                }
             bool changed = false;
             for (int note = 0; note < 128; ++note)
             {
@@ -281,7 +292,7 @@ namespace DrumKit
         {
             const float pixels = g.getInternalContext().getPhysicalPixelScaleFactor();
             const auto key = juce::String (getWidth()) + "x" + juce::String (getHeight()) + "@" + juce::String (pixels, 2)
-                           + ":" + juce::String (lowKey) + "-" + juce::String (highKey) + (hasKeyboardFocus (false) ? "f" : "");
+                           + ":" + juce::String (lowKey) + "-" + juce::String (highKey) + ":" + juce::String (std::hash<std::bitset<128>>{} (keys)) + (hasKeyboardFocus (false) ? "f" : "");
             if (key != restKey || ! restImage.isValid())
             {
                 restKey = key;

@@ -2083,7 +2083,9 @@ void SF2PlayerEditor::resized()
         if (drumsShown)
         {
             auto stage = pianoPanel.reduced (10, 0).withTrimmedTop (pianoHeight).withHeight (drumStageHeight());
-            if (getHeight() != minimumHeight())   // the window got wider or narrower: the kit (and the window's height) follows
+            // The window got wider or narrower: the kit (and the window's height) follows. Once per
+            // width, so a host that keeps the height its own way can't make this go round forever.
+            if (getHeight() != minimumHeight() && getWidth() != heightTriedWidth && (heightTriedWidth = getWidth()) > 0)
                 juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<SF2PlayerEditor> (this)]
                                                  { if (safe != nullptr) { safe->applyHeight(); safe->resized(); } });
             // HUMANIZE at the right of the kit: its two knobs, one above the other.
@@ -2666,7 +2668,8 @@ void SF2PlayerEditor::refreshDrumPads (const SF2PlayerProcessor::State& st)
     if (key != choiceKey) { choiceKey = key; shownChoice = drumChoice (key); }   // the settings read once per instrument
     const int choice = shownChoice;
     const bool show = valid && ! guitarShown && (choice == 1 || (choice == 0 && st.presets[(size_t) st.preset].drumKit));
-    player.drumsForced.store (show && ! st.presets[(size_t) st.preset].drumKit);   // Humanize plays on a kit the name hid
+    if (valid)   // Humanize plays where the pads show, even once the window is closed (saved with the project)
+        player.setDrumChoice (st.presets[(size_t) st.preset].bank, st.presets[(size_t) st.preset].number, choice);
     const int rowsBefore = drumPads.rows();
     if (show && key != drumKey)
     {
@@ -2674,6 +2677,7 @@ void SF2PlayerEditor::refreshDrumPads (const SF2PlayerProcessor::State& st)
         // At most six octaves of pads (C1-B6): a kit is rarely wider, and a whole keyboard would be too tall.
         drumPads.lowKey = juce::jlimit (24, 95, preset.lowKey);
         drumPads.highKey = juce::jlimit (drumPads.lowKey, 95, preset.highKey);
+        drumPads.keys = preset.keys;
         drumPads.customNames.clear();
         const auto prefix = key + "#";
         for (const auto& line : juce::StringArray::fromLines (settings->getValue ("drumNames")))

@@ -1529,6 +1529,76 @@ int main()
     }
 
     {
+        // Drum Humanize plays exactly where the pads show: the user's "Drum pads" off for a kit
+        // turns it off (kept in the project, window closed or not), on for an instrument turns it on.
+        Player probe (testFont);
+        const auto st = probe.p.state();
+        int kit = -1, melodic = -1;
+        for (size_t i = 0; i < st->presets.size(); ++i)
+        {
+            if (st->presets[i].drumKit && kit < 0) kit = (int) i;
+            if (! st->presets[i].drumKit && melodic < 0) melodic = (int) i;
+        }
+        Player a (testFont, kit);
+        const auto& k = st->presets[(size_t) kit];
+        const bool autoKit = a.p.drumsActive();
+        a.p.setDrumChoice (k.bank, k.number, 2);
+        const bool off = ! a.p.drumsActive();
+        juce::MemoryBlock saved;
+        a.p.getStateInformation (saved);
+        Player b (testFont, kit);
+        b.p.setStateInformation (saved.getData(), (int) saved.getSize());
+        const bool restored = ! b.p.drumsActive() && b.p.drumChoiceValue.load() == 2;
+        Player c (testFont, melodic);
+        const auto& m = st->presets[(size_t) melodic];
+        const bool notKit = ! c.p.drumsActive();
+        c.p.setDrumChoice (m.bank, m.number, 1);
+        const bool forced = c.p.drumsActive();
+        c.p.setDrumChoice (k.bank, k.number, 1);   // a choice for another instrument doesn't count here
+        const bool otherInstrument = ! c.p.drumsActive();
+        // The kit's pieces are the keys it has samples on, not every key of its range.
+        juce::MidiKeyboardState keyState;
+        DrumKit::Pads gaps (keyState);
+        gaps.lowKey = 35; gaps.highKey = 60;
+        gaps.keys.reset (36); gaps.keys.reset (38);
+        const bool exact = gaps.noteForKey ('z') == 35 && gaps.noteForKey ('x') == 40 && ! gaps.plays (36);
+        expect (autoKit && off && restored && notKit && forced && otherInstrument && exact,
+                "Drum Humanize: only where the pads show (the user's choice, saved with the project); pieces on the keys the kit has");
+    }
+
+    {
+        // A take on the host's bars starts at the host's own bar (a 3/4 bar before it moves the
+        // bar lines), and a take the host looped through is timed by the clock instead.
+        using E = Take::Event;
+        auto event = [] (double seconds, double ppq, double barStart, juce::MidiMessage msg)
+        {
+            E e; e.seconds = seconds; e.ppq = ppq; e.barStart = barStart; e.onGrid = true; e.size = msg.getRawDataSize();
+            std::copy (msg.getRawData(), msg.getRawData() + e.size, e.bytes); return e;
+        };
+        int notes = 0;
+        auto onsets = [] (const juce::MidiFile& file)
+        {
+            std::vector<double> ons;
+            for (const auto* holder : *file.getTrack (0))
+                if (holder->message.isNoteOn()) ons.push_back (holder->message.getTimeStamp());
+            return ons;
+        };
+        const auto shifted = onsets (Take::build ({ event (0, 7.5, 7.0, juce::MidiMessage::noteOn (1, 36, (juce::uint8) 100)) }, 120.0, 4.0, notes));
+        const auto nextBar = onsets (Take::build ({ event (0, 11.5, 7.0, juce::MidiMessage::noteOn (1, 36, (juce::uint8) 100)) }, 120.0, 4.0, notes));
+        const auto looped = Take::build ({ event (10.0, 15.9, 12.0, juce::MidiMessage::noteOn (1, 36, (juce::uint8) 100)),
+                                           event (10.2, 0.1, 0.0, juce::MidiMessage::noteOff (1, 36)) }, 120.0, 4.0, notes);
+        double on = -1, offAt = -1;
+        for (const auto* holder : *looped.getTrack (0))
+        {
+            if (holder->message.isNoteOn()) on = holder->message.getTimeStamp();
+            if (holder->message.isNoteOff()) offAt = holder->message.getTimeStamp();
+        }
+        expect (shifted.size() == 1 && std::abs (shifted[0] - 480) < 1 && nextBar.size() == 1 && std::abs (nextBar[0] - 480) < 1
+                    && on == 0.0 && std::abs (offAt - 0.2 * 2 * 960) < 1,
+                "REC: a take starts at the host's bar, and one the host looped through is timed by the clock");
+    }
+
+    {
         // MIDI out: what's played in the window (its keyboard, the drums' keys, kit and pads) leaves
         // the plugin for the host to record, with a piano, a guitar (the panel strumming) or a kit;
         // the host's own notes don't come back, and the window's notes still sound.

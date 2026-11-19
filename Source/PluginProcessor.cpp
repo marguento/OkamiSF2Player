@@ -771,6 +771,8 @@ bool SF2PlayerProcessor::loadSoundFont (const juce::File& file)
             p.drumKit = DrumKit::isKit (p.bank, p.name) || info.kitShaped.count ({ p.bank, p.number }) > 0;
             if (auto range = info.keyRanges.find ({ p.bank, p.number }); range != info.keyRanges.end())
                 p.lowKey = range->second.first, p.highKey = range->second.second;
+            if (auto set = info.keySets.find ({ p.bank, p.number }); set != info.keySets.end() && set->second.any())
+                p.keys = set->second;
             if (auto amounts = info.sends.find ({ p.bank, p.number }); amounts != info.sends.end())
                 p.sends = amounts->second;
             list.push_back (p);
@@ -970,6 +972,20 @@ void SF2PlayerProcessor::playLateNotes (juce::int64 until, juce::int64 blockStar
         const int at = (int) juce::jlimit ((juce::int64) position, (juce::int64) work.getNumSamples(), late.at - blockStart);
         render (position, at);
         position = juce::jmax (position, at);
+        handleMidi (juce::MidiMessage (late.bytes, late.size));
+    }
+}
+
+// Every late note at once, in time order, rendering nothing (whoever renders the block next plays them).
+void SF2PlayerProcessor::playLateNotesNow()
+{
+    while (lateCount > 0)
+    {
+        int first = 0;
+        for (int i = 1; i < lateCount; ++i)
+            if (lateNotes[(size_t) i].at < lateNotes[(size_t) first].at) first = i;
+        const auto late = lateNotes[(size_t) first];
+        lateNotes[(size_t) first] = lateNotes[(size_t) --lateCount];
         handleMidi (juce::MidiMessage (late.bytes, late.size));
     }
 }
@@ -1420,12 +1436,17 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         const double sr = juce::jmax (1.0, getSampleRate());
         double bpm = 120.0, barQuarters = 4.0;
         juce::Optional<double> ppq;
+        double barStart = -1.0;
         if (blockPosition)
         {
             if (const auto tempo = blockPosition->getBpm()) bpm = juce::jlimit (20.0, 400.0, *tempo);
             if (const auto sig = blockPosition->getTimeSignature(); sig && sig->numerator > 0 && sig->denominator > 0)
                 barQuarters = juce::jlimit (0.25, 64.0, 4.0 * sig->numerator / sig->denominator);
-            if (blockPosition->getIsPlaying()) ppq = blockPosition->getPpqPosition();
+            if (blockPosition->getIsPlaying())
+            {
+                ppq = blockPosition->getPpqPosition();
+                if (const auto bar = blockPosition->getPpqPositionOfLastBarStart(); bar && ppq && *bar <= *ppq) barStart = *bar;
+            }
         }
         takeBpm.store (bpm, std::memory_order_relaxed);
         takeBarQuarters.store (barQuarters, std::memory_order_relaxed);
@@ -1435,6 +1456,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
             TakeEvent event;
             event.seconds = (double) (blockStart + metadata.samplePosition) / sr;
             event.onGrid = ppq.hasValue();
+            event.barStart = barStart;
             event.ppq = ppq ? *ppq + metadata.samplePosition / sr * bpm / 60.0 : 0.0;
             event.size = metadata.numBytes;
             std::copy (metadata.data, metadata.data + metadata.numBytes, event.bytes);
@@ -1509,18 +1531,24 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         // Events a skipped block kept, first (through the guitar engine when it's in use).
         playDeferredMidi (useGuitar ? &guitarSettings : nullptr, blockStart);
 
-        if (useGuitar && lateCount > 0)   // the guitar took over: Humanize's late notes play now
-        {
-            int now = 0;
-            playLateNotes (std::numeric_limits<juce::int64>::max(), blockStart, now);
-        }
+        if (useGuitar && lateCount > 0)   // the guitar took over: Humanize's late notes play now (the guitar renders the block)
+            playLateNotesNow();
         if (! useGuitar)
         {
-            // A kit's Humanize: velocity varied by up to ±30 %, hits delayed by up to 20 ms.
-            const bool kit = presetIsKit.load (std::memory_order_relaxed) || drumsForced.load (std::memory_order_relaxed);
+            // A kit's Humanize: velocity varied by up to ±30 %, hits delayed by up to 20 ms. Only
+            // where the DRUM KIT panel shows (never with the Guitar panel, even in Direct), and only
+            // on the kit's own notes: not a Split's lower instrument, not a channel a clip moved.
+            if (const int generation = kitGeneration.load (std::memory_order_relaxed); generation != seenKitGeneration)
+            {
+                seenKitGeneration = generation;
+                channelMoved.reset();
+            }
+            const bool kit = ! panelShown && drumsActive();
             const float velocityHuman = kit ? parameters.getRawParameterValue ("drumVelocityHuman")->load() : 0.0f;
             const float timingHuman = kit ? parameters.getRawParameterValue ("drumTimingHuman")->load() : 0.0f;
             const double maxDelay = getSampleRate() * 0.020 * timingHuman;
+            const int splitBelow = juce::roundToInt (parameters.getRawParameterValue ("layerMode")->load()) == 2
+                                 ? juce::roundToInt (parameters.getRawParameterValue ("splitKey")->load()) : -1;
             // Render up to each MIDI event, so notes start on the exact sample.
             int position = 0;
             for (const auto metadata : midi)
@@ -1533,9 +1561,18 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                 {
                     juce::MidiMessage message (metadata.data, metadata.numBytes);
                     noteWheelPosition (message);
-                    if (message.isAllNotesOff() || message.isAllSoundOff())
-                        lateCount = 0;   // nothing waits past an all-notes-off
-                    if (message.isNoteOn() && velocityHuman > 0.0f)
+                    const int channel = message.getChannel() - 1;
+                    if (message.isAllNotesOff() || message.isAllSoundOff())   // nothing on that channel waits past it
+                    {
+                        for (int i = lateCount; --i >= 0;)
+                            if ((lateNotes[(size_t) i].bytes[0] & 0x0f) == channel)
+                                lateNotes[(size_t) i] = lateNotes[(size_t) --lateCount];
+                    }
+                    if (message.isProgramChange() && juce::isPositiveAndBelow (channel, 16))
+                        channelMoved.set ((size_t) channel);
+                    const bool kitNote = message.isNoteOn() && juce::isPositiveAndBelow (channel, 16) && ! channelMoved.test ((size_t) channel)
+                                      && message.getNoteNumber() >= splitBelow;
+                    if (kitNote && velocityHuman > 0.0f)
                     {
                         const float factor = 1.0f + (humanRandom.nextFloat() * 2.0f - 1.0f) * 0.3f * velocityHuman;
                         message.setVelocity (juce::jlimit (1.0f / 127.0f, 1.0f, message.getFloatVelocity() * factor));
@@ -1547,7 +1584,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                     }
                     juce::int64 lateAt = -1;   // when this message must wait for
                     // Half the list stays for note-offs: one that can't wait would end a note before its late hit.
-                    if (message.isNoteOn() && maxDelay >= 1.0 && lateCount < (int) lateNotes.size() / 2)
+                    if (kitNote && maxDelay >= 1.0 && lateCount < (int) lateNotes.size() / 2)
                         lateAt = blockStart + eventTime + (juce::int64) (humanRandom.nextDouble() * maxDelay);
                     else if (message.isNoteOff())   // after its own late hit, never before it
                         for (int i = 0; i < lateCount; ++i)
@@ -1830,6 +1867,8 @@ void SF2PlayerProcessor::getStateInformation (juce::MemoryBlock& destData)
         saved.setProperty ("layerBank", st->layerBank, nullptr);
         saved.setProperty ("layerNumber", st->layerNumber, nullptr);
     }
+    saved.setProperty ("drumChoiceFor", drumChoiceFor.load(), nullptr);
+    saved.setProperty ("drumChoice", drumChoiceValue.load(), nullptr);
     {
         juce::StringArray frets;
         for (int fret : guitarShapeFrets()) frets.add (juce::String (fret));
@@ -1865,6 +1904,10 @@ void SF2PlayerProcessor::setStateInformation (const void* data, int sizeInBytes)
     savedNumber = (int) state.getProperty ("presetNumber", -1);
     savedLayerBank = (int) state.getProperty ("layerBank", -1);
     savedLayerNumber = (int) state.getProperty ("layerNumber", -1);
+    drumChoiceValue.store (juce::jlimit (0, 2, (int) state.getProperty ("drumChoice", 0)));
+    drumChoiceFor.store ((int) state.getProperty ("drumChoiceFor", -1));
+    state.removeProperty ("drumChoice", nullptr);
+    state.removeProperty ("drumChoiceFor", nullptr);
     {
         std::array<int, 6> frets { -1, -1, -1, -1, -1, -1 };
         const auto parts = juce::StringArray::fromTokens (state.getProperty ("guitarShape").toString(), ",", "");

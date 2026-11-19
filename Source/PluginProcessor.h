@@ -49,6 +49,7 @@ public:
     {
         juce::String name;
         int bank = 0, number = 0, lowKey = 0, highKey = 127;
+        std::bitset<128> keys = std::bitset<128>().set();   // the keys a zone covers (all, when unknown)
         bool drumKit = false;   // bank 128 or named a kit (DrumKit::isKit): the DRUM KIT panel's pads
         SoundFontInfo::Sends sends;   // what it sends to the reverb and the chorus, in percent
     };
@@ -118,11 +119,28 @@ public:
     // saved before they existed plays as it did. Only while the panel hasn't played yet (a start
     // given later would change what was recorded). Atomics: hosts restore state on any thread.
     std::atomic<bool> stateRestored { false }, guitarStartGiven { false };
-    // DRUM KIT: the instrument is a kit (or the editor shows its pads anyway), for Humanize.
-    std::atomic<bool> presetIsKit { false }, drumsForced { false };
+    // DRUM KIT: the instrument is a kit, and the user's Drum pads choice for it (0 auto, 1 on,
+    // 2 off; the editor keeps it per instrument and hands it over, the project saves it), so
+    // Humanize plays exactly where the panel shows, with or without the window open.
+    std::atomic<bool> presetIsKit { false };
+    std::atomic<int> presetId { -1 }, drumChoiceFor { -1 }, drumChoiceValue { 0 };   // ids: bank * 128 + program
+    std::atomic<int> kitGeneration { 0 };   // a new instrument: channels a clip moved elsewhere play the kit again
     void refreshKitFlag()   // message thread, after the preset changes
     {
-        presetIsKit.store (juce::isPositiveAndBelow (currentPreset, (int) presetList.size()) && presetList[(size_t) currentPreset].drumKit);
+        const bool valid = juce::isPositiveAndBelow (currentPreset, (int) presetList.size());
+        presetIsKit.store (valid && presetList[(size_t) currentPreset].drumKit);
+        presetId.store (valid ? presetList[(size_t) currentPreset].bank * 128 + presetList[(size_t) currentPreset].number : -1);
+        kitGeneration.fetch_add (1);
+    }
+    void setDrumChoice (int bank, int number, int choice)
+    {
+        drumChoiceValue.store (juce::jlimit (0, 2, choice));
+        drumChoiceFor.store (bank * 128 + number);
+    }
+    bool drumsActive() const   // any thread
+    {
+        const int choice = drumChoiceFor.load() == presetId.load() ? drumChoiceValue.load() : 0;
+        return choice == 1 || (choice == 0 && presetIsKit.load());
     }
     std::atomic<bool> playedGuitar { false };   // the panel already played notes: too late for the start
     juce::CriticalSection startLock;   // the start's check and edits vs. a state being restored (never the audio thread)
@@ -243,7 +261,9 @@ public:
     // REC: while on, what's played in the window goes to the editor (a FIFO, no locks), which
     // makes a MIDI file of it to drag into the host. Times both in seconds and, while the host's
     // transport runs, in quarter notes of its timeline (for a take that lands on its bars).
-    struct TakeEvent { double seconds = 0, ppq = 0; bool onGrid = false; juce::uint8 bytes[3] {}; int size = 0; };
+    // ppq: where the host's transport was (onGrid); barStart: the ppq its current bar began at
+    // (-1: the host didn't say), so time-signature changes before the take still land right.
+    struct TakeEvent { double seconds = 0, ppq = 0, barStart = -1; bool onGrid = false; juce::uint8 bytes[3] {}; int size = 0; };
     std::atomic<bool> takeRecording { false };
     juce::AbstractFifo takeFifo { 8192 };
     std::vector<TakeEvent> takeEvents = std::vector<TakeEvent> (8192);   // on the heap: hosts and tests may keep the processor on the stack
@@ -253,6 +273,9 @@ private:
     std::array<LateNote, 512> lateNotes {};
     int lateCount = 0;
     juce::Random humanRandom;
+    std::bitset<16> channelMoved;   // a clip's program change took this channel off the kit (no Humanize there)
+    int seenKitGeneration = -1;
+    void playLateNotesNow();
     void playLateNotes (juce::int64 until, juce::int64 blockStart, int& position);
     std::array<int, 16384> overflowIndices {};   // a flood's messages past guitarItems, by their place in the block
     std::array<std::bitset<128>, 16> lateNoteOffs {};   // note-offs past even overflowIndices, played at the block's end

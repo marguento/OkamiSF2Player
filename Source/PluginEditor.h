@@ -288,6 +288,7 @@ private:
     static constexpr int humanizeWidth = 150;
     juce::Rectangle<int> humanizeArea;   // its frame and title, painted   // the panel's two views (remembered: "drumView")
     void showDrumView (bool kit);
+    int heightTriedWidth = -1;   // the width the kit last asked the window's height for
     bool drumsShown = false;
     juce::String drumKey;   // the kit the pads show (favouriteKey)
     juce::String choiceKey;   // the instrument shownChoice was read for

@@ -15,8 +15,8 @@ namespace Take
     using Event = SF2PlayerProcessor::TakeEvent;
 
     // A take as a Standard MIDI File, 960 ticks a quarter. Played with the host's transport
-    // running, it keeps its place in the bars: it starts at the bar the first note fell in (drop
-    // it at that bar). Otherwise the first note is at 0, timed at the host's tempo. Notes still
+    // running (and not looping back), it keeps its place in the bars: it starts at the bar the
+    // first note fell in (drop it at that bar). Otherwise the first note is at 0, timed at the host's tempo. Notes still
     // held when it stopped end a sixteenth after the last event.
     inline juce::MidiFile build (const std::vector<Event>& events, double bpm, double barQuarters, int& notes)
     {
@@ -31,8 +31,16 @@ namespace Take
             file.addTrack (sequence);
             return file;
         }
-        const bool grid = std::all_of (events.begin(), events.end(), [] (const Event& e) { return e.onGrid; });
-        const double base = grid ? std::floor (events.front().ppq / barQuarters) * barQuarters : 0.0;
+        // On the grid only while the host's position only moved forward: a loop (or a jump back)
+        // during the take would put later notes before earlier ones, so it's timed by the clock.
+        bool grid = std::all_of (events.begin(), events.end(), [] (const Event& e) { return e.onGrid; });
+        for (size_t i = 1; grid && i < events.size(); ++i)
+            grid = events[i].ppq >= events[i - 1].ppq - 1.0e-6;
+        const auto& first = events.front();
+        const double base = ! grid ? 0.0
+                          : first.barStart >= 0.0 && first.barStart <= first.ppq   // the host's own bar (a new one may start inside the block)
+                              ? first.barStart + std::floor ((first.ppq - first.barStart) / barQuarters) * barQuarters
+                          : std::floor (first.ppq / barQuarters) * barQuarters;
         auto ticksOf = [&] (const Event& e)
         {
             const double quarters = grid ? e.ppq - base : (e.seconds - events.front().seconds) * bpm / 60.0;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_core/juce_core.h>
+#include <bitset>
 #include <map>
 #include <optional>
 #include <set>
@@ -13,6 +14,7 @@ struct SoundFontInfo
 {
     juce::String name, author, comment;
     std::map<std::pair<int, int>, std::pair<int, int>> keyRanges;   // (bank, program) -> (low key, high key)
+    std::map<std::pair<int, int>, std::bitset<128>> keySets;         // (bank, program) -> every key a zone covers
 
     // How much a preset sends to the reverb and the chorus, in percent (generators 16 and 15),
     // lowest and highest over its zones: what plays with CC91 and CC93 at 0.
@@ -157,6 +159,7 @@ private:
             int low = 128, high = -1;
             bool singleKeys = true;
             std::set<int> keys;
+            std::bitset<128> covered;
             float reverbMin = 100, reverbMax = 0, chorusMin = 100, chorusMax = 0;
             const auto presetZones = zones (pbag, pgen, u16 (phdr, at + 24), u16 (phdr, at + 38 + 24), 41);
             // A first zone without an instrument is the global one: its values are the others' defaults.
@@ -191,12 +194,14 @@ private:
                         low = juce::jmin (low, zoneLow), high = juce::jmax (high, zoneHigh);
                         singleKeys = singleKeys && zoneLow == zoneHigh;
                         if (zoneLow == zoneHigh) keys.insert (zoneLow);
+                        for (int key = juce::jmax (0, zoneLow); key <= juce::jmin (127, zoneHigh); ++key) covered.set ((size_t) key);
                     }
                 }
             }
             if (low <= high)
             {
                 keyRanges[{ bank, number }] = { low, high };
+                keySets[{ bank, number }] = covered;
                 sends[{ bank, number }] = { reverbMin, reverbMax, chorusMin, chorusMax };
                 if (singleKeys && keys.size() >= 8 && keys.size() <= 64)
                     kitShaped.insert ({ bank, number });
