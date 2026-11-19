@@ -95,6 +95,7 @@ public:
     // The Guitar panel shows (and its controls act) for this instrument: Auto follows the
     // instrument, On and Off force it.
     bool guitarPanelActive() const;
+    void markProjectChanged();   // a change that isn't a parameter: the host is told the project changed
     bool detectedGuitar() const { return guitarInstrument.load(); }   // what Auto sees in the instrument
     static bool isGuitar (const Preset&);
 
@@ -133,11 +134,13 @@ public:
         presetId.store (valid ? presetList[(size_t) currentPreset].bank * 128 + presetList[(size_t) currentPreset].number : -1);
         kitGeneration.fetch_add (1);
     }
-    void setDrumChoice (int bank, int number, int choice)   // message thread; a change is the project's
+    // Message thread. byUser: the user chose it (the project changed); otherwise the window only
+    // hands over what its settings hold (opening it doesn't make a project unsaved).
+    void setDrumChoice (int bank, int number, int choice, bool byUser)
     {
         const int packed = (bank * 128 + number) * 4 + juce::jlimit (0, 2, choice);
-        if (drumChoice.exchange (packed) != packed)
-            updateHostDisplay (ChangeDetails().withNonParameterStateChanged (true));
+        if (drumChoice.exchange (packed) != packed && byUser)
+            markProjectChanged();
     }
     // The choice the project holds for that instrument (-1: none, the editor's settings decide).
     int drumChoiceOf (int bank, int number) const
@@ -195,7 +198,6 @@ private:
     void handleMidi (const juce::MidiMessage&);
     void render (int start, int end);
     void writeOutputs (juce::AudioBuffer<float>&, int numSamples, bool sendOutputs);
-    void markProjectChanged();
     void applyEffectSettings (bool force);
     void applyPlaySettings (bool force, bool guitarPlays);
     void applyPreset (Engine&, int presetIndex);

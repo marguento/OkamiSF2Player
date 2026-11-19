@@ -919,12 +919,11 @@ void SF2PlayerProcessor::handleMidi (const juce::MidiMessage& m)
         // The Guitar panel's Double plays the same instrument: it follows the clip's bank and program.
         fluid_synth_program_change (synth, channel + doubleChannelOffset, m.getProgramChangeNumber());
         // The preset FluidSynth actually chose (it falls back to bank 0 when the bank is missing).
-        if (juce::isPositiveAndBelow (channel, 16))   // the kit's Humanize stays on this channel only while it plays the kit
-            channelMoved.set ((size_t) channel);
+        channelMoved.set ((size_t) channel);   // the kit's Humanize stays on this channel only while it plays the kit
         if (auto* preset = fluid_synth_get_channel_preset (synth, channel))
         {
             const int key = fluid_preset_get_banknum (preset) * 128 + fluid_preset_get_num (preset);
-            if (juce::isPositiveAndBelow (channel, 16) && key == presetId.load (std::memory_order_relaxed))
+            if (key == presetId.load (std::memory_order_relaxed))
                 channelMoved.reset ((size_t) channel);
             if (key != lastPinRequest[(size_t) channel])   // a repeated program change queues nothing
                 pinFifo.write (1).forEach ([this, key, channel] (int index)
@@ -961,8 +960,6 @@ void SF2PlayerProcessor::handleMidi (const juce::MidiMessage& m)
     }
 }
 
-// Drum Humanize's late notes due before `until`, earliest first, each at its own sample of this
-// block (rendering up to it); one already overdue (a block skipped) plays at once.
 // The earliest late note due before `until`, taken off the list (false: none).
 bool SF2PlayerProcessor::takeEarliestLate (juce::int64 until, LateNote& out)
 {
@@ -976,6 +973,8 @@ bool SF2PlayerProcessor::takeEarliestLate (juce::int64 until, LateNote& out)
     return true;
 }
 
+// Drum Humanize's late notes due before `until`, earliest first, each at its own sample of this
+// block (rendering up to it); one already overdue (a block skipped) plays at once.
 void SF2PlayerProcessor::playLateNotes (juce::int64 until, juce::int64 blockStart, int& position)
 {
     LateNote late;
@@ -1444,8 +1443,11 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         hostPlaying.store (playingNow, std::memory_order_relaxed);
         int expected = playingNow ? takeArmed : takeWithHost;
         takeState.compare_exchange_strong (expected, playingNow ? takeWithHost : takeEndedByHost);
-        expected = takeArmed;   // played without starting the song: a take of its own, at once (a jam)
-        if (! playingNow && ! playedHere.isEmpty())
+        bool noteOn = false;   // played without starting the song (a note, not a key let go): a take of its own, at once
+        for (const auto metadata : playedHere)
+            noteOn = noteOn || (metadata.numBytes == 3 && (metadata.data[0] & 0xf0) == 0x90 && metadata.data[2] > 0);
+        expected = takeArmed;
+        if (! playingNow && noteOn)
             takeState.compare_exchange_strong (expected, takeFree);
     }
     if (const int take = takeState.load (std::memory_order_relaxed); (take == takeWithHost || take == takeFree) && ! playedHere.isEmpty())
@@ -1579,6 +1581,18 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                     juce::MidiMessage message (metadata.data, metadata.numBytes);
                     noteWheelPosition (message);
                     const int channel = message.getChannel() - 1;
+                    if (message.isProgramChange())   // the channel's late hits play on the kit they were meant for, first, in order
+                        for (;;)
+                        {
+                            int first = -1;
+                            for (int i = 0; i < lateCount; ++i)
+                                if ((lateNotes[(size_t) i].bytes[0] & 0x0f) == channel && (first < 0 || lateNotes[(size_t) i].at < lateNotes[(size_t) first].at))
+                                    first = i;
+                            if (first < 0) break;
+                            const auto late = lateNotes[(size_t) first];
+                            lateNotes[(size_t) first] = lateNotes[(size_t) --lateCount];
+                            handleMidi (juce::MidiMessage (late.bytes, late.size));
+                        }
                     if (message.isAllNotesOff() || message.isAllSoundOff())   // nothing on that channel waits past it
                     {
                         for (int i = lateCount; --i >= 0;)
@@ -1919,9 +1933,16 @@ void SF2PlayerProcessor::setStateInformation (const void* data, int sizeInBytes)
     savedLayerBank = (int) state.getProperty ("layerBank", -1);
     savedLayerNumber = (int) state.getProperty ("layerNumber", -1);
     {
-        const int packed = (int) state.getProperty ("drumChoice", -1);
+        // Saved as one number (instrument * 4 + choice); 1.4 builds before it saved the two apart.
+        int packed = (int) state.getProperty ("drumChoice", -1);
+        if (state.hasProperty ("drumChoiceFor"))
+        {
+            const int instrument = (int) state.getProperty ("drumChoiceFor", -1);
+            packed = instrument >= 0 && juce::isPositiveAndBelow (packed, 3) ? instrument * 4 + packed : -1;
+        }
         drumChoice.store (packed >= 0 && packed % 4 <= 2 && packed / 4 < 129 * 128 ? packed : -1);
         state.removeProperty ("drumChoice", nullptr);
+        state.removeProperty ("drumChoiceFor", nullptr);
     }
     {
         std::array<int, 6> frets { -1, -1, -1, -1, -1, -1 };

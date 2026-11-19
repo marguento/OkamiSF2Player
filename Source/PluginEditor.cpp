@@ -563,6 +563,8 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     // takes them back the moment the take starts (it was the user who armed it).
     recorder.onSongStarted = [this]
     {
+        if (dynamic_cast<juce::TextEditor*> (juce::Component::getCurrentlyFocusedComponent()) != nullptr)
+            return;   // typing in Search: the keys stay there
         if (auto* peer = getPeer()) peer->grabFocus();
         if (drumsShown && drumPads.isShowing()) drumPads.grabKeyboardFocus();
         else grabKeyboardFocus();
@@ -2676,14 +2678,14 @@ void SF2PlayerEditor::refreshDrumPads (const SF2PlayerProcessor::State& st)
     if (key != choiceKey)   // the settings read once per instrument; the project's choice when they have none (another Mac)
     {
         choiceKey = key;
-        shownChoice = drumChoice (key);
-        if (shownChoice == 0 && valid)
-            shownChoice = juce::jmax (0, player.drumChoiceOf (st.presets[(size_t) st.preset].bank, st.presets[(size_t) st.preset].number));
+        shownChoice = drumChoice (key);   // -1: this Mac has no choice for it
+        if (shownChoice < 0)
+            shownChoice = valid ? juce::jmax (0, player.drumChoiceOf (st.presets[(size_t) st.preset].bank, st.presets[(size_t) st.preset].number)) : 0;
     }
     const int choice = shownChoice;
     const bool show = valid && ! guitarShown && (choice == 1 || (choice == 0 && st.presets[(size_t) st.preset].drumKit));
     if (valid)   // Humanize plays where the pads show, even once the window is closed (saved with the project)
-        player.setDrumChoice (st.presets[(size_t) st.preset].bank, st.presets[(size_t) st.preset].number, choice);
+        player.setDrumChoice (st.presets[(size_t) st.preset].bank, st.presets[(size_t) st.preset].number, choice, false);
     const int rowsBefore = drumPads.rows();
     if (show && key != drumKey)
     {
@@ -2751,13 +2753,14 @@ void SF2PlayerEditor::showDrumView (bool kit)
     repaint();
 }
 
+// This Mac's choice for an instrument: 0 Auto, 1 on, 2 off; -1 when it has none (the project's counts).
 int SF2PlayerEditor::drumChoice (const juce::String& key) const
 {
-    if (key.isEmpty()) return 0;
+    if (key.isEmpty()) return -1;
     for (const auto& line : juce::StringArray::fromLines (settings->getValue ("drumChoices")))
         if (line.upToLastOccurrenceOf ("=", false, false) == key)
             return juce::jlimit (0, 2, line.fromLastOccurrenceOf ("=", false, false).getIntValue());
-    return 0;
+    return -1;
 }
 
 void SF2PlayerEditor::setDrumChoice (const juce::String& key, int choice)
@@ -2767,8 +2770,11 @@ void SF2PlayerEditor::setDrumChoice (const juce::String& key, int choice)
     choices.removeEmptyStrings();
     for (int i = choices.size(); --i >= 0;)
         if (choices[i].upToLastOccurrenceOf ("=", false, false) == key) choices.remove (i);
-    if (choice != 0) choices.add (key + "=" + juce::String (choice));
+    choices.add (key + "=" + juce::String (choice));   // Auto too: chosen here, it outranks a project's
     if (key == choiceKey) shownChoice = choice;
+    const auto st = player.state();
+    if (juce::isPositiveAndBelow (st->preset, (int) st->presets.size()) && favouriteKey (*st, st->preset) == key)
+        player.setDrumChoice (st->presets[(size_t) st->preset].bank, st->presets[(size_t) st->preset].number, choice, true);
     settings->setValue ("drumChoices", choices.joinIntoString ("\n"));
     settings->saveIfNeeded();
 }

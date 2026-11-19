@@ -1542,19 +1542,34 @@ int main()
         Player a (testFont, kit);
         const auto& k = st->presets[(size_t) kit];
         const bool autoKit = a.p.drumsActive();
-        a.p.setDrumChoice (k.bank, k.number, 2);
+        a.p.setDrumChoice (k.bank, k.number, 2, true);
         const bool off = ! a.p.drumsActive();
         juce::MemoryBlock saved;
         a.p.getStateInformation (saved);
         Player b (testFont, kit);
         b.p.setStateInformation (saved.getData(), (int) saved.getSize());
         const bool restored = ! b.p.drumsActive() && b.p.drumChoiceOf (k.bank, k.number) == 2;
+        // A project from the first 1.4 builds saved the choice and its instrument apart: still read.
+        bool migrated = false;
+        if (auto xml = juce::AudioProcessor::getXmlFromBinary (saved.getData(), (int) saved.getSize()))
+        {
+            xml->setAttribute ("drumChoice", 2);
+            xml->setAttribute ("drumChoiceFor", k.bank * 128 + k.number);
+            juce::MemoryBlock old;
+            juce::AudioProcessor::copyXmlToBinary (*xml, old);
+            Player d (testFont, kit);
+            d.p.setStateInformation (old.getData(), (int) old.getSize());
+            juce::MemoryBlock again;
+            d.p.getStateInformation (again);
+            const auto reread = juce::AudioProcessor::getXmlFromBinary (again.getData(), (int) again.getSize());
+            migrated = d.p.drumChoiceOf (k.bank, k.number) == 2 && reread != nullptr && ! reread->hasAttribute ("drumChoiceFor");
+        }
         Player c (testFont, melodic);
         const auto& m = st->presets[(size_t) melodic];
         const bool notKit = ! c.p.drumsActive();
-        c.p.setDrumChoice (m.bank, m.number, 1);
+        c.p.setDrumChoice (m.bank, m.number, 1, true);
         const bool forced = c.p.drumsActive();
-        c.p.setDrumChoice (k.bank, k.number, 1);   // a choice for another instrument doesn't count here
+        c.p.setDrumChoice (k.bank, k.number, 1, true);   // a choice for another instrument doesn't count here
         const bool otherInstrument = ! c.p.drumsActive();
         // The kit's pieces are the keys it has samples on, not every key of its range.
         juce::MidiKeyboardState keyState;
@@ -1562,7 +1577,7 @@ int main()
         gaps.lowKey = 35; gaps.highKey = 60;
         gaps.keys.reset (36); gaps.keys.reset (38);
         const bool exact = gaps.noteForKey ('z') == 35 && gaps.noteForKey ('x') == 40 && ! gaps.plays (36);
-        expect (autoKit && off && restored && notKit && forced && otherInstrument && exact,
+        expect (autoKit && off && restored && migrated && notKit && forced && otherInstrument && exact,
                 "Drum Humanize: only where the pads show (the user's choice, saved with the project); pieces on the keys the kit has");
     }
 

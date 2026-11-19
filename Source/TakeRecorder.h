@@ -164,11 +164,11 @@ namespace Take
                 chip.repaint();
                 return;
             }
-            chip.file = juce::File();
             int notes = 0;
             const auto midi = build (events, player.takeBpm.load(), player.takeBarQuarters.load(), notes);
-            if (notes > 0)
+            if (notes > 0)   // a take with nothing in it leaves the last one to drag
             {
+                chip.file = juce::File();
                 auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("Okami SF2 Player takes");
                 folder.createDirectory();
                 for (const auto& old : folder.findChildFiles (juce::File::findFiles, false, "*.mid"))   // a day's worth kept
@@ -182,8 +182,11 @@ namespace Take
                     if (midi.writeTo (out)) chip.file = file;
                 }
             }
-            chip.text = chip.file.existsAsFile() ? juce::String::fromUTF8 ("\xe2\x87\xa9 Drag MIDI \xc2\xb7 ") + juce::String (notes) + (notes == 1 ? " note" : " notes")
-                                                 : juce::String ("Nothing played");
+            if (notes > 0)
+                chip.text = chip.file.existsAsFile() ? juce::String::fromUTF8 ("\xe2\x87\xa9 Drag MIDI \xc2\xb7 ") + juce::String (notes) + (notes == 1 ? " note" : " notes")
+                                                     : juce::String ("Couldn't save the take");
+            else
+                chip.text = chip.file.existsAsFile() ? lastText : juce::String ("Nothing played");
             chip.repaint();
         }
 
