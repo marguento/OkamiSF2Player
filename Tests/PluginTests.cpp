@@ -1638,7 +1638,25 @@ int main()
             });
             if (tail (out, 2.0) > 1.0e-3) { allEnd = false; detail = "stuck with the note-off at sample " + juce::String (offAt) + ", trial " + juce::String (trial); }
         }
-        expect (allEnd, "Drum Humanize: a note-off, a hit again or a switch next to a late hit never leaves a note on", detail);
+        // An all-notes-off on exactly a late hit's sample: the hit never sounds.
+        bool silenced = sustained >= 0;
+        for (int trial = 0; silenced && trial < 6; ++trial)
+        {
+            Player kit (testFont, sustained);
+            const auto& preset = st->presets[(size_t) sustained];
+            kit.p.setDrumChoice (preset.bank, preset.number, 1, false);
+            kit.set ("drumTimingHuman", 1.0f);
+            kit.p.seedHumanize (2000 + trial);
+            juce::Random same (2000 + trial);
+            const int hitAt = (int) (juce::int64) (same.nextDouble() * (rate * 0.020 * (double) 1.0f));
+            const auto out = kit.render (0.5, [&] (int b, juce::MidiBuffer& m)
+            {
+                if (b == 0) m.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
+                if (b == hitAt / block) m.addEvent (juce::MidiMessage::allNotesOff (1), hitAt % block);
+            });
+            if (tail (out, 0.0) > 1.0e-4) { silenced = false; detail = "a hit sounded on the all-notes-off's sample " + juce::String (hitAt); }
+        }
+        expect (allEnd && silenced, "Drum Humanize: a note-off, a hit again or a switch next to a late hit never leaves a note on; an all-notes-off on its sample silences it", detail);
     }
 
     {
