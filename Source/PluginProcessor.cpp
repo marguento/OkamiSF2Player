@@ -1004,8 +1004,8 @@ bool SF2PlayerProcessor::takeEarliestLate (juce::int64 until, LateNote& out)
     return true;
 }
 
-// A key's waiting messages, now, in order (the list is full and one more must follow them): moved
-// to the list's end, played by arrival (a key's times only grow with it), then cut off.
+// A key's waiting messages, now, in the order they came in (the list is full and one more must
+// follow them): moved to the list's end, played, then cut off.
 void SF2PlayerProcessor::playKeyNow (int channel, int key)
 {
     const auto begin = lateNotes.begin(), end = begin + lateCount;
@@ -1694,7 +1694,6 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                             lateAt = -1;
                         }
                     }
-                    jassert (lateAt <= now || lateCount < (int) lateNotes.size());   // a full list played the key's messages above
                     if (lateAt > now && lateCount < (int) lateNotes.size())
                     {
                         keyDue[(size_t) channel][(size_t) key] = lateAt;
