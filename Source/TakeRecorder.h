@@ -147,6 +147,8 @@ namespace Take
             chip.recording = true;   // no drag while recording
             player.takeState.store (player.hostHasTransport.load() ? SF2PlayerProcessor::takeArmed : SF2PlayerProcessor::takeFree);
             seenState = player.takeState.load();
+            auto* peer = getPeer();
+            armedWithKeys = peer != nullptr && peer->isFocused();   // the keys come back at the song's start only if they were here
             started = juce::Time::getMillisecondCounterHiRes();
             update();
             startTimerHz (20);
@@ -181,10 +183,9 @@ namespace Take
                     out.truncate();
                     if (midi.writeTo (out)) chip.file = file;
                 }
-            }
-            if (notes > 0)
                 chip.text = chip.file.existsAsFile() ? juce::String::fromUTF8 ("\xe2\x87\xa9 Drag MIDI \xc2\xb7 ") + juce::String (notes) + (notes == 1 ? " note" : " notes")
                                                      : juce::String ("Couldn't save the take");
+            }
             else
                 chip.text = chip.file.existsAsFile() ? lastText : juce::String ("Nothing played");
             chip.repaint();
@@ -200,6 +201,7 @@ namespace Take
         double started = 0;
         juce::String lastText;
         int seenState = SF2PlayerProcessor::takeIdle;
+        bool armedWithKeys = false;
 
         void drain()
         {
@@ -216,7 +218,7 @@ namespace Take
                 return;
             }
             int notes = 0;
-            for (const auto& e : events) notes += (e.size == 3 && (e.bytes[0] & 0xf0) == 0x90 && e.bytes[2] > 0) ? 1 : 0;
+            for (const auto& e : events) notes += SF2PlayerProcessor::isNoteOnBytes (e.bytes, e.size) ? 1 : 0;
             const int seconds = (int) ((juce::Time::getMillisecondCounterHiRes() - started) / 1000.0);
             chip.text = juce::String::fromUTF8 ("\xe2\x97\x8f ") + juce::String (seconds / 60) + ":" + juce::String (seconds % 60).paddedLeft ('0', 2)
                       + juce::String::fromUTF8 (" \xc2\xb7 ") + juce::String (notes) + (notes == 1 ? " note" : " notes");
@@ -230,7 +232,7 @@ namespace Take
             if (seenState == SF2PlayerProcessor::takeArmed && state != SF2PlayerProcessor::takeArmed)
             {
                 started = juce::Time::getMillisecondCounterHiRes();   // the clock starts with the take
-                if (state == SF2PlayerProcessor::takeWithHost && onSongStarted) onSongStarted();
+                if (state == SF2PlayerProcessor::takeWithHost && armedWithKeys && onSongStarted) onSongStarted();
             }
             seenState = state;
             update();

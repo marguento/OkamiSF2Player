@@ -274,6 +274,7 @@ public:
     // transport runs, in quarter notes of its timeline (for a take that lands on its bars).
     // ppq: where the host's transport was (onGrid); barStart: the ppq its current bar began at
     // (-1: the host didn't say), so time-signature changes before the take still land right.
+    static bool isNoteOnBytes (const juce::uint8* data, int size) { return size == 3 && (data[0] & 0xf0) == 0x90 && data[2] > 0; }
     struct TakeEvent { double seconds = 0, ppq = 0, barStart = -1; bool onGrid = false; juce::uint8 bytes[3] {}; int size = 0; };
     // REC's state, one atomic so the window and the audio thread never disagree: idle, waiting
     // for the host's play (the take starts with the transport), recording with the transport
@@ -293,7 +294,7 @@ private:
     std::bitset<16> channelMoved;   // a clip's program change took this channel off the kit (no Humanize there)
     int seenKitGeneration = -1;
     void playLateNotesNow();
-    bool takeEarliestLate (juce::int64 until, LateNote& out);
+    bool takeEarliestLate (juce::int64 until, LateNote& out, int channel = -1, bool skipNoteOffs = false);
     void playLateNotes (juce::int64 until, juce::int64 blockStart, int& position);
     std::array<int, 16384> overflowIndices {};   // a flood's messages past guitarItems, by their place in the block
     std::array<std::bitset<128>, 16> lateNoteOffs {};   // note-offs past even overflowIndices, played at the block's end
@@ -362,7 +363,13 @@ private:
 
     juce::File currentFile, missingFile;
     int savedBank = -1, savedNumber = -1;   // the project's instrument, found again by bank:program on load
-    bool restoringState = false;
+    std::atomic<bool> restoringState { false };   // read by markProjectChanged from any thread
+    struct Restoring   // restoringState for a scope
+    {
+        std::atomic<bool>& flag; bool was;
+        explicit Restoring (std::atomic<bool>& f) : flag (f), was (f.exchange (true)) {}
+        ~Restoring() { flag.store (was); }
+    };
     SoundFontInfo currentInfo;
     std::vector<Preset> presetList;
     int currentPreset = 0;

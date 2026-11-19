@@ -294,7 +294,7 @@ private:
     juce::String choiceKey;   // the instrument shownChoice was read for
     int shownChoice = 0;      // its drumChoice
     void refreshDrumPads (const SF2PlayerProcessor::State&);
-    int drumChoice (const juce::String& key) const;   // 0 Auto, 1 pads on, 2 pads off
+    int drumChoice (const juce::String& key) const;   // 0 Auto, 1 pads on, 2 pads off; -1: none on this Mac (the project's counts)
     void setDrumChoice (const juce::String& key, int choice);
     void renameDrum (int note, const juce::String& name);
     int drumStageHeight() const { return drumPads.preferredHeight (getWidth() - 52 - humanizeWidth); }

@@ -254,7 +254,7 @@ void SF2PlayerProcessor::runMessageThreadTasks()
     if (currentFile == juce::File() && missingFile != juce::File() && missingFile.existsAsFile() && shouldRetry (missingFile))
     {
         const auto file = missingFile;
-        const juce::ScopedValueSetter<bool> restoring (restoringState, true);
+        const Restoring restoring (restoringState);
         currentFile = file;   // so loadSoundFont keeps the project's instruments
         if (! loadSoundFont (file))
         {
@@ -915,6 +915,11 @@ void SF2PlayerProcessor::handleMidi (const juce::MidiMessage& m)
         // At once, as FluidSynth does, so a note sent with it plays the new instrument and an
         // export renders it exactly. The first switch to an instrument not in memory reads its
         // samples from disk here (dynamic sample loading): a possible glitch live, once.
+        // Humanize's late hits on this channel play first, on the kit they were meant for (from
+        // every path: the block's events, deferred ones, the guitar's). Their note-offs keep
+        // their own time, so a hit isn't cut short.
+        for (LateNote late; takeEarliestLate (std::numeric_limits<juce::int64>::max(), late, channel, true);)
+            handleMidi (juce::MidiMessage (late.bytes, late.size));
         fluid_synth_program_change (synth, channel, m.getProgramChangeNumber());
         // The Guitar panel's Double plays the same instrument: it follows the clip's bank and program.
         fluid_synth_program_change (synth, channel + doubleChannelOffset, m.getProgramChangeNumber());
@@ -961,13 +966,18 @@ void SF2PlayerProcessor::handleMidi (const juce::MidiMessage& m)
 }
 
 // The earliest late note due before `until`, taken off the list (false: none).
-bool SF2PlayerProcessor::takeEarliestLate (juce::int64 until, LateNote& out)
+// channel: only that channel's (-1: any); skipNoteOffs: note-offs stay, at their own time.
+bool SF2PlayerProcessor::takeEarliestLate (juce::int64 until, LateNote& out, int channel, bool skipNoteOffs)
 {
-    if (lateCount == 0) return false;
-    int first = 0;
-    for (int i = 1; i < lateCount; ++i)
-        if (lateNotes[(size_t) i].at < lateNotes[(size_t) first].at) first = i;
-    if (lateNotes[(size_t) first].at >= until) return false;
+    int first = -1;
+    for (int i = 0; i < lateCount; ++i)
+    {
+        const auto& late = lateNotes[(size_t) i];
+        if (channel >= 0 && (late.bytes[0] & 0x0f) != channel) continue;
+        if (skipNoteOffs && ((late.bytes[0] & 0xf0) == 0x80 || ((late.bytes[0] & 0xf0) == 0x90 && late.size == 3 && late.bytes[2] == 0))) continue;
+        if (first < 0 || late.at < lateNotes[(size_t) first].at) first = i;
+    }
+    if (first < 0 || lateNotes[(size_t) first].at >= until) return false;
     out = lateNotes[(size_t) first];
     lateNotes[(size_t) first] = lateNotes[(size_t) --lateCount];
     return true;
@@ -1434,8 +1444,12 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     keyboardState.processNextMidiBuffer (playedHere, 0, numSamples, true);
     for (const auto metadata : midi)
         keyboardState.processNextMidiEvent (metadata.getMessage());
+    bool playedNoteOn = false;   // a note played in the window (not a key let go)
     for (const auto metadata : playedHere)
+    {
         midi.addEvent (metadata.data, metadata.numBytes, metadata.samplePosition);
+        playedNoteOn = playedNoteOn || isNoteOnBytes (metadata.data, metadata.numBytes);
+    }
     {
         // REC waiting for play starts with the transport; a take with the transport ends with it.
         const bool playingNow = blockPosition && blockPosition->getIsPlaying();
@@ -1443,11 +1457,8 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         hostPlaying.store (playingNow, std::memory_order_relaxed);
         int expected = playingNow ? takeArmed : takeWithHost;
         takeState.compare_exchange_strong (expected, playingNow ? takeWithHost : takeEndedByHost);
-        bool noteOn = false;   // played without starting the song (a note, not a key let go): a take of its own, at once
-        for (const auto metadata : playedHere)
-            noteOn = noteOn || (metadata.numBytes == 3 && (metadata.data[0] & 0xf0) == 0x90 && metadata.data[2] > 0);
-        expected = takeArmed;
-        if (! playingNow && noteOn)
+        expected = takeArmed;   // played without starting the song: a take of its own, at once
+        if (! playingNow && playedNoteOn)
             takeState.compare_exchange_strong (expected, takeFree);
     }
     if (const int take = takeState.load (std::memory_order_relaxed); (take == takeWithHost || take == takeFree) && ! playedHere.isEmpty())
@@ -1581,18 +1592,6 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                     juce::MidiMessage message (metadata.data, metadata.numBytes);
                     noteWheelPosition (message);
                     const int channel = message.getChannel() - 1;
-                    if (message.isProgramChange())   // the channel's late hits play on the kit they were meant for, first, in order
-                        for (;;)
-                        {
-                            int first = -1;
-                            for (int i = 0; i < lateCount; ++i)
-                                if ((lateNotes[(size_t) i].bytes[0] & 0x0f) == channel && (first < 0 || lateNotes[(size_t) i].at < lateNotes[(size_t) first].at))
-                                    first = i;
-                            if (first < 0) break;
-                            const auto late = lateNotes[(size_t) first];
-                            lateNotes[(size_t) first] = lateNotes[(size_t) --lateCount];
-                            handleMidi (juce::MidiMessage (late.bytes, late.size));
-                        }
                     if (message.isAllNotesOff() || message.isAllSoundOff())   // nothing on that channel waits past it
                     {
                         for (int i = lateCount; --i >= 0;)
@@ -1968,7 +1967,7 @@ void SF2PlayerProcessor::setStateInformation (const void* data, int sizeInBytes)
     }
     parameters.replaceState (state);
 
-    const juce::ScopedValueSetter<bool> restoring (restoringState, true);
+    const Restoring restoring (restoringState);
     if (file.existsAsFile())
     {
         currentFile = file;   // so loadSoundFont keeps the saved preset

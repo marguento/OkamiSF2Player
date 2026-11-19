@@ -1563,6 +1563,13 @@ int main()
             d.p.getStateInformation (again);
             const auto reread = juce::AudioProcessor::getXmlFromBinary (again.getData(), (int) again.getSize());
             migrated = d.p.drumChoiceOf (k.bank, k.number) == 2 && reread != nullptr && ! reread->hasAttribute ("drumChoiceFor");
+            xml->setAttribute ("drumChoice", 0);   // the usual old save: no choice at all
+            xml->setAttribute ("drumChoiceFor", -1);
+            juce::MemoryBlock none;
+            juce::AudioProcessor::copyXmlToBinary (*xml, none);
+            Player e (testFont, kit);
+            e.p.setStateInformation (none.getData(), (int) none.getSize());
+            migrated = migrated && e.p.drumChoice.load() == -1 && e.p.drumChoiceOf (0, 0) == -1;
         }
         Player c (testFont, melodic);
         const auto& m = st->presets[(size_t) melodic];
