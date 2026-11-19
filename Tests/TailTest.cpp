@@ -69,7 +69,7 @@ int main (int argc, char** argv)
 
     juce::ScopedJuceInitialiser_GUI gui;
     const juce::File sf2 (argv[1]);
-    const int preset = argc > 2 ? juce::String (argv[2]).getIntValue() : 0;
+    int preset = argc > 2 ? juce::String (argv[2]).getIntValue() : 0;
     const double rate = 48000.0;
     const int block = 480;
 
@@ -161,6 +161,14 @@ int main (int argc, char** argv)
     {
         SF2PlayerProcessor p;
         p.loadSoundFont (sf2);
+        if (const char* id = std::getenv ("BANKPROG"))   // "128:0": that instrument instead of the index
+        {
+            const auto parts = juce::StringArray::fromTokens (id, ":", "");
+            const auto list = p.presets();
+            for (int i = 0; i < (int) list.size(); ++i)
+                if (parts.size() == 2 && list[(size_t) i].bank == parts[0].getIntValue() && list[(size_t) i].number == parts[1].getIntValue())
+                    preset = i;
+        }
         p.selectPreset (preset);
         if (argc > 5)
             p.parameters.getParameter ("sendOutputs")->setValueNotifyingHost (1.0f);
@@ -228,6 +236,14 @@ int main (int argc, char** argv)
                                      juce::Time::highResolutionTicksToSeconds (juce::Time::getHighResolutionTicks() - start) * 1000.0 / 60.0,
                                      pads->getWidth(), pads->getHeight());
                     }
+                }
+        if (const char* hits = std::getenv ("HITS"))   // "36,42,49": the drum kit caught a few frames after those hits
+            for (auto* child : editor->getChildren())
+                if (auto* pads = dynamic_cast<DrumKit::Pads*> (child); pads != nullptr && pads->isVisible())
+                {
+                    for (const auto& note : juce::StringArray::fromTokens (hits, ",", ""))
+                        p.keyboardState.noteOn (1, note.getIntValue(), 1.0f);
+                    for (int frame = 0; frame < 4; ++frame) pads->tick();
                 }
         auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, 2.0f);
         juce::FileOutputStream out { juce::File { juce::String (argv[4]) } };

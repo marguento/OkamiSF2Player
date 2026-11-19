@@ -13,10 +13,11 @@ Ableton again, as faithfully as possible: at its defaults it plays exactly what 
 not included:** download it separately from that page and open it in the plugin.
 
 **It plays any SoundFont**, not only that one: any General MIDI set, piano, drum kit or synth
-in .sf2 or .sf3 (thousands are free on musical-artifacts.com and elsewhere). Drum kits (bank 128, or any
-instrument named a kit) get **pads** (new in 1.4): one per key, named by the General MIDI drum
-map (C1 Kick, D1 Snare, F#1 Closed Hat…), lit as they play, and renamed with a double-click for
-kits that map their keys their own way.
+in .sf2 or .sf3 (thousands are free on musical-artifacts.com and elsewhere). Drum kits (bank 128, an
+instrument named a kit, or one laid out like one) get the **Drum Kit panel** (new in 1.4): a drum
+set that moves as it plays, or a pad per key named by the General MIDI drum map; play it with
+the computer's keys (Z kick, X snare, A hi-hat…), and **Humanize** its velocity and timing.
+**REC** keeps what you play in the window and hands it to the host as a MIDI clip to drag.
 
 **Guitars play like a guitarist** (new in 1.3): with a guitar loaded, the **Guitar panel** turns
 the keyboard into a guitar the way MusicLab RealGuitar does. Chords taken in the Main zone are
@@ -33,6 +34,8 @@ chorus: [docs/HQ-Orchestral-sends.md](docs/HQ-Orchestral-sends.md).
 ![Okami SF2 Player playing the HQ Orchestral collection's violin](docs/screenshot.png)
 
 ![The Guitar panel strumming a C chord with the Folk pattern](docs/guitar.png)
+
+![The Drum Kit panel playing the HQ Orchestral collection's Standard kit](docs/drums.png)
 
 ## Download and install
 
@@ -111,7 +114,8 @@ or credential file, or a personal pattern (listed in the ignored `scripts/releas
 | `Source/PluginEditor.h/.cpp` | the look (`SF2Look`), the keyboard with key ranges and the split tint, every control, instrument lists by family with favorites, effect presets, preview |
 | `Source/ChordName.h` | chord names from pitch classes (about 45 types, partial chords, slash chords) |
 | `Source/GuitarNeck.h` | the Guitar panel's strip: chord name, six-string neck, strum arrow, palm and FX lights, the pattern's name |
-| `Source/DrumKit.h` | drum kits: which instruments are kits, General MIDI's drum names, the DRUM KIT panel's pads |
+| `Source/DrumKit.h` | drum kits: which instruments are kits, General MIDI's drum names, the DRUM KIT panel (kit, pads, computer keys) |
+| `Source/TakeRecorder.h` | REC and Drag MIDI: a take of what's played in the window, as a MIDI file to drag onto a track |
 | `Source/GuitarPresets.h` | the Guitar panel's presets: every control it holds, the built-in ones, the user's (as XML in the settings) |
 | `Source/GuitarEngine.h` | the Guitar panel's engine: keyboard zones, modes, chords recognized and voiced by position, strums, basses and strings, palm-muted, humanized, doubled; fixed arrays, audio thread only |
 | `Source/Guide.h` | the ? button's guide and About |
