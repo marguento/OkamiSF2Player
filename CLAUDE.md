@@ -43,7 +43,7 @@ GitHub noreply email (`git config user.email` is set to it in this repo).
 - A user-visible change bumps `VERSION` in CMakeLists.txt and adds a CHANGELOG.md line.
 - Review loop (PLAYBOOK 19c): `/code-review high <range>` after each batch, fix, review the
   fixes again, until a pass comes back clean. Nine passes on Nov 10-11, 2026: the first eight each found real
-  issues in the previous fixes (mostly threading), the ninth (over 1.2.6) was clean. Eight more on Nov 12-17 for 1.3.0's guitar panel: the first seven found issues (floods, wheels handed back, the panel choice at opening), the eighth was clean. Start again
+  issues in the previous fixes (mostly threading), the ninth (over 1.2.6) was clean. Eight more on Nov 12-17 for 1.3.0's guitar panel: the first seven found issues (floods, wheels handed back, the panel choice at opening), the eighth was clean. Sixteen on Nov 19 for 1.4.0's drums and REC: the first fifteen found issues, most in Drum Humanize's late notes (ordering against note-offs, switches, all-notes-off, floods); it settled on waiting only within a key, with instrument switches playing at once, and the sixteenth was clean. Start again
   after the next batch of changes.
 - Measure, don't guess (PLAYBOOK gotcha 20d): `TailTest <file> <preset> perf` prints CPU per
   block on the Release build; `PluginTests` fails above 30 % for 64 string notes.
