@@ -1678,20 +1678,20 @@ int main()
             if (seed < 0) { restarted = false; detail = "no seed leaves the second hit waiting past the block"; }
             else
             {
-            Player kit (testFont, sustained);
-            makeKit (kit, seed);
-            kit.render ((double) (5 * block) / rate, [&] (int b, juce::MidiBuffer& m)
-            {
-                if (b == 0) m.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
-                if (b == secondAt / block)
+                Player kit (testFont, sustained);
+                makeKit (kit, seed);
+                kit.render ((double) (5 * block) / rate, [&] (int b, juce::MidiBuffer& m)
                 {
-                    m.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);   // waits past the block
-                    m.addEvent (juce::MidiMessage::noteOff (1, 60), 1);                       // the first hit's end: waits behind it
-                }
-            });
-            kit.p.prepareToPlay (rate, block);
-            const auto after = kit.render (2.0, [] (int, juce::MidiBuffer&) {});
-            if (tail (after, 1.5) > 1.0e-3) { restarted = false; detail = "a note kept sounding after the audio restarted (seed " + juce::String (seed) + ")"; }
+                    if (b == 0) m.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
+                    if (b == secondAt / block)
+                    {
+                        m.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);   // waits past the block
+                        m.addEvent (juce::MidiMessage::noteOff (1, 60), 1);                       // the first hit's end: waits behind it
+                    }
+                });
+                kit.p.prepareToPlay (rate, block);
+                const auto after = kit.render (2.0, [] (int, juce::MidiBuffer&) {});
+                if (tail (after, 1.5) > 1.0e-3) { restarted = false; detail = "a note kept sounding after the audio restarted (seed " + juce::String (seed) + ")"; }
             }
         }
         // A flood on one key fills the list: what can't wait plays after that key's waiting messages,

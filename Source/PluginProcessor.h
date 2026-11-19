@@ -303,7 +303,6 @@ private:
     std::array<std::array<juce::int64, 128>, 16> keyDue {};
     std::array<LateNote, 512> lateNotes {};
     int lateCount = 0;
-    std::array<LateNote, 512> keyPicked {};   // playKeyNow's scratch (no allocation on the audio thread)
     juce::uint64 lateOrder = 0;   // arrival order, for messages waiting until the same sample
     juce::int64 nextLateAt = std::numeric_limits<juce::int64>::max();   // the earliest waiting time (none: max)
     juce::Random humanRandom;

@@ -1004,22 +1004,18 @@ bool SF2PlayerProcessor::takeEarliestLate (juce::int64 until, LateNote& out)
     return true;
 }
 
-// A key's waiting messages, now, in order (the list is full and one more must follow them). One
-// pass picks them out, then they play by arrival (a key's times only grow with it), then the list
-// closes up once.
+// A key's waiting messages, now, in order (the list is full and one more must follow them): moved
+// to the list's end, played by arrival (a key's times only grow with it), then cut off.
 void SF2PlayerProcessor::playKeyNow (int channel, int key)
 {
-    int picked = 0, kept = 0;
-    for (int i = 0; i < lateCount; ++i)
-    {
-        const auto& late = lateNotes[(size_t) i];
-        if (channelOf (late) == channel && late.bytes[1] == (juce::uint8) key) keyPicked[(size_t) picked++] = late;
-        else lateNotes[(size_t) kept++] = late;
-    }
-    lateCount = kept;
-    std::sort (keyPicked.begin(), keyPicked.begin() + picked, [] (const LateNote& a, const LateNote& b) { return a.order < b.order; });
-    for (int i = 0; i < picked; ++i)
-        handleMidi (juce::MidiMessage (keyPicked[(size_t) i].bytes, keyPicked[(size_t) i].size));
+    const auto begin = lateNotes.begin(), end = begin + lateCount;
+    // std::partition doesn't allocate (stable_partition may); the order of what stays doesn't matter.
+    const auto mine = std::partition (begin, end, [&] (const LateNote& late)
+                                      { return channelOf (late) != channel || late.bytes[1] != (juce::uint8) key; });
+    std::sort (mine, end, [] (const LateNote& a, const LateNote& b) { return a.order < b.order; });
+    lateCount = (int) (mine - begin);
+    for (auto it = mine; it != end; ++it)
+        handleMidi (juce::MidiMessage (it->bytes, it->size));
     keyDue[(size_t) channel][(size_t) key] = -1;
     refreshNextLate();
 }
@@ -1685,7 +1681,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                         const bool spare = lateCount < (int) lateNotes.size() * 3 / 4;
                         const auto waits = keyDue[(size_t) channel][(size_t) key];
                         if (message.isAftertouch() && waits > now && ! spare)
-                            continue;   // pressure for a hit that hasn't sounded, with no room to spare: dropped
+                            continue;   // pressure behind a waiting message of its key, with no room to spare: dropped
                         if (kitNote && maxDelay >= 1.0 && spare)
                             lateAt = now + (juce::int64) (humanRandom.nextDouble() * maxDelay);
                         if (waits > now)
@@ -1698,6 +1694,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                             lateAt = -1;
                         }
                     }
+                    jassert (lateAt <= now || lateCount < (int) lateNotes.size());   // a full list played the key's messages above
                     if (lateAt > now && lateCount < (int) lateNotes.size())
                     {
                         keyDue[(size_t) channel][(size_t) key] = lateAt;
