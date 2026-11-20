@@ -154,9 +154,9 @@ public:
     // saw); false: something else changed it meanwhile (a state restored), so it's read again.
     bool offerDrumChoice (int expected, int bank, int number, int choice)
     {
-        const int packed = (bank * 128 + number) * 4 + juce::jlimit (0, 2, choice);
-        return packed == expected || drumChoice.compare_exchange_strong (expected, packed);
+        return drumChoice.compare_exchange_strong (expected, packDrumChoice (bank, number, choice));
     }
+    static int packDrumChoice (int bank, int number, int choice) { return (bank * 128 + number) * 4 + juce::jlimit (0, 2, choice); }
     // The choice the project holds for that instrument (-1: none, the editor's settings decide).
     int drumChoiceOf (int bank, int number) const
     {
@@ -304,7 +304,7 @@ public:
     std::atomic<int> takeState { takeIdle };
     juce::File lastTakeFile;   // message thread: the last take, kept while the window is closed
     juce::String lastTakeText;
-    std::atomic<bool> hostPlaying { false }, hostHasTransport { false };   // the last block's transport (for the window)
+    std::atomic<bool> hostHasTransport { false };   // the last block had a playhead (the window arms REC only then)
     juce::AbstractFifo takeFifo { 8192 };
     std::vector<TakeEvent> takeEvents = std::vector<TakeEvent> (8192);   // on the heap: hosts and tests may keep the processor on the stack
     std::atomic<double> takeBpm { 120.0 }, takeBarQuarters { 4.0 };
@@ -313,6 +313,24 @@ private:
     // sample. Audio thread.
     struct LateNote { juce::int64 at; juce::uint64 order; juce::uint8 bytes[3]; int size; };
     static int channelOf (const LateNote& late) { return late.bytes[0] & 0x0f; }
+    // General MIDI's keys that cut each other off (exclusive classes) share one waiting slot.
+    static int waitSlot (int key)
+    {
+        switch (key)
+        {
+            case 44: case 46: return 42;   // pedal, open hi-hat: with the closed one
+            case 81: return 80;            // open triangle: with the muted one
+            case 72: return 71;            // long whistle: with the short one
+            case 74: return 73;            // long guiro: with the short one
+            case 79: return 78;            // open cuica: with the muted one
+            default: return key;
+        }
+    }
+    // An all-notes-off or all-sound-off, in raw bytes (one definition for every place that asks).
+    static bool isAllOffBytes (const juce::uint8* data, int size)
+    {
+        return size == 3 && (data[0] & 0xf0) == 0xb0 && (data[1] == 120 || data[1] == 123);
+    }
     static bool earlier (const LateNote& a, const LateNote& b) { return a.at < b.at || (a.at == b.at && a.order < b.order); }
     static bool isNoteOffBytes (const juce::uint8* data, int size)
     {

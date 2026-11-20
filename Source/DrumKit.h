@@ -50,11 +50,12 @@ namespace DrumKit
     // has a kit's layout, so the layout alone doesn't make it a kit.
     inline bool soundsMelodic (const juce::String& name)
     {
-        const auto lower = name.toLowerCase();
-        for (const char* melodic : { "glock", "celest", "marimba", "xylo", "vibra", "bell", "chime", "piano", "harp", "music box",
-                                     "kalimba", "mallet", "timpani", "tubular", "organ", "guitar", "bass", "string", "voice",
-                                     "choir", "flute", "horn", "trumpet", "sax", "violin", "cello", "synth lead", "pad" })
-            if (lower.contains (melodic)) return true;
+        juce::StringArray words;   // whole words: "808 Pads" or "Bass Drum" stay drums
+        words.addTokens (name.toLowerCase(), " -_/()[].,:&+", "");
+        for (const char* melodic : { "glockenspiel", "glock", "celesta", "celeste", "marimba", "xylophone", "vibraphone", "vibes",
+                                     "bells", "chimes", "piano", "harp", "kalimba", "mallets", "timpani", "tubular", "organ",
+                                     "guitar", "strings", "voice", "choir", "flute", "horn", "trumpet", "sax", "violin", "cello" })
+            if (words.contains (melodic)) return true;
         return false;
     }
 

@@ -288,6 +288,16 @@ private:
     static constexpr int humanizeWidth = 150;
     juce::Rectangle<int> humanizeArea;   // its frame and title, painted   // the panel's two views (remembered: "drumView")
     void showDrumView (bool kit);
+    struct DrumRefresh
+    {
+        const void* state = nullptr; int preset = -1, presets = 0; bool guitar = false; int projectChoice = -2, shown = -2;
+        bool operator== (const DrumRefresh& o) const
+        {
+            return state == o.state && preset == o.preset && presets == o.presets && guitar == o.guitar
+                && projectChoice == o.projectChoice && shown == o.shown;
+        }
+    };
+    DrumRefresh lastDrumRefresh;   // what refreshDrumPads last ran for
     int seenProjectChoice = -2;   // the processor's drum choice as the window last saw it (-2: not yet)
     int heightTriedWidth = -1;   // the width the kit last asked the window's height for
     bool drumsShown = false;

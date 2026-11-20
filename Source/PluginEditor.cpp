@@ -2673,6 +2673,10 @@ void SF2PlayerEditor::showPanelMenu()
 // DRUM KIT: the pads show for a kit (or an instrument forced on), never with the Guitar panel.
 void SF2PlayerEditor::refreshDrumPads (const SF2PlayerProcessor::State& st)
 {
+    // The 20 Hz timer calls this: nothing to do unless the state, the panel or the project's choice moved.
+    const DrumRefresh now { &st, st.preset, (int) st.presets.size(), guitarShown, player.drumChoice.load(), shownChoice };
+    if (now == lastDrumRefresh) return;
+    lastDrumRefresh = now;
     const bool valid = juce::isPositiveAndBelow (st.preset, (int) st.presets.size());
     const auto key = valid ? favouriteKey (st, st.preset) : juce::String();
     // The settings read once per instrument; the project's choice when they have none (another
@@ -2695,8 +2699,12 @@ void SF2PlayerEditor::refreshDrumPads (const SF2PlayerProcessor::State& st)
     // Humanize plays where the pads show, even once the window is closed (saved with the project).
     // Handed over only if the project's choice is still the one the window saw: one restored in
     // between wins, and the next tick reads it.
-    if (valid && player.offerDrumChoice (seenProjectChoice, st.presets[(size_t) st.preset].bank, st.presets[(size_t) st.preset].number, choice))
-        seenProjectChoice = player.drumChoice.load();
+    if (valid)
+    {
+        const auto& preset = st.presets[(size_t) st.preset];
+        if (player.offerDrumChoice (seenProjectChoice, preset.bank, preset.number, choice))
+            seenProjectChoice = SF2PlayerProcessor::packDrumChoice (preset.bank, preset.number, choice);   // what it wrote, not a later read
+    }
     const int rowsBefore = drumPads.rows();
     if (show && key != drumKey)
     {

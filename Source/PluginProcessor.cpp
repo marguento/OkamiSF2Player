@@ -579,15 +579,10 @@ void SF2PlayerProcessor::playDeferredMidi (const GuitarEngine::Settings* guitarS
     {
         const auto& m = deferredEvents[(size_t) i];
         const int channel = m.getChannel() - 1;
-        if (guitarSettings == nullptr && human != nullptr)
-        {
-            playOrWait (m, at, *human);   // the block's own rules: Humanize, and waiting for its key
-            continue;
-        }
         if (guitarSettings == nullptr)
         {
-            noteWheelPosition (m);
-            if (m.isNoteOn()) { lastPlayedVelocity = m.getVelocity(); if (guitarPanelActive()) playedGuitar = true; }
+            if (human != nullptr) playOrWait (m, at, *human);   // the block's own rules: Humanize, and waiting for its key
+            continue;
         }
         if (guitarSettings != nullptr && juce::isPositiveAndBelow (channel, numMidiChannels))
         {
@@ -1018,7 +1013,7 @@ void SF2PlayerProcessor::playKeyNow (int channel, int key)
     const auto begin = lateNotes.begin(), end = begin + lateCount;
     // std::partition doesn't allocate (stable_partition may); the order of what stays doesn't matter.
     const auto mine = std::partition (begin, end, [&] (const LateNote& late)
-                                      { return channelOf (late) != channel || late.bytes[1] != (juce::uint8) key; });
+                                      { return channelOf (late) != channel || waitSlot (late.bytes[1] & 0x7f) != key; });
     std::sort (mine, end, [] (const LateNote& a, const LateNote& b) { return a.order < b.order; });
     lateCount = (int) (mine - begin);
     for (auto it = mine; it != end; ++it)
@@ -1058,7 +1053,7 @@ void SF2PlayerProcessor::playOrWait (juce::MidiMessage message, juce::int64 now,
     noteWheelPosition (message);
     const int channel = message.getChannel() - 1;
     const bool onChannel = juce::isPositiveAndBelow (channel, 16);
-    if (onChannel && (message.isAllNotesOff() || message.isAllSoundOff()))   // nothing on that channel waits past it (only notes wait)
+    if (onChannel && isAllOffBytes (message.getRawData(), message.getRawDataSize()))   // nothing on that channel waits past it (only notes wait)
     {
         for (int i = lateCount; --i >= 0;)
             if (channelOf (lateNotes[(size_t) i]) == channel)
@@ -1080,7 +1075,9 @@ void SF2PlayerProcessor::playOrWait (juce::MidiMessage message, juce::int64 now,
     }
     juce::int64 lateAt = -1;
     const bool keyMessage = onChannel && message.getRawDataSize() == 3 && (message.isNoteOnOrOff() || message.isAftertouch());
-    const int key = keyMessage ? message.getNoteNumber() & 0x7f : 0;
+    // Keys that cut each other off (a kit's hi-hat: closed, pedal, open) wait as one, so a later
+    // closed hat never sounds before the open one it must stop.
+    const int key = keyMessage ? waitSlot (message.getNoteNumber() & 0x7f) : 0;
     if (keyMessage)
     {
         // A quarter of the list stays for what must follow a waiting hit (its note-off,
@@ -1089,7 +1086,7 @@ void SF2PlayerProcessor::playOrWait (juce::MidiMessage message, juce::int64 now,
         const auto waits = keyDue[(size_t) channel][(size_t) key];
         if (message.isAftertouch() && waits > now && ! spare)
             return;   // pressure behind a waiting message of its key, with no room to spare: dropped
-        auto& delay = keyDelay[(size_t) channel][(size_t) key];   // the key's last hit's Humanize delay
+        auto& delay = keyDelay[(size_t) channel][(size_t) (message.getNoteNumber() & 0x7f)];   // the key's last hit's Humanize delay
         if (message.isNoteOn())
             delay = kitNote && human.maxDelay >= 1.0 && spare ? (juce::int32) (humanRandom.nextDouble() * human.maxDelay) : 0;
         // A hit waits its delay; its note-off waits as long, so the hit keeps the length played.
@@ -1606,7 +1603,6 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         // REC waiting for play starts with the transport; a take with the transport ends with it.
         const bool playingNow = blockPosition && blockPosition->getIsPlaying();
         hostHasTransport.store (blockPosition.hasValue(), std::memory_order_relaxed);
-        hostPlaying.store (playingNow, std::memory_order_relaxed);
         int expected = playingNow ? takeArmed : takeWithHost;
         takeState.compare_exchange_strong (expected, playingNow ? takeWithHost : takeEndedByHost);
         expected = takeArmed;   // played without starting the song: a take of its own, at once
@@ -1744,10 +1740,10 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
             int start = 0;
             playLateNotes (blockStart + 1, blockStart, start);
         }
+        else if (lateCount > 0)   // the guitar took over: Humanize's late notes play now, before anything after them
+            playLateNotesNow();
         playDeferredMidi (useGuitar ? &guitarSettings : nullptr, blockStart, useGuitar ? nullptr : &human);
 
-        if (useGuitar && lateCount > 0)   // the guitar took over: Humanize's late notes play now (the guitar renders the block)
-            playLateNotesNow();
         if (! useGuitar)
         {
 
@@ -1759,7 +1755,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                 // What waits until this sample or before it plays first (it came in earlier), so what
                 // still waits is due strictly later and an event that must follow it can wait for it.
                 // An all-notes-off on that very sample is the exception: what it silences doesn't start.
-                const bool allOff = metadata.numBytes == 3 && (metadata.data[0] & 0xf0) == 0xb0 && (metadata.data[1] == 120 || metadata.data[1] == 123);
+                const bool allOff = isAllOffBytes (metadata.data, metadata.numBytes);
                 playLateNotes (blockStart + eventTime + (allOff ? 0 : 1), blockStart, position);
                 render (position, eventTime);
                 position = eventTime;
