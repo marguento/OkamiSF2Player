@@ -579,12 +579,14 @@ void SF2PlayerProcessor::playDeferredMidi (const GuitarEngine::Settings* guitarS
     {
         const auto& m = deferredEvents[(size_t) i];
         const int channel = m.getChannel() - 1;
+        jassert ((guitarSettings == nullptr) != (human == nullptr));   // one way or the other, never neither
         if (guitarSettings == nullptr)
         {
             if (human != nullptr) playOrWait (m, at, *human);   // the block's own rules: Humanize, and waiting for its key
+            else handleMidi (m);
             continue;
         }
-        if (guitarSettings != nullptr && juce::isPositiveAndBelow (channel, numMidiChannels))
+        if (juce::isPositiveAndBelow (channel, numMidiChannels))
         {
             if (guitarController (m, *guitarSettings, channel, at)) continue;   // a wheel with a job
             if (m.isNoteOn()) { if (GuitarEngine::inMain (m.getNoteNumber())) lastPlayedVelocity = m.getVelocity(); playedGuitar = true; guitar.noteOn (*guitarSettings, channel, m.getNoteNumber(), m.getVelocity(), at); continue; }
@@ -740,6 +742,7 @@ void SF2PlayerProcessor::swapEngine (std::unique_ptr<Engine> fresh)
         guitar.reset();   // its notes were in the old engine
         guitarEngaged = false;
         clearWheels();   // the new engine's voices start in tune
+        dropLateHits();   // Humanize's waiting hits were meant for the old instrument
         if (engine != nullptr)
         {
             applyEffectSettings (true);
@@ -850,16 +853,8 @@ void SF2PlayerProcessor::prepareToPlay (double newSampleRate, int maximumExpecte
         // Humanize's late hits (and pressure for them) belong to the timeline that stopped (an
         // export starting shouldn't play one); a waiting note-off still ends its note, first thing
         // on the new timeline.
-        int kept = 0;
-        for (int i = 0; i < lateCount; ++i)
-            if (const auto& late = lateNotes[(size_t) i]; isNoteOffBytes (late.bytes, late.size))
-            {
-                lateNotes[(size_t) kept] = lateNotes[(size_t) i];
-                lateNotes[(size_t) kept++].at = 0;
-            }
-        lateCount = kept;
-        refreshNextLate();
-        forgetKeyWaits();
+        dropLateHits();
+        kitGeneration.fetch_add (1);   // a rebuilt engine plays the kit on every channel again
     }
     toneFrequency = 0.0f;   // recompute the filters for this rate
     for (auto& channel : toneFilters)
@@ -1008,12 +1003,12 @@ bool SF2PlayerProcessor::takeEarliestLate (juce::int64 until, LateNote& out)
 
 // A key's waiting messages, now, in the order they came in (the list is full and one more must
 // follow them): moved to the list's end, played, then cut off.
-void SF2PlayerProcessor::playKeyNow (int channel, int key)
+void SF2PlayerProcessor::playKeyNow (int channel, int key, int splitBelow)
 {
     const auto begin = lateNotes.begin(), end = begin + lateCount;
     // std::partition doesn't allocate (stable_partition may); the order of what stays doesn't matter.
     const auto mine = std::partition (begin, end, [&] (const LateNote& late)
-                                      { return channelOf (late) != channel || waitSlot (late.bytes[1] & 0x7f) != key; });
+                                      { return channelOf (late) != channel || slotOf (late.bytes[1] & 0x7f, splitBelow) != key; });
     std::sort (mine, end, [] (const LateNote& a, const LateNote& b) { return a.order < b.order; });
     lateCount = (int) (mine - begin);
     for (auto it = mine; it != end; ++it)
@@ -1077,7 +1072,7 @@ void SF2PlayerProcessor::playOrWait (juce::MidiMessage message, juce::int64 now,
     const bool keyMessage = onChannel && message.getRawDataSize() == 3 && (message.isNoteOnOrOff() || message.isAftertouch());
     // Keys that cut each other off (a kit's hi-hat: closed, pedal, open) wait as one, so a later
     // closed hat never sounds before the open one it must stop.
-    const int key = keyMessage ? waitSlot (message.getNoteNumber() & 0x7f) : 0;
+    const int key = keyMessage ? slotOf (message.getNoteNumber() & 0x7f, human.splitBelow) : 0;
     if (keyMessage)
     {
         // A quarter of the list stays for what must follow a waiting hit (its note-off,
@@ -1098,7 +1093,7 @@ void SF2PlayerProcessor::playOrWait (juce::MidiMessage message, juce::int64 now,
         {
             // No room to wait: the key's waiting messages play now, in order, then this
             // one, so its order holds whatever the list holds (a rare flood).
-            playKeyNow (channel, key);
+            playKeyNow (channel, key, human.splitBelow);
             lateAt = -1;
         }
     }
@@ -1123,6 +1118,22 @@ void SF2PlayerProcessor::playLateNotesNow()
     while (takeEarliestLate (std::numeric_limits<juce::int64>::max(), late))
         handleMidi (juce::MidiMessage (late.bytes, late.size));
     forgetKeyWaits();   // nothing waits: what comes next needn't wait for these
+}
+
+// Humanize's waiting hits are dropped (their timeline or instrument is gone); a waiting note-off
+// still ends its note, first thing next. Under engineLock or on the audio thread.
+void SF2PlayerProcessor::dropLateHits()
+{
+    int kept = 0;
+    for (int i = 0; i < lateCount; ++i)
+        if (const auto& late = lateNotes[(size_t) i]; isNoteOffBytes (late.bytes, late.size))
+        {
+            lateNotes[(size_t) kept] = lateNotes[(size_t) i];
+            lateNotes[(size_t) kept++].at = 0;
+        }
+    lateCount = kept;
+    refreshNextLate();
+    forgetKeyWaits();
 }
 
 // The keys' waiting times and Humanize delays, for one channel or all (-1), where messages leave
@@ -2070,7 +2081,7 @@ void SF2PlayerProcessor::setStateInformation (const void* data, int sizeInBytes)
             const int instrument = (int) state.getProperty ("drumChoiceFor", -1);
             packed = instrument >= 0 && juce::isPositiveAndBelow (packed, 3) ? instrument * 4 + packed : -1;
         }
-        drumChoice.store (packed >= 0 && packed % 4 <= 2 && packed / 4 < 16384 * 128 ? packed : -1);   // banks up to 14 bits
+        restoredDrumChoice = packed >= 0 && packed % 4 <= 2 && packed / 4 < 16384 * 128 ? packed : -1;   // banks up to 14 bits
         state.removeProperty ("drumChoice", nullptr);
         state.removeProperty ("drumChoiceFor", nullptr);
     }
@@ -2095,6 +2106,9 @@ void SF2PlayerProcessor::setStateInformation (const void* data, int sizeInBytes)
         restoring->bank = savedBank, restoring->number = savedNumber;
         restoring->layerBank = savedLayerBank, restoring->layerNumber = savedLayerNumber;
         exchangePublished (std::move (restoring));
+        // Only now (the window sees no instrument in the restoring snapshot, so it offers none):
+        // stored earlier, an open window could read the old instrument and write over it.
+        drumChoice.store (restoredDrumChoice);
     }
     parameters.replaceState (state);
 

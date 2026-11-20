@@ -307,9 +307,8 @@ namespace DrumKit
         void paintKitCached (juce::Graphics& g)
         {
             const float pixels = g.getInternalContext().getPhysicalPixelScaleFactor();
-            const auto key = juce::String (getWidth()) + "x" + juce::String (getHeight()) + "@" + juce::String (pixels, 2)
-                           + ":" + juce::String (lowKey) + "-" + juce::String (highKey) + ":" + juce::String (std::hash<std::bitset<128>>{} (keys)) + (hasKeyboardFocus (false) ? "f" : "");
-            if (key != restKey || ! restImage.isValid())
+            const RestKey key { getWidth(), getHeight(), lowKey, highKey, pixels, keys, hasKeyboardFocus (false) };   // no strings each frame
+            if (! (key == restKey) || ! restImage.isValid())
             {
                 restKey = key;
                 restImage = juce::Image (juce::Image::ARGB, juce::jmax (1, juce::roundToInt ((float) getWidth() * pixels)),
@@ -701,10 +700,17 @@ namespace DrumKit
         }
         void handleNoteOff (juce::MidiKeyboardState*, int, int, float) override {}
         int hovered = -1, mouseNote = -1;
-        bool drawingRest = false;
-        juce::Rectangle<float> lastMoving;   // where the kit moved last frame   // drawing the resting picture: no lights, no hover
+        bool drawingRest = false;   // drawing the resting picture: no lights, no hover
+        juce::Rectangle<float> lastMoving;   // where the kit moved last frame
         juce::Image restImage;
-        juce::String restKey;       // what the picture was drawn for (size, pixels, the kit's keys, focus)
+        struct RestKey   // what the picture was drawn for
+        {
+            int width = 0, height = 0, low = 0, high = 0; float pixels = 0; std::bitset<128> keys; bool focus = false;
+            bool operator== (const RestKey& o) const
+            {
+                return width == o.width && height == o.height && low == o.low && high == o.high && pixels == o.pixels && keys == o.keys && focus == o.focus;
+            }
+        } restKey;
         std::vector<std::pair<int, int>> keysDown;   // (key code, note) held on the computer's keyboard
         void releaseMouse()
         {

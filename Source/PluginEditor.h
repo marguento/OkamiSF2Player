@@ -282,12 +282,14 @@ private:
     // DRUM KIT: a kit's pads, in the INSTRUMENT panel under the layer row (Auto for a kit, or
     // forced on or off per instrument from the panel button's menu, remembered in "drumChoices").
     DrumKit::Pads drumPads { player.keyboardState };
-    juce::TextButton kitViewButton { "Kit" }, padsViewButton { "Pads" };
+    juce::TextButton kitViewButton { "Kit" }, padsViewButton { "Pads" };   // the panel's two views (remembered: "drumView")
     Knob drumVelocityHuman { *this, "drumVelocityHuman", "Velocity" };   // HUMANIZE, beside the kit
     Knob drumTimingHuman { *this, "drumTimingHuman", "Timing" };
     static constexpr int humanizeWidth = 150;
-    juce::Rectangle<int> humanizeArea;   // its frame and title, painted   // the panel's two views (remembered: "drumView")
+    juce::Rectangle<int> humanizeArea;   // its frame and title, painted
     void showDrumView (bool kit);
+    static bool isKitShown (const SF2PlayerProcessor::State&);
+    std::shared_ptr<const SF2PlayerProcessor::State> refreshedState;   // held, so its address can't be reused by a newer one
     struct DrumRefresh
     {
         const void* state = nullptr; int preset = -1, presets = 0; bool guitar = false; int projectChoice = -2, shown = -2;

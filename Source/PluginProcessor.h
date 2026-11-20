@@ -146,7 +146,7 @@ public:
     // hands over what its settings hold (opening it doesn't make a project unsaved).
     void setDrumChoice (int bank, int number, int choice, bool byUser)
     {
-        const int packed = (bank * 128 + number) * 4 + juce::jlimit (0, 2, choice);
+        const int packed = packDrumChoice (bank, number, choice);
         if (drumChoice.exchange (packed) != packed && byUser)
             markProjectChanged();
     }
@@ -326,6 +326,12 @@ private:
             default: return key;
         }
     }
+    // A key's slot: coupled only on the kit's side of a Split (a lower instrument's key waits alone).
+    static int slotOf (int key, int splitBelow)
+    {
+        const int slot = waitSlot (key);
+        return key >= splitBelow && slot >= splitBelow ? slot : key;
+    }
     // An all-notes-off or all-sound-off, in raw bytes (one definition for every place that asks).
     static bool isAllOffBytes (const juce::uint8* data, int size)
     {
@@ -351,7 +357,9 @@ private:
     void playLateNotesNow();
     bool takeEarliestLate (juce::int64 until, LateNote& out);
     void refreshNextLate();   // after taking messages off the list other than through takeEarliestLate
-    void playKeyNow (int channel, int key);
+    void playKeyNow (int channel, int key, int splitBelow);
+    void dropLateHits();
+    int restoredDrumChoice = -1;   // setStateInformation's, stored once the restoring snapshot is out
     void forgetKeyWaits (int channel = -1);
     void playLateNotes (juce::int64 until, juce::int64 blockStart, int& position);
     std::array<int, 16384> overflowIndices {};   // a flood's messages past guitarItems, by their place in the block

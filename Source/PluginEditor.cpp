@@ -2631,7 +2631,7 @@ void SF2PlayerEditor::showPanelMenu()
     menu.addItem (2, "Guitar panel", true, current == 1);
     menu.addItem (3, "Standard (no extra panel)", true, current == 2);
     menu.addSeparator();
-    const bool kit = [this] { const auto st = player.state(); return juce::isPositiveAndBelow (st->preset, (int) st->presets.size()) && st->presets[(size_t) st->preset].drumKit; }();
+    const bool kit = isKitShown (*player.state());
     menu.addItem (4, juce::String ("Drum pads (") + (kit ? "detected: a kit" : "not detected") + ")", true, drumsShown);
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (panelButton), [this] (int chosen)
     {
@@ -2639,7 +2639,7 @@ void SF2PlayerEditor::showPanelMenu()
         if (chosen == 4)   // the pads on or off for this instrument, remembered
         {
             const auto st = player.state();
-            const bool kit = juce::isPositiveAndBelow (st->preset, (int) st->presets.size()) && st->presets[(size_t) st->preset].drumKit;
+            const bool kit = isKitShown (*st);
             const auto key = favouriteKey (*st, st->preset);
             if (drumsShown)
                 setDrumChoice (key, kit ? 2 : 0);
@@ -2671,12 +2671,23 @@ void SF2PlayerEditor::showPanelMenu()
 
 // The button says what the instrument gets, Guitar (lit) or Standard, and whether that was detected.
 // DRUM KIT: the pads show for a kit (or an instrument forced on), never with the Guitar panel.
+// The instrument chosen is a kit (detected; the user's choice aside).
+bool SF2PlayerEditor::isKitShown (const SF2PlayerProcessor::State& st)
+{
+    return juce::isPositiveAndBelow (st.preset, (int) st.presets.size()) && st.presets[(size_t) st.preset].drumKit;
+}
+
 void SF2PlayerEditor::refreshDrumPads (const SF2PlayerProcessor::State& st)
 {
     // The 20 Hz timer calls this: nothing to do unless the state, the panel or the project's choice moved.
-    const DrumRefresh now { &st, st.preset, (int) st.presets.size(), guitarShown, player.drumChoice.load(), shownChoice };
-    if (now == lastDrumRefresh) return;
+    // The snapshot is compared by address only while it's held (current one), so a freed one's
+    // address can't come back as a newer snapshot's.
+    auto current = player.state();
+    const void* stateId = current.get() == &st ? &st : nullptr;
+    const DrumRefresh now { stateId, st.preset, (int) st.presets.size(), guitarShown, player.drumChoice.load(), shownChoice };
+    if (stateId != nullptr && now == lastDrumRefresh) return;
     lastDrumRefresh = now;
+    refreshedState = stateId != nullptr ? std::move (current) : nullptr;
     const bool valid = juce::isPositiveAndBelow (st.preset, (int) st.presets.size());
     const auto key = valid ? favouriteKey (st, st.preset) : juce::String();
     // The settings read once per instrument; the project's choice when they have none (another
