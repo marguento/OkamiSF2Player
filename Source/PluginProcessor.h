@@ -311,7 +311,6 @@ public:
     std::atomic<int> takeWriters { 0 };   // audio blocks between reading takeState and writing the take's events
     juce::File lastTakeFile;   // message thread: the last take, kept while the window is closed
     juce::String lastTakeText;
-    std::atomic<bool> hostHasTransport { false };   // the last block had a playhead (the window arms REC only then)
     juce::AbstractFifo takeFifo { 8192 };
     std::vector<TakeEvent> takeEvents = std::vector<TakeEvent> (8192);   // on the heap: hosts and tests may keep the processor on the stack
     std::atomic<double> takeBpm { 120.0 }, takeBarQuarters { 4.0 };

@@ -170,7 +170,7 @@ namespace Take
             notesSoFar = 0;
             lastText = chip.text;   // the last take stays on disk; offered again if this one is called off before it starts
             chip.recording = true;   // no drag while recording
-            player.takeState.store (player.hostHasTransport.load() ? SF2PlayerProcessor::takeArmed : SF2PlayerProcessor::takeFree);
+            player.takeState.store (SF2PlayerProcessor::takeArmed);   // the audio thread starts it at once in a host without a transport
             seenState = player.takeState.load();
             started = juce::Time::getMillisecondCounterHiRes();
             update();
@@ -206,13 +206,17 @@ namespace Take
                         old.deleteFile();
                 auto file = folder.getChildFile ("Okami Take " + juce::Time::getCurrentTime().formatted ("%H-%M-%S") + ".mid")
                                 .getNonexistentSibling();   // two takes in one second never share a file
+                bool saved = false;
                 if (juce::FileOutputStream out (file); out.openedOk())
                 {
                     out.setPosition (0);
                     out.truncate();
-                    if (midi.writeTo (out)) chip.file = file;
-                    else { out.setPosition (0); out.truncate(); }
+                    saved = midi.writeTo (out);
+                    out.flush();   // a full disk shows here, not in writeTo (it only fills the stream's buffer)
+                    saved = saved && out.getStatus().wasOk();
                 }
+                if (saved) chip.file = file;
+                else file.deleteFile();   // nothing half-written left behind
                 chip.text = chip.file != previous && chip.file.existsAsFile()
                               ? juce::String::fromUTF8 ("\xe2\x87\xa9 Drag MIDI \xc2\xb7 ") + juce::String (notes) + (notes == 1 ? " note" : " notes")
                               : juce::String ("Couldn't save the take") + (previous.existsAsFile() ? " (the last one stays)" : "");

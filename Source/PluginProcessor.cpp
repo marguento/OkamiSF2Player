@@ -1600,10 +1600,24 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     // a block carries, so nothing allocates here.
     playedHere.clear();
     keyboardState.processNextMidiBuffer (playedHere, 0, numSamples, true);
-    hostNotes.processNextMidiBuffer (const_cast<juce::MidiBuffer&> (fromHost), 0, numSamples, false);   // reads it only (nothing injected)
-    for (const auto metadata : fromHost)   // an all-sound-off ends the host's notes on the keys too (JUCE's state only knows CC123)
-        if (metadata.numBytes == 3 && (metadata.data[0] & 0xf0) == 0xb0 && metadata.data[1] == 120)
-            hostNotes.allNotesOff ((metadata.data[0] & 0x0f) + 1);
+    {
+        // JUCE's state ends notes on CC123, not on an all-sound-off (CC120): shown as one for the
+        // keys and lights, in its place in the block, by patching the byte in place for that one
+        // read (no allocation), then putting it back.
+        auto& shown = const_cast<juce::MidiBuffer&> (fromHost);   // read only, but for these bytes, restored below
+        std::array<juce::uint8*, 64> patched {};
+        int patchedCount = 0;
+        for (const auto metadata : shown)
+            if (metadata.numBytes == 3 && (metadata.data[0] & 0xf0) == 0xb0 && metadata.data[1] == 120 && patchedCount < (int) patched.size())
+            {
+                auto* byte = const_cast<juce::uint8*> (metadata.data) + 1;
+                *byte = 123;
+                patched[(size_t) patchedCount++] = byte;
+            }
+        hostNotes.processNextMidiBuffer (shown, 0, numSamples, false);   // reads it only (nothing injected)
+        for (int i = 0; i < patchedCount; ++i)
+            *patched[(size_t) i] = 120;
+    }
     blockMidi.clear();
     blockMidi.data.addArray (fromHost.data);   // the bytes as they are: one copy, not an insertion per event
     bool playedNoteOn = false;   // a note played in the window (not a key let go)
@@ -1612,14 +1626,16 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         blockMidi.addEvent (metadata.data, metadata.numBytes, metadata.samplePosition);
         playedNoteOn = playedNoteOn || isNoteOnBytes (metadata.data, metadata.numBytes);
     }
-    previewHere.clear();   // a preview plays too, but it's no one's playing: not sent out, not recorded, not humanized
-    previewNotes.processNextMidiBuffer (previewHere, 0, numSamples, true);
     auto& midi = blockMidi;
     {
         // REC waiting for play starts with the transport; a take with the transport ends with it.
+        // REC always arms; a host without a transport (no playhead) records at once instead, decided
+        // here at the first block, so a REC clicked before any block ran still waits for play.
         const bool playingNow = blockPosition && blockPosition->getIsPlaying();
-        hostHasTransport.store (blockPosition.hasValue(), std::memory_order_relaxed);
-        int expected = playingNow ? takeArmed : takeWithHost;
+        int expected = takeArmed;
+        if (! blockPosition.hasValue())
+            takeState.compare_exchange_strong (expected, takeFree);
+        expected = playingNow ? takeArmed : takeWithHost;
         takeState.compare_exchange_strong (expected, playingNow ? takeWithHost : takeEndedByHost);
         expected = takeArmed;   // played without starting the song: a take of its own, at once
         if (! playingNow && playedNoteOn)
@@ -1775,7 +1791,12 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         else if (lateCount > 0)   // the guitar took over: Humanize's late notes play now, before anything after them
             playLateNotesNow();
         playDeferredMidi (useGuitar ? &guitarSettings : nullptr, blockStart, human);
-        for (const auto metadata : previewHere)   // as they are, at the block's start (a preview needs no exact sample)
+        // A preview or chord audition plays too, but it's no one's playing: not sent out, not recorded,
+        // not humanized; as it is, at the block's start. Taken from its state only here, with the
+        // engine held, so a block skipped for a busy engine leaves it waiting there, not lost.
+        previewHere.clear();
+        previewNotes.processNextMidiBuffer (previewHere, 0, numSamples, true);
+        for (const auto metadata : previewHere)
             if (metadata.numBytes <= 3) handleMidi (juce::MidiMessage (metadata.data, metadata.numBytes));
 
         if (! useGuitar)
