@@ -2692,11 +2692,11 @@ void SF2PlayerEditor::refreshDrumPads (const SF2PlayerProcessor::State& st)
     }
     const int choice = shownChoice;
     const bool show = valid && ! guitarShown && (choice == 1 || (choice == 0 && st.presets[(size_t) st.preset].drumKit));
-    if (valid)   // Humanize plays where the pads show, even once the window is closed (saved with the project)
-    {
-        player.setDrumChoice (st.presets[(size_t) st.preset].bank, st.presets[(size_t) st.preset].number, choice, false);
-        seenProjectChoice = player.drumChoice.load();   // the window's own write isn't a change from elsewhere
-    }
+    // Humanize plays where the pads show, even once the window is closed (saved with the project).
+    // Handed over only if the project's choice is still the one the window saw: one restored in
+    // between wins, and the next tick reads it.
+    if (valid && player.offerDrumChoice (seenProjectChoice, st.presets[(size_t) st.preset].bank, st.presets[(size_t) st.preset].number, choice))
+        seenProjectChoice = player.drumChoice.load();
     const int rowsBefore = drumPads.rows();
     if (show && key != drumKey)
     {
@@ -2720,10 +2720,11 @@ void SF2PlayerEditor::refreshDrumPads (const SF2PlayerProcessor::State& st)
     // A new kit takes the computer's keys at once (no click needed), unless a text field has them.
     const bool newKit = show && key != drumKey;
     drumKey = show ? key : juce::String();
-    auto takeKeys = [this]
+    auto takeKeys = [this]   // only inside a window that has the keys: never taken from the host (a preset recalled behind it)
     {
         auto* focused = juce::Component::getCurrentlyFocusedComponent();
-        if (dynamic_cast<juce::TextEditor*> (focused) == nullptr && drumPads.isShowing())
+        auto* peer = getPeer();
+        if (peer != nullptr && peer->isFocused() && dynamic_cast<juce::TextEditor*> (focused) == nullptr && drumPads.isShowing())
             drumPads.grabKeyboardFocus();
     };
     if (show == drumsShown && (! show || drumPads.rows() == rowsBefore))

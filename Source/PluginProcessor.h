@@ -150,6 +150,13 @@ public:
         if (drumChoice.exchange (packed) != packed && byUser)
             markProjectChanged();
     }
+    // The window's choice, written only if the project's is still `expected` (what the window last
+    // saw); false: something else changed it meanwhile (a state restored), so it's read again.
+    bool offerDrumChoice (int expected, int bank, int number, int choice)
+    {
+        const int packed = (bank * 128 + number) * 4 + juce::jlimit (0, 2, choice);
+        return packed == expected || drumChoice.compare_exchange_strong (expected, packed);
+    }
     // The choice the project holds for that instrument (-1: none, the editor's settings decide).
     int drumChoiceOf (int bank, int number) const
     {
@@ -229,7 +236,9 @@ private:
     std::array<std::array<juce::int8, 128>, 16> deferredController;
     void deferMidi (const juce::MidiBuffer&);
     // `guitar`: the Guitar panel's settings when its engine is in use, so kept notes go through it.
-    void playDeferredMidi (const GuitarEngine::Settings* guitar = nullptr, juce::int64 at = 0);
+    struct Humanize { float velocity = 0; double maxDelay = 0; int splitBelow = -1; bool panelShown = false; };
+    void playOrWait (juce::MidiMessage, juce::int64 now, const Humanize&);
+    void playDeferredMidi (const GuitarEngine::Settings*, juce::int64 at, const Humanize* human);
     // Ends every note the Guitar panel's engine started (its twins included) and forgets it all.
     void flushGuitar();
     std::array<std::array<juce::int16, 128>, 16> twinKey;   // the Double's twin, as transposed at its note-on (-1: none)
@@ -249,6 +258,7 @@ private:
     // Guitar panel (audio thread, under engineLock): the strum timeline and its clock.
     GuitarEngine guitar;
     juce::int64 sampleClock = 0;   // samples since prepareToPlay
+    double takeSeconds = 0;   // REC's clock: seconds of audio processed, never set back (a take may span an audio restart)
     bool guitarEngaged = false;    // notes are going through `guitar`
     // Whether the chosen instrument is a guitar (General MIDI 24-31, or named one): set when
     // the state is published, read by the audio thread for the panel's Auto setting.
@@ -324,6 +334,7 @@ private:
     bool takeEarliestLate (juce::int64 until, LateNote& out);
     void refreshNextLate();   // after taking messages off the list other than through takeEarliestLate
     void playKeyNow (int channel, int key);
+    void forgetKeyWaits (int channel = -1);
     void playLateNotes (juce::int64 until, juce::int64 blockStart, int& position);
     std::array<int, 16384> overflowIndices {};   // a flood's messages past guitarItems, by their place in the block
     std::array<std::bitset<128>, 16> lateNoteOffs {};   // note-offs past even overflowIndices, played at the block's end

@@ -571,7 +571,7 @@ bool SF2PlayerProcessor::changesLastingState (const juce::MidiMessage& m)
     return m.isNoteOff() || m.isProgramChange() || rpn || (cc >= 0 && keptInOrder (cc));
 }
 
-void SF2PlayerProcessor::playDeferredMidi (const GuitarEngine::Settings* guitarSettings, juce::int64 at)
+void SF2PlayerProcessor::playDeferredMidi (const GuitarEngine::Settings* guitarSettings, juce::int64 at, const Humanize* human)
 {
     if (numDeferred == 0 && ! anyCollapsed)
         return;   // the usual block: nothing kept
@@ -579,6 +579,11 @@ void SF2PlayerProcessor::playDeferredMidi (const GuitarEngine::Settings* guitarS
     {
         const auto& m = deferredEvents[(size_t) i];
         const int channel = m.getChannel() - 1;
+        if (guitarSettings == nullptr && human != nullptr)
+        {
+            playOrWait (m, at, *human);   // the block's own rules: Humanize, and waiting for its key
+            continue;
+        }
         if (guitarSettings == nullptr)
         {
             noteWheelPosition (m);
@@ -838,7 +843,7 @@ void SF2PlayerProcessor::prepareToPlay (double newSampleRate, int maximumExpecte
     work.setSize (6, juce::jmax (1, maximumExpectedSamplesPerBlock));
     playedHere.ensureSize (4096);
     shortMidi.ensureSize (32768);
-    blockMidi.ensureSize (32768 + 4096);
+    blockMidi.ensureSize (1 << 19);   // 512 KB: about 58,000 events, past any host's block
     {
         const juce::SpinLock::ScopedLockType lock (engineLock);
         if (guitarEngaged && engine != nullptr)
@@ -859,8 +864,7 @@ void SF2PlayerProcessor::prepareToPlay (double newSampleRate, int maximumExpecte
             }
         lateCount = kept;
         refreshNextLate();
-        for (auto& keys : keyDue) keys.fill (-1);
-        for (auto& keys : keyDelay) keys.fill (0);
+        forgetKeyWaits();
     }
     toneFrequency = 0.0f;   // recompute the filters for this rate
     for (auto& channel : toneFilters)
@@ -1044,14 +1048,96 @@ void SF2PlayerProcessor::playLateNotes (juce::int64 until, juce::int64 blockStar
     }
 }
 
+// One message of a block (or of a skipped block, at its start) outside the Guitar panel: Drum
+// Humanize's velocity, then played now or kept to play later. Only a key's messages wait, and only
+// for that key (ties keep the order they came in): a late hit after its key's waiting note-off, a
+// note-off or the key's pressure after its late hit (as long as the hit waited, so it keeps its
+// length), a hit again after the last one ended. Everything else plays as it comes.
+void SF2PlayerProcessor::playOrWait (juce::MidiMessage message, juce::int64 now, const Humanize& human)
+{
+    noteWheelPosition (message);
+    const int channel = message.getChannel() - 1;
+    const bool onChannel = juce::isPositiveAndBelow (channel, 16);
+    if (onChannel && (message.isAllNotesOff() || message.isAllSoundOff()))   // nothing on that channel waits past it (only notes wait)
+    {
+        for (int i = lateCount; --i >= 0;)
+            if (channelOf (lateNotes[(size_t) i]) == channel)
+                lateNotes[(size_t) i] = lateNotes[(size_t) --lateCount];
+        forgetKeyWaits (channel);
+        refreshNextLate();
+    }
+    const bool kitNote = message.isNoteOn() && onChannel && ! channelMoved.test ((size_t) channel)
+                      && message.getNoteNumber() >= human.splitBelow;
+    if (kitNote && human.velocity > 0.0f)
+    {
+        const float factor = 1.0f + (humanRandom.nextFloat() * 2.0f - 1.0f) * 0.3f * human.velocity;
+        message.setVelocity (juce::jlimit (1.0f / 127.0f, 1.0f, message.getFloatVelocity() * factor));
+    }
+    if (message.isNoteOn())
+    {
+        lastPlayedVelocity = message.getVelocity();   // Direct: the note as played
+        if (human.panelShown) playedGuitar = true;           // the panel played (in Direct): too late for the start
+    }
+    juce::int64 lateAt = -1;
+    const bool keyMessage = onChannel && message.getRawDataSize() == 3 && (message.isNoteOnOrOff() || message.isAftertouch());
+    const int key = keyMessage ? message.getNoteNumber() & 0x7f : 0;
+    if (keyMessage)
+    {
+        // A quarter of the list stays for what must follow a waiting hit (its note-off,
+        // a hit again): Humanize's own delay and a key's pressure wait only above it.
+        const bool spare = lateCount < (int) lateNotes.size() * 3 / 4;
+        const auto waits = keyDue[(size_t) channel][(size_t) key];
+        if (message.isAftertouch() && waits > now && ! spare)
+            return;   // pressure behind a waiting message of its key, with no room to spare: dropped
+        auto& delay = keyDelay[(size_t) channel][(size_t) key];   // the key's last hit's Humanize delay
+        if (message.isNoteOn())
+            delay = kitNote && human.maxDelay >= 1.0 && spare ? (juce::int32) (humanRandom.nextDouble() * human.maxDelay) : 0;
+        // A hit waits its delay; its note-off waits as long, so the hit keeps the length played.
+        if (delay > 0 && ! message.isAftertouch())
+            lateAt = now + delay;
+        if (waits > now)
+            lateAt = juce::jmax (lateAt, waits);
+        if (lateAt > now && lateCount == (int) lateNotes.size())
+        {
+            // No room to wait: the key's waiting messages play now, in order, then this
+            // one, so its order holds whatever the list holds (a rare flood).
+            playKeyNow (channel, key);
+            lateAt = -1;
+        }
+    }
+    if (lateAt > now && lateCount < (int) lateNotes.size())
+    {
+        keyDue[(size_t) channel][(size_t) key] = lateAt;
+        nextLateAt = juce::jmin (nextLateAt, lateAt);
+        auto& late = lateNotes[(size_t) lateCount++];
+        late.at = lateAt;
+        late.order = lateOrder++;
+        late.size = 3;
+        std::copy (message.getRawData(), message.getRawData() + 3, late.bytes);
+        return;
+    }
+    handleMidi (message);
+}
+
 // Every late note at once, in time order, rendering nothing (whoever renders the block next plays them).
 void SF2PlayerProcessor::playLateNotesNow()
 {
     LateNote late;
     while (takeEarliestLate (std::numeric_limits<juce::int64>::max(), late))
         handleMidi (juce::MidiMessage (late.bytes, late.size));
-    for (auto& keys : keyDue) keys.fill (-1);   // nothing waits: what comes next needn't wait for these
-    for (auto& keys : keyDelay) keys.fill (0);
+    forgetKeyWaits();   // nothing waits: what comes next needn't wait for these
+}
+
+// The keys' waiting times and Humanize delays, for one channel or all (-1), where messages leave
+// the list other than by playing in turn.
+void SF2PlayerProcessor::forgetKeyWaits (int channel)
+{
+    for (int c = 0; c < 16; ++c)
+        if (channel < 0 || c == channel)
+        {
+            keyDue[(size_t) c].fill (-1);
+            keyDelay[(size_t) c].fill (0);
+        }
 }
 
 // Renders [start, end) of `work`: FluidSynth adds to the buffers, which processBlock cleared.
@@ -1490,9 +1576,10 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     // One call does both under the keyboard state's lock (the window adds and removes its
     // listeners under it): the host's events update the state, and the window's are added to the
     // same buffer, after the host's at any one sample (JUCE's MidiBuffer keeps that order). Walking
-    // both in order then tells them apart. The buffer is ours, reserved: nothing allocates here.
+    // both in order then tells them apart. The buffer is ours, reserved for far more than a block
+    // carries, so nothing allocates here.
     blockMidi.clear();
-    blockMidi.addEvents (fromHost, 0, -1, 0);
+    blockMidi.data.addArray (fromHost.data);   // the bytes as they are: one copy, not an insertion per event
     keyboardState.processNextMidiBuffer (blockMidi, 0, numSamples, true);
     playedHere.clear();
     bool playedNoteOn = false;   // a note played in the window (not a key let go)
@@ -1549,7 +1636,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         {
             if (metadata.numBytes > 3) continue;
             TakeEvent event;
-            event.seconds = (double) (blockStart + metadata.samplePosition) / sr;
+            event.seconds = takeSeconds + metadata.samplePosition / sr;   // a clock no audio restart sets back
             event.onGrid = ppq.hasValue();
             event.barStart = barStart;
             event.ppq = ppq ? *ppq + metadata.samplePosition / sr * bpm / 60.0 : 0.0;
@@ -1558,6 +1645,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
             takeFifo.write (1).forEach ([&] (int index) { takeEvents[(size_t) index] = event; });   // full: dropped
         }
     }
+    takeSeconds += numSamples / juce::jmax (1.0, getSampleRate());
     struct SendPlayed   // at every way out of this block
     {
         juce::MidiBuffer& host; const juce::MidiBuffer& played;
@@ -1587,8 +1675,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
             {
                 lateCount = 0;
                 refreshNextLate();
-                for (auto& keys : keyDue) keys.fill (-1);
-                for (auto& keys : keyDelay) keys.fill (0);
+                forgetKeyWaits();
             }
             return;
         }
@@ -1630,33 +1717,40 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         if (useGuitar)
             guitarEngaged = true;
 
-        // Events a skipped block kept, first (through the guitar engine when it's in use), after
-        // Humanize's late notes: those came before them, so they play now rather than be overtaken.
-        if (lateCount > 0 && (numDeferred > 0 || anyCollapsed))
-            playLateNotesNow();
-        playDeferredMidi (useGuitar ? &guitarSettings : nullptr, blockStart);
+        // Drum Humanize for this block: velocity varied by up to ±30 %, hits delayed by up to 20 ms.
+        // Only where the DRUM KIT panel shows (never with the Guitar panel, even in Direct), and only
+        // on the kit's own notes: not a Split's lower instrument, not in Layer (both instruments play
+        // the same notes, so it would reach the second one), not a channel a clip moved.
+        if (const int generation = kitGeneration.load (std::memory_order_relaxed); generation != seenKitGeneration)
+        {
+            seenKitGeneration = generation;
+            channelMoved.reset();
+        }
+        Humanize human;
+        {
+            const bool kit = ! useGuitar && ! panelShown && drumsActive();
+            human.velocity = kit ? parameters.getRawParameterValue ("drumVelocityHuman")->load() : 0.0f;
+            human.maxDelay = kit ? getSampleRate() * 0.020 * parameters.getRawParameterValue ("drumTimingHuman")->load() : 0.0;
+            const int layerMode = juce::roundToInt (parameters.getRawParameterValue ("layerMode")->load());
+            human.splitBelow = layerMode == 1 ? 128
+                             : layerMode == 2 ? juce::roundToInt (parameters.getRawParameterValue ("splitKey")->load()) : -1;
+            human.panelShown = panelShown;
+        }
+
+        // Events a skipped block kept, first: through the guitar engine when it's in use, else by
+        // the same rules as this block's (what waits since before plays first, then they wait in turn).
+        if (! useGuitar)
+        {
+            int start = 0;
+            playLateNotes (blockStart + 1, blockStart, start);
+        }
+        playDeferredMidi (useGuitar ? &guitarSettings : nullptr, blockStart, useGuitar ? nullptr : &human);
 
         if (useGuitar && lateCount > 0)   // the guitar took over: Humanize's late notes play now (the guitar renders the block)
             playLateNotesNow();
         if (! useGuitar)
         {
-            // A kit's Humanize: velocity varied by up to ±30 %, hits delayed by up to 20 ms. Only
-            // where the DRUM KIT panel shows (never with the Guitar panel, even in Direct), and only
-            // on the kit's own notes: not a Split's lower instrument, not a channel a clip moved.
-            if (const int generation = kitGeneration.load (std::memory_order_relaxed); generation != seenKitGeneration)
-            {
-                seenKitGeneration = generation;
-                channelMoved.reset();
-            }
-            const bool kit = ! panelShown && drumsActive();
-            const float velocityHuman = kit ? parameters.getRawParameterValue ("drumVelocityHuman")->load() : 0.0f;
-            const float timingHuman = kit ? parameters.getRawParameterValue ("drumTimingHuman")->load() : 0.0f;
-            const double maxDelay = getSampleRate() * 0.020 * timingHuman;
-            // Layer plays the same notes on both instruments, so Humanize stays out (it would reach the
-            // second one); Split humanizes only the notes from the split key up.
-            const int layerMode = juce::roundToInt (parameters.getRawParameterValue ("layerMode")->load());
-            const int splitBelow = layerMode == 1 ? 128
-                                 : layerMode == 2 ? juce::roundToInt (parameters.getRawParameterValue ("splitKey")->load()) : -1;
+
             // Render up to each MIDI event, so notes start on the exact sample.
             int position = 0;
             for (const auto metadata : midi)
@@ -1670,78 +1764,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                 render (position, eventTime);
                 position = eventTime;
                 if (metadata.numBytes <= 3)   // sysex isn't played: building its message could allocate
-                {
-                    juce::MidiMessage message (metadata.data, metadata.numBytes);
-                    noteWheelPosition (message);
-                    const int channel = message.getChannel() - 1;
-                    const bool onChannel = juce::isPositiveAndBelow (channel, 16);
-                    if (onChannel && allOff)   // nothing on that channel waits past it (only notes wait)
-                    {
-                        for (int i = lateCount; --i >= 0;)
-                            if (channelOf (lateNotes[(size_t) i]) == channel)
-                                lateNotes[(size_t) i] = lateNotes[(size_t) --lateCount];
-                        keyDue[(size_t) channel].fill (-1);
-                        keyDelay[(size_t) channel].fill (0);
-                        refreshNextLate();
-                    }
-                    const bool kitNote = message.isNoteOn() && onChannel && ! channelMoved.test ((size_t) channel)
-                                      && message.getNoteNumber() >= splitBelow;
-                    if (kitNote && velocityHuman > 0.0f)
-                    {
-                        const float factor = 1.0f + (humanRandom.nextFloat() * 2.0f - 1.0f) * 0.3f * velocityHuman;
-                        message.setVelocity (juce::jlimit (1.0f / 127.0f, 1.0f, message.getFloatVelocity() * factor));
-                    }
-                    if (message.isNoteOn())
-                    {
-                        lastPlayedVelocity = message.getVelocity();   // Direct: the note as played
-                        if (panelShown) playedGuitar = true;           // the panel played (in Direct): too late for the start
-                    }
-                    // Only a key's messages wait, and only for that key (ties keep the order they came
-                    // in): a late hit (Humanize) after its key's waiting note-off, a note-off or the key's
-                    // pressure after its late hit, so a hit ends after it starts and a hit again starts
-                    // after the last one ended. Everything else (controllers, program changes) plays as
-                    // it comes.
-                    juce::int64 lateAt = -1;
-                    const auto now = blockStart + eventTime;
-                    const bool keyMessage = onChannel && message.getRawDataSize() == 3 && (message.isNoteOnOrOff() || message.isAftertouch());
-                    const int key = keyMessage ? message.getNoteNumber() & 0x7f : 0;
-                    if (keyMessage)
-                    {
-                        // A quarter of the list stays for what must follow a waiting hit (its note-off,
-                        // a hit again): Humanize's own delay and a key's pressure wait only above it.
-                        const bool spare = lateCount < (int) lateNotes.size() * 3 / 4;
-                        const auto waits = keyDue[(size_t) channel][(size_t) key];
-                        if (message.isAftertouch() && waits > now && ! spare)
-                            continue;   // pressure behind a waiting message of its key, with no room to spare: dropped
-                        auto& delay = keyDelay[(size_t) channel][(size_t) key];   // the key's last hit's Humanize delay
-                        if (message.isNoteOn())
-                            delay = kitNote && maxDelay >= 1.0 && spare ? (juce::int32) (humanRandom.nextDouble() * maxDelay) : 0;
-                        // A hit waits its delay; its note-off waits as long, so the hit keeps the length played.
-                        if (delay > 0 && ! message.isAftertouch())
-                            lateAt = now + delay;
-                        if (waits > now)
-                            lateAt = juce::jmax (lateAt, waits);
-                        if (lateAt > now && lateCount == (int) lateNotes.size())
-                        {
-                            // No room to wait: the key's waiting messages play now, in order, then this
-                            // one, so its order holds whatever the list holds (a rare flood).
-                            playKeyNow (channel, key);
-                            lateAt = -1;
-                        }
-                    }
-                    if (lateAt > now && lateCount < (int) lateNotes.size())
-                    {
-                        keyDue[(size_t) channel][(size_t) key] = lateAt;
-                        nextLateAt = juce::jmin (nextLateAt, lateAt);
-                        auto& late = lateNotes[(size_t) lateCount++];
-                        late.at = lateAt;
-                        late.order = lateOrder++;
-                        late.size = 3;
-                        std::copy (message.getRawData(), message.getRawData() + 3, late.bytes);
-                        continue;
-                    }
-                    handleMidi (message);
-                }
+                    playOrWait (juce::MidiMessage (metadata.data, metadata.numBytes), blockStart + eventTime, human);
             }
             playLateNotes (blockStart + numSamples, blockStart, position);
             render (position, numSamples);
@@ -2051,7 +2074,7 @@ void SF2PlayerProcessor::setStateInformation (const void* data, int sizeInBytes)
             const int instrument = (int) state.getProperty ("drumChoiceFor", -1);
             packed = instrument >= 0 && juce::isPositiveAndBelow (packed, 3) ? instrument * 4 + packed : -1;
         }
-        drumChoice.store (packed >= 0 && packed % 4 <= 2 && packed / 4 < 129 * 128 ? packed : -1);
+        drumChoice.store (packed >= 0 && packed % 4 <= 2 && packed / 4 < 16384 * 128 ? packed : -1);   // banks up to 14 bits
         state.removeProperty ("drumChoice", nullptr);
         state.removeProperty ("drumChoiceFor", nullptr);
     }

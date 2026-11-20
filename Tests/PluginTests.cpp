@@ -1551,6 +1551,16 @@ int main()
         Player b (testFont, kit);
         b.p.setStateInformation (saved.getData(), (int) saved.getSize());
         const bool restored = ! b.p.drumsActive() && b.p.drumChoiceOf (k.bank, k.number) == 2;
+        // The window's write loses to a choice restored in between, and a bank past 128 is kept.
+        const int before = b.p.drumChoice.load();
+        b.p.setDrumChoice (k.bank, k.number, 1, false);   // "restored" meanwhile
+        const bool yields = ! b.p.offerDrumChoice (before, k.bank, k.number, 0) && b.p.drumChoiceOf (k.bank, k.number) == 1;
+        b.p.setDrumChoice (300, 5, 2, false);
+        juce::MemoryBlock highBank;
+        b.p.getStateInformation (highBank);
+        Player h (testFont, kit);
+        h.p.setStateInformation (highBank.getData(), (int) highBank.getSize());
+        const bool bankKept = h.p.drumChoiceOf (300, 5) == 2;
         // A project from the first 1.4 builds saved the choice and its instrument apart: still read.
         bool migrated = false;
         if (auto xml = juce::AudioProcessor::getXmlFromBinary (saved.getData(), (int) saved.getSize()))
@@ -1586,7 +1596,7 @@ int main()
         gaps.lowKey = 35; gaps.highKey = 60;
         gaps.keys.reset (36); gaps.keys.reset (38);
         const bool exact = gaps.noteForKey ('z') == 35 && gaps.noteForKey ('x') == 40 && ! gaps.plays (36);
-        expect (autoKit && off && restored && migrated && notKit && forced && otherInstrument && exact,
+        expect (autoKit && off && restored && yields && bankKept && migrated && notKit && forced && otherInstrument && exact,
                 "Drum Humanize: only where the pads show (the user's choice, saved with the project); pieces on the keys the kit has");
     }
 
@@ -1962,6 +1972,29 @@ int main()
         withSong = withSong && jam && keysIn (jammed) == std::vector<int> { 62 };
         synced.deleteFile(); jammed.deleteFile();
         player.p.setPlayHead (nullptr);
+        // A take that spans an audio restart (the host re-prepares the plugin) keeps its notes in order.
+        bool acrossRestart = false;
+        {
+            Take::Recorder spanning (player.p);
+            player.p.setPlayHead (nullptr);
+            { juce::MidiBuffer none; player.p.processBlock (buffer, none); }   // no transport: a free take
+            spanning.start();
+            play (60);
+            for (int i = 0; i < 20; ++i) { juce::MidiBuffer none; player.p.processBlock (buffer, none); }
+            player.p.prepareToPlay (rate, block);
+            play (62);
+            spanning.stop();
+            const auto file = spanning.takeFile();
+            juce::FileInputStream in (file);
+            juce::MidiFile midiFile;
+            std::vector<double> ons;
+            if (in.openedOk() && midiFile.readFrom (in))
+                for (const auto* holder : *midiFile.getTrack (0))
+                    if (holder->message.isNoteOn()) ons.push_back (holder->message.getTimeStamp());
+            acrossRestart = ons.size() == 2 && ons[1] > ons[0];
+            file.deleteFile();
+        }
+        withSong = withSong && acrossRestart;
         // Closing the window mid-take ends it like REC would, and the take is still there when it opens again.
         juce::File closedTake;
         {
@@ -1984,7 +2017,7 @@ int main()
             player.p.keyboardState.noteOff (1, 64, 0.0f);
             juce::MidiBuffer none; player.p.processBlockBypassed (buffer, none);
         }
-        expect (withSong, "REC: waits for the host's play and ends with it; played without the song it records at once; called off, the last take stays; closing the window keeps the take; bypass sends nothing");
+        expect (withSong, "REC: waits for the host's play and ends with it; played without the song it records at once; called off, the last take stays; closing the window keeps the take; a take spans an audio restart; bypass sends nothing");
     }
 
     std::printf ("\n%d of %d checks passed\n", checks - failures, checks);

@@ -103,7 +103,8 @@ namespace Take
             {
                 dragging = true;
                 juce::DragAndDropContainer::performExternalDragDropOfFiles ({ file.getFullPathName() }, false, this,
-                                                                             [this] { dragging = false; });
+                                                                             [safe = juce::Component::SafePointer<DragChip> (this)]
+                                                                             { if (safe != nullptr) safe->dragging = false; });   // the window may close mid-drag
             }
         }
         void mouseUp (const juce::MouseEvent&) override { dragging = false; }
@@ -156,6 +157,7 @@ namespace Take
         {
             drain();   // anything left from before is dropped
             events.clear();
+            notesSoFar = 0;
             lastText = chip.text;   // the last take stays on disk; offered again if this one is called off before it starts
             chip.recording = true;   // no drag while recording
             player.takeState.store (player.hostHasTransport.load() ? SF2PlayerProcessor::takeArmed : SF2PlayerProcessor::takeFree);
@@ -212,11 +214,17 @@ namespace Take
         double started = 0;
         juce::String lastText;
         int seenState = SF2PlayerProcessor::takeIdle;
+        int notesSoFar = 0;
 
         void drain()
         {
             auto& fifo = player.takeFifo;
-            fifo.read (fifo.getNumReady()).forEach ([&] (int index) { events.push_back (player.takeEvents[(size_t) index]); });
+            fifo.read (fifo.getNumReady()).forEach ([&] (int index)
+            {
+                const auto& e = player.takeEvents[(size_t) index];
+                events.push_back (e);
+                notesSoFar += SF2PlayerProcessor::isNoteOnBytes (e.bytes, e.size) ? 1 : 0;
+            });
         }
         void update()
         {
@@ -227,8 +235,7 @@ namespace Take
                 chip.repaint();
                 return;
             }
-            int notes = 0;
-            for (const auto& e : events) notes += SF2PlayerProcessor::isNoteOnBytes (e.bytes, e.size) ? 1 : 0;
+            const int notes = notesSoFar;   // counted as they come in, not again every tick
             const int seconds = (int) ((juce::Time::getMillisecondCounterHiRes() - started) / 1000.0);
             chip.text = juce::String::fromUTF8 ("\xe2\x97\x8f ") + juce::String (seconds / 60) + ":" + juce::String (seconds % 60).paddedLeft ('0', 2)
                       + juce::String::fromUTF8 (" \xc2\xb7 ") + juce::String (notes) + (notes == 1 ? " note" : " notes");
