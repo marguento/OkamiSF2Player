@@ -1605,18 +1605,17 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         // keys and lights, in its place in the block, by patching the byte in place for that one
         // read (no allocation), then putting it back.
         auto& shown = const_cast<juce::MidiBuffer&> (fromHost);   // read only, but for these bytes, restored below
-        std::array<juce::uint8*, 64> patched {};
         int patchedCount = 0;
         for (const auto metadata : shown)
-            if (metadata.numBytes == 3 && (metadata.data[0] & 0xf0) == 0xb0 && metadata.data[1] == 120 && patchedCount < (int) patched.size())
+            if (metadata.numBytes == 3 && (metadata.data[0] & 0xf0) == 0xb0 && metadata.data[1] == 120 && patchedCount < (int) patchedSoundOffs.size())
             {
                 auto* byte = const_cast<juce::uint8*> (metadata.data) + 1;
                 *byte = 123;
-                patched[(size_t) patchedCount++] = byte;
+                patchedSoundOffs[(size_t) patchedCount++] = byte;
             }
         hostNotes.processNextMidiBuffer (shown, 0, numSamples, false);   // reads it only (nothing injected)
         for (int i = 0; i < patchedCount; ++i)
-            *patched[(size_t) i] = 120;
+            *patchedSoundOffs[(size_t) i] = 120;
     }
     blockMidi.clear();
     blockMidi.data.addArray (fromHost.data);   // the bytes as they are: one copy, not an insertion per event
@@ -1633,12 +1632,12 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         // here at the first block, so a REC clicked before any block ran still waits for play.
         const bool playingNow = blockPosition && blockPosition->getIsPlaying();
         int expected = takeArmed;
-        if (! blockPosition.hasValue())
+        if (! blockPosition.hasValue() || wrapperType == wrapperType_Standalone)   // the standalone's playhead never plays
             takeState.compare_exchange_strong (expected, takeFree);
         expected = playingNow ? takeArmed : takeWithHost;
         takeState.compare_exchange_strong (expected, playingNow ? takeWithHost : takeEndedByHost);
         expected = takeArmed;   // played without starting the song: a take of its own, at once
-        if (! playingNow && playedNoteOn)
+        if (! playingNow && playedNoteOn && ! bypassedBlock)   // a note while bypassed is no one's take
             takeState.compare_exchange_strong (expected, takeFree);
     }
     // REC's stop waits for a block writing its events (counted before it reads the state), so the

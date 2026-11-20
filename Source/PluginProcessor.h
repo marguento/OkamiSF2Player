@@ -257,6 +257,7 @@ private:
     int seenGeneration = 0;                    // audio thread only
     juce::MidiBuffer shortMidi;   // a block's MIDI without sysex (reserved in prepareToPlay)
     juce::MidiBuffer blockMidi;     // the host's MIDI plus the window's notes, as played (reserved in prepareToPlay)
+    std::array<juce::uint8*, 4096> patchedSoundOffs {};   // CC120 bytes shown as CC123 for one read (more than a flood of them carries)
     juce::MidiBuffer previewHere;   // this block's preview notes (reserved in prepareToPlay)
     bool bypassedBlock = false;     // the block runs for processBlockBypassed: nothing goes into a take or the meter
 

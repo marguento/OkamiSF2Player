@@ -2058,6 +2058,17 @@ int main()
             player.p.keyboardState.noteOff (1, 65, 0.0f);
             juce::MidiBuffer after; player.p.processBlockBypassed (buffer, after);
             withSong = withSong && player.p.takeFifo.getNumReady() == waiting;
+            // Armed and bypassed, a note doesn't start a take of its own: REC still waits for the song.
+            player.p.setPlayHead (&head);
+            head.playing = false;
+            player.p.takeState.store (SF2PlayerProcessor::takeArmed);
+            player.p.keyboardState.noteOn (1, 66, 0.8f);
+            juce::MidiBuffer tapped;
+            player.p.processBlockBypassed (buffer, tapped);
+            player.p.keyboardState.noteOff (1, 66, 0.0f);
+            juce::MidiBuffer released; player.p.processBlockBypassed (buffer, released);
+            withSong = withSong && player.p.takeState.load() == SF2PlayerProcessor::takeArmed;
+            player.p.setPlayHead (nullptr);
             player.p.takeState.store (SF2PlayerProcessor::takeIdle);
         }
         {
