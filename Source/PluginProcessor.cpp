@@ -1682,18 +1682,18 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     struct SendPlayed   // at every way out of this block
     {
         juce::MidiBuffer& host; const juce::MidiBuffer& played; bool standalone;
+        int room;   // what the host's buffer held this block: room it surely has
         ~SendPlayed()
         {
             // Into the host's own buffer only within the room it surely has: what it held this block,
-            // or the 2048 bytes JUCE's AU and VST3 wrappers reserve for it (not the standalone's), so
-            // nothing allocates here.
+            // or the 2048 bytes JUCE's AU and VST3 wrappers reserve for it, so nothing allocates here.
             // (A block's window notes are a few; past that they still sound, they just don't go out.)
-            const int room = standalone ? host.data.size() : juce::jmax (host.data.size(), 2048);
             host.clear();
-            if (played.data.size() <= room)
+            if (standalone) return;   // the standalone sends nothing: its buffer reserves no room to write into
+            if (played.data.size() <= juce::jmax (room, 2048))
                 host.data.addArray (played.data);
         }
-    } sendPlayed { hostMidi, playedHere, wrapperType == wrapperType_Standalone };   // the standalone's buffer reserves nothing (and has no host to send to)
+    } sendPlayed { hostMidi, playedHere, wrapperType == wrapperType_Standalone, hostMidi.data.size() };
 
     if (work.getNumSamples() < numSamples)   // a host sending more than it announced
         work.setSize (6, numSamples, false, false, true);

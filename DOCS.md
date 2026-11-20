@@ -356,7 +356,8 @@ on the plugin's track as usual.
 
 **MIDI out**, for hosts that read it: notes played in the plugin's window (its keyboard, the drum
 kit's pieces, pads and computer keys) sound, and are also sent out of the plugin as MIDI, so the
-host can record them. Notes coming from Ableton (clips, a MIDI keyboard) aren't sent back.
+host can record them. Notes coming from Ableton (clips, a MIDI keyboard) aren't sent back. (The
+standalone app sends none; use REC and Drag MIDI there.)
 
 In Ableton:
 1. Make a new MIDI track (no instrument needed on it).

@@ -291,7 +291,7 @@ private:
     RangeKeyboard keyboard { player.keyboardState, juce::MidiKeyboardComponent::horizontalKeyboard };
     // DRUM KIT: a kit's pads, in the INSTRUMENT panel under the layer row (Auto for a kit, or
     // forced on or off per instrument from the panel button's menu, remembered in "drumChoices").
-    DrumKit::Pads drumPads { player.keyboardState, player.hostNotes };
+    DrumKit::Pads drumPads { player.keyboardState, player.hostNotes, &player.previewNotes };
     std::bitset<128> hostKeysShown;   // the host's notes the keyboard drew last (redrawn when they change)
     juce::TextButton kitViewButton { "Kit" }, padsViewButton { "Pads" };   // the panel's two views (remembered: "drumView")
     Knob drumVelocityHuman { *this, "drumVelocityHuman", "Velocity" };   // HUMANIZE, beside the kit

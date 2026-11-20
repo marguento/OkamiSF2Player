@@ -1598,7 +1598,8 @@ void SF2PlayerEditor::timerCallback()
         juce::StringArray names;
         int classes = 0, lowest = -1;
         for (int n = 0; n < 128; ++n)
-            if (player.keyboardState.isNoteOnForChannels (0xffff, n) || player.hostNotes.isNoteOnForChannels (0xffff, n))
+            if (player.keyboardState.isNoteOnForChannels (0xffff, n) || player.hostNotes.isNoteOnForChannels (0xffff, n)
+                || player.previewNotes.isNoteOnForChannels (0xffff, n))
             {
                 names.add (juce::MidiMessage::getMidiNoteName (n, true, false, 3));
                 classes |= 1 << (n % 12);

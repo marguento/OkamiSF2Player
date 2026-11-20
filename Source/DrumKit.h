@@ -116,14 +116,23 @@ namespace DrumKit
     struct Pads : juce::Component, juce::TooltipClient, private juce::MidiKeyboardState::Listener, private juce::Timer
     {
         // `s`: the window's own notes (what the pads play); `shown`: other notes that light them too (the host's).
-        Pads (juce::MidiKeyboardState& s, juce::MidiKeyboardState& shown) : state (s), alsoShown (shown)
+        // `preview`: a preview's notes, shown the same way (optional).
+        Pads (juce::MidiKeyboardState& s, juce::MidiKeyboardState& shown, juce::MidiKeyboardState* preview = nullptr)
+            : state (s), alsoShown (shown), previewShown (preview)
         {
             state.addListener (this);
             alsoShown.addListener (this);
+            if (previewShown != nullptr) previewShown->addListener (this);
             setWantsKeyboardFocus (true);
             setMouseClickGrabsKeyboardFocus (true);
         }
-        ~Pads() override { releaseAll(); state.removeListener (this); alsoShown.removeListener (this); }
+        ~Pads() override
+        {
+            releaseAll();
+            state.removeListener (this);
+            alsoShown.removeListener (this);
+            if (previewShown != nullptr) previewShown->removeListener (this);
+        }
         void visibilityChanged() override
         {
             if (isVisible()) startTimerHz (60);   // the lights and the hits' motion
@@ -259,7 +268,8 @@ namespace DrumKit
                 if (struck[(size_t) note].exchange (false, std::memory_order_relaxed)) level = 1.0f;
                 else if (level > 0.0f)
                 {
-                    const bool on = state.isNoteOnForChannels (0xffff, note) || alsoShown.isNoteOnForChannels (0xffff, note);
+                    const bool on = state.isNoteOnForChannels (0xffff, note) || alsoShown.isNoteOnForChannels (0xffff, note)
+                                 || (previewShown != nullptr && previewShown->isNoteOnForChannels (0xffff, note));
                     level = on ? juce::jmax (level - 0.015f, 0.45f) : juce::jmax (0.0f, level - 0.035f);
                 }
                 if (! juce::exactlyEqual (level, before))
@@ -717,6 +727,7 @@ namespace DrumKit
     private:
         juce::MidiKeyboardState& state;
         juce::MidiKeyboardState& alsoShown;
+        juce::MidiKeyboardState* previewShown = nullptr;
         std::array<float, 128> glow {};
         std::array<std::atomic<bool>, 128> struck {};   // set from any thread (the audio thread's MIDI), read on the timer
         // MidiKeyboardState::Listener: may run on the audio thread, so it only sets a flag.
