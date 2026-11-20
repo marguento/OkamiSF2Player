@@ -1,5 +1,7 @@
 #pragma once
 
+#include <bitset>
+
 #include "PluginProcessor.h"
 #include "GuitarNeck.h"
 #include "Guide.h"
@@ -137,6 +139,8 @@ struct RangeKeyboard : juce::MidiKeyboardComponent, juce::TooltipClient
         return describe != nullptr && note >= 0 ? describe (note) : juce::String();
     }
     int lowKey = 0, highKey = 127;
+    const juce::MidiKeyboardState* alsoShows = nullptr;   // other notes shown down (the host's); the window's own state plays
+    bool shownDown (int note) const { return alsoShows != nullptr && alsoShows->isNoteOnForChannels (0xffff, note); }
     int splitKey = -1;   // Split: the keys below it play the second instrument (tinted)
     bool repeatZones = false;   // the Guitar panel's Repeat zones (C1-D#1, C5-C6), tinted
     // What the guitar sounds (the notes on the neck), marked with the neck's green dots, fading as it does.
@@ -283,14 +287,17 @@ private:
     RangeKeyboard keyboard { player.keyboardState, juce::MidiKeyboardComponent::horizontalKeyboard };
     // DRUM KIT: a kit's pads, in the INSTRUMENT panel under the layer row (Auto for a kit, or
     // forced on or off per instrument from the panel button's menu, remembered in "drumChoices").
-    DrumKit::Pads drumPads { player.keyboardState };
+    DrumKit::Pads drumPads { player.keyboardState, player.hostNotes };
+    std::bitset<128> hostKeysShown;   // the host's notes the keyboard drew last (redrawn when they change)
     juce::TextButton kitViewButton { "Kit" }, padsViewButton { "Pads" };   // the panel's two views (remembered: "drumView")
     Knob drumVelocityHuman { *this, "drumVelocityHuman", "Velocity" };   // HUMANIZE, beside the kit
     Knob drumTimingHuman { *this, "drumTimingHuman", "Timing" };
     static constexpr int humanizeWidth = 150;
     juce::Rectangle<int> humanizeArea;   // its frame and title, painted
     void showDrumView (bool kit);
-    static bool isKitShown (const SF2PlayerProcessor::State&);
+    static bool isDetectedKit (const SF2PlayerProcessor::State&);
+    juce::String listValue (const char* list, const juce::String& key) const;
+    void setListValue (const char* list, const juce::String& key, const juce::String& value);
     std::shared_ptr<const SF2PlayerProcessor::State> refreshedState;   // held, so its address can't be reused by a newer one
     struct DrumRefresh
     {

@@ -346,6 +346,7 @@ void SF2PlayerProcessor::enterMissingState (const juce::File& file, bool keepIns
     currentFile = juce::File();
     currentInfo = {};
     presetList.clear();
+    refreshKitFlag();   // no instrument while the file is missing: not a kit either
     stateChanged = true;
 }
 
@@ -1588,37 +1589,24 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                 shortMidi.addEvent (metadata.data, metadata.numBytes, metadata.samplePosition);
     }
     const auto& fromHost = hasSysex ? shortMidi : hostMidi;
-    // The host's notes update the window's keyboard and lights; what's played in the window (its
-    // keyboard, the drums' pads, kit and computer keys) joins them here, and is also the plugin's
-    // MIDI output, so the host can record it ("MIDI From" this track on another one). The host's
-    // own notes aren't sent back: they're already its own.
-    // One call does both under the keyboard state's lock (the window adds and removes its
-    // listeners under it): the host's events update the state, and the window's are added to the
-    // same buffer, after the host's at any one sample (JUCE's MidiBuffer keeps that order). Walking
-    // both in order then tells them apart. The buffer is ours, reserved for far more than a block
-    // carries, so nothing allocates here.
+    // What's played in the window (its keyboard, the drums' pads, kit and computer keys) is the
+    // plugin's MIDI output, so the host can record it ("MIDI From" this track on another one); the
+    // host's own notes aren't sent back. Two keyboard states keep them apart: `keyboardState` holds
+    // only the window's notes (so a clip letting go of the same key can't swallow the window's own
+    // key-up), `hostNotes` only shows the host's on the window's keys and lights. Each is read under
+    // its own lock (the window adds and removes listeners under it). The block plays both, the
+    // window's after the host's at any one sample, from our own buffer, reserved for far more than
+    // a block carries, so nothing allocates here.
+    playedHere.clear();
+    keyboardState.processNextMidiBuffer (playedHere, 0, numSamples, true);
+    hostNotes.processNextMidiBuffer (const_cast<juce::MidiBuffer&> (fromHost), 0, numSamples, false);   // reads it only (nothing injected)
     blockMidi.clear();
     blockMidi.data.addArray (fromHost.data);   // the bytes as they are: one copy, not an insertion per event
-    keyboardState.processNextMidiBuffer (blockMidi, 0, numSamples, true);
-    playedHere.clear();
     bool playedNoteOn = false;   // a note played in the window (not a key let go)
+    for (const auto metadata : playedHere)
     {
-        auto host = fromHost.cbegin();
-        for (const auto metadata : blockMidi)
-        {
-            if (host != fromHost.cend())
-            {
-                const auto h = *host;
-                if (h.samplePosition == metadata.samplePosition && h.numBytes == metadata.numBytes
-                    && std::equal (h.data, h.data + h.numBytes, metadata.data))
-                {
-                    ++host;
-                    continue;
-                }
-            }
-            playedHere.addEvent (metadata.data, metadata.numBytes, metadata.samplePosition);
-            playedNoteOn = playedNoteOn || isNoteOnBytes (metadata.data, metadata.numBytes);
-        }
+        blockMidi.addEvent (metadata.data, metadata.numBytes, metadata.samplePosition);
+        playedNoteOn = playedNoteOn || isNoteOnBytes (metadata.data, metadata.numBytes);
     }
     auto& midi = blockMidi;
     {

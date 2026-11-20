@@ -197,7 +197,8 @@ public:
     std::atomic<float> outputPeak { 0.0f };
 
     // Notes from the host light the on-screen keyboard; its clicks play the synth.
-    juce::MidiKeyboardState keyboardState;
+    juce::MidiKeyboardState keyboardState;   // the window's notes (its keyboard, the drums): what it plays and sends out
+    juce::MidiKeyboardState hostNotes;       // the host's notes, only to show them (keys, lights); nothing plays from it
 
     struct Engine;   // a FluidSynth instance with the SoundFont loaded
 

@@ -31,13 +31,20 @@ namespace DrumKit
         return juce::isPositiveAndBelow (note - 27, (int) std::size (names)) ? juce::String (names[note - 27]) : juce::String();
     }
 
-    // A kit: General MIDI's drum bank (128), or an instrument named one ("TR-808 Kit", "Rock Drums", "Latin Percussion").
-// A name that says a melodic instrument: one sampled key by key (a glockenspiel, a celesta)
-    // has a kit's layout, so the layout alone doesn't make it a kit.
+    // A preset name's words, lower case (one way to split them for every check below).
+    inline juce::StringArray wordsOf (const juce::String& name)
+    {
+        juce::StringArray words;
+        words.addTokens (name.toLowerCase(), " -_/()[].,:&+", "");
+        return words;
+    }
+
+    // A name that says a melodic instrument: one sampled key by key (a glockenspiel, a celesta)
+    // has a kit's layout, so the layout alone doesn't make it a kit. Whole words: "808 Pads" or
+    // "Bass Drum" stay drums.
     inline bool soundsMelodic (const juce::String& name)
     {
-        juce::StringArray words;   // whole words: "808 Pads" or "Bass Drum" stay drums
-        words.addTokens (name.toLowerCase(), " -_/()[].,:&+", "");
+        const auto words = wordsOf (name);
         for (const char* melodic : { "glockenspiel", "glock", "celesta", "celeste", "marimba", "xylophone", "vibraphone", "vibes",
                                      "bells", "chimes", "piano", "harp", "kalimba", "mallets", "timpani", "tubular", "organ",
                                      "guitar", "strings", "voice", "choir", "flute", "horn", "trumpet", "sax", "violin", "cello" })
@@ -45,11 +52,11 @@ namespace DrumKit
         return false;
     }
 
+    // A kit: General MIDI's drum bank (128), or an instrument named one ("TR-808 Kit", "Rock Drums", "Latin Percussion").
     inline bool isKit (int bank, const juce::String& name)
     {
         if (bank == 128) return true;
-        juce::StringArray words;
-        words.addTokens (name.toLowerCase(), " -_/()[].,:", "");
+        const auto words = wordsOf (name);
         // "Drum" alone is one instrument (General MIDI's Taiko Drum, Synth Drum), and Steel Drums too.
         // Melodic Drums, Pitched or Tuned Percussion, Taiko Drums, Timpani and Steel Drums play notes.
         for (const char* tuned : { "melodic", "pitched", "tuned", "chromatic", "taiko", "timpani", "steel" })
@@ -105,13 +112,15 @@ namespace DrumKit
     // piece and pad lights as its key sounds, whoever plays it.
     struct Pads : juce::Component, juce::TooltipClient, private juce::MidiKeyboardState::Listener, private juce::Timer
     {
-        explicit Pads (juce::MidiKeyboardState& s) : state (s)
+        // `s`: the window's own notes (what the pads play); `shown`: other notes that light them too (the host's).
+        Pads (juce::MidiKeyboardState& s, juce::MidiKeyboardState& shown) : state (s), alsoShown (shown)
         {
             state.addListener (this);
+            alsoShown.addListener (this);
             setWantsKeyboardFocus (true);
             setMouseClickGrabsKeyboardFocus (true);
         }
-        ~Pads() override { releaseAll(); state.removeListener (this); }
+        ~Pads() override { releaseAll(); state.removeListener (this); alsoShown.removeListener (this); }
         void visibilityChanged() override
         {
             if (isVisible()) startTimerHz (60);   // the lights and the hits' motion
@@ -247,7 +256,7 @@ namespace DrumKit
                 if (struck[(size_t) note].exchange (false, std::memory_order_relaxed)) level = 1.0f;
                 else if (level > 0.0f)
                 {
-                    const bool on = state.isNoteOnForChannels (0xffff, note);
+                    const bool on = state.isNoteOnForChannels (0xffff, note) || alsoShown.isNoteOnForChannels (0xffff, note);
                     level = on ? juce::jmax (level - 0.015f, 0.45f) : juce::jmax (0.0f, level - 0.035f);
                 }
                 if (! juce::exactlyEqual (level, before))
@@ -704,6 +713,7 @@ namespace DrumKit
 
     private:
         juce::MidiKeyboardState& state;
+        juce::MidiKeyboardState& alsoShown;
         std::array<float, 128> glow {};
         std::array<std::atomic<bool>, 128> struck {};   // set from any thread (the audio thread's MIDI), read on the timer
         // MidiKeyboardState::Listener: may run on the audio thread, so it only sets a flag.

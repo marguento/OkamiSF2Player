@@ -1461,14 +1461,15 @@ int main()
                               && DrumKit::soundsMelodic ("Glockenspiel") && DrumKit::soundsMelodic ("Tubular Bells") && ! DrumKit::soundsMelodic ("Room Kit")
                               && ! DrumKit::soundsMelodic ("808 Pads") && ! DrumKit::soundsMelodic ("Bass Drum & Snare");
         juce::MidiKeyboardState state;
-        DrumKit::Pads pads (state);
+        juce::MidiKeyboardState shown;
+        DrumKit::Pads pads (state, shown);
         pads.lowKey = 36; pads.highKey = 65;
         pads.customNames[60] = "Hat Choke";
         const bool named = pads.nameOf (36) == "Kick" && pads.nameOf (42) == "Closed Hat" && pads.nameOf (60) == "Hat Choke"
                            && DrumKit::gmName (26).isEmpty() && DrumKit::gmName (88).isEmpty() && DrumKit::gmName (87) == "Open Surdo"
                            && pads.rows() == 3 && pads.plays (65) && ! pads.plays (66);
         // The computer's keys: each plays its piece's first key the kit has (either case), none when it has none.
-        DrumKit::Pads small (state);
+        DrumKit::Pads small (state, shown);
         small.lowKey = 36; small.highKey = 47;
         const bool keys = pads.noteForKey ('z') == 36 && pads.noteForKey ('X') == 38 && pads.noteForKey ('f') == 50
                           && pads.noteForKey ('h') == 43 && pads.noteForKey ('a') == 42 && pads.noteForKey ('1') == -1
@@ -1594,7 +1595,8 @@ int main()
         const bool otherInstrument = ! c.p.drumsActive();
         // The kit's pieces are the keys it has samples on, not every key of its range.
         juce::MidiKeyboardState keyState;
-        DrumKit::Pads gaps (keyState);
+        juce::MidiKeyboardState keyShown;
+        DrumKit::Pads gaps (keyState, keyShown);
         gaps.lowKey = 35; gaps.highKey = 60;
         gaps.keys.reset (36); gaps.keys.reset (38);
         const bool exact = gaps.noteForKey ('z') == 35 && gaps.noteForKey ('x') == 40 && ! gaps.plays (36);
@@ -1858,7 +1860,21 @@ int main()
         };
         juce::String detail;
         const bool piano = sendsOut (testPreset, false, detail), guitar = sendsOut (testPreset, true, detail), drums = sendsOut (kitIndex, false, detail);
-        expect (piano && guitar && drums, "MIDI out: notes played in the window reach the host (piano, guitar, kit), the host's own don't echo", detail);
+        // A clip letting go of the key the window holds doesn't swallow the window's own key-up.
+        bool ownKeyUp = false;
+        {
+            Player player (testFont);
+            juce::AudioBuffer<float> buffer (6, block);
+            player.p.keyboardState.noteOn (1, 42, 0.8f);
+            { juce::MidiBuffer m; player.p.processBlock (buffer, m); }
+            { juce::MidiBuffer m; m.addEvent (juce::MidiMessage::noteOn (1, 42, (juce::uint8) 90), 0); m.addEvent (juce::MidiMessage::noteOff (1, 42), 5); player.p.processBlock (buffer, m); }
+            player.p.keyboardState.noteOff (1, 42, 0.0f);
+            juce::MidiBuffer m;
+            player.p.processBlock (buffer, m);
+            for (const auto metadata : m)
+                ownKeyUp = ownKeyUp || (metadata.getMessage().isNoteOff() && metadata.getMessage().getNoteNumber() == 42);
+        }
+        expect (piano && guitar && drums && ownKeyUp, "MIDI out: notes played in the window reach the host (piano, guitar, kit), the host's own don't echo, a clip can't swallow the window's key-up", detail);
     }
 
     {
@@ -1908,9 +1924,19 @@ int main()
         for (const auto* holder : *free.getTrack (0))
             if (holder->message.isNoteOn()) ons.push_back (holder->message.getTimeStamp());
         const bool loose = notes == 2 && ons.size() == 2 && ons[0] == 0.0 && std::abs (ons[1] - 960) < 1;
+        // A key let go before the first note (held as REC was clicked) isn't in the take, nor moves its start.
+        auto leading = Take::build ({ event (4.0, 0, false, juce::MidiMessage::noteOff (1, 42)),
+                                      event (5.0, 0, false, juce::MidiMessage::noteOn (1, 36, (juce::uint8) 100)) }, 120.0, 4.0, notes);
+        int leadingOffs = 0; double leadingOn = -1;
+        for (const auto* holder : *leading.getTrack (0))
+        {
+            if (holder->message.isNoteOff() && holder->message.getNoteNumber() == 42) ++leadingOffs;
+            if (holder->message.isNoteOn()) leadingOn = holder->message.getTimeStamp();
+        }
+        const bool anchored = notes == 1 && leadingOffs == 0 && leadingOn == 0.0;
         juce::MemoryOutputStream bytes;
         const bool writes = free.writeTo (bytes) && bytes.getDataSize() > 20;
-        expect (captured && grid && loose && writes, "REC: window notes kept only while recording, a take as a MIDI file on the bars or from 0");
+        expect (captured && grid && loose && anchored && writes, "REC: window notes kept only while recording, a take as a MIDI file on the bars or from 0");
 
         // A second take holds only its own notes, in its own file, and while it records the
         // chip doesn't hand over the first one.

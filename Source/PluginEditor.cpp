@@ -120,6 +120,7 @@ void SF2Look::drawLabel (juce::Graphics& g, juce::Label& label)
 void RangeKeyboard::drawWhiteNote (int note, juce::Graphics& g, juce::Rectangle<float> area, bool isDown, bool isOver,
                                    juce::Colour, juce::Colour)
 {
+    isDown = isDown || shownDown (note);
     const bool playable = note >= lowKey && note <= highKey;
     auto fill = playable ? juce::Colour (0xffd9d9de) : juce::Colour (0xff4a4a52);
     if (note < splitKey)   // played by the second instrument
@@ -157,6 +158,7 @@ void RangeKeyboard::drawWhiteNote (int note, juce::Graphics& g, juce::Rectangle<
 void RangeKeyboard::drawBlackNote (int note, juce::Graphics& g, juce::Rectangle<float> area, bool isDown, bool isOver,
                                    juce::Colour)
 {
+    isDown = isDown || shownDown (note);
     const bool playable = note >= lowKey && note <= highKey;
     auto fill = playable ? juce::Colour (0xff222226) : juce::Colour (0xff2e2e34);
     if (note < splitKey)
@@ -674,6 +676,7 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     addAndMakeVisible (keysButton);
     neck.setTooltip ("Click a string at a fret to draw a chord and see its name; click the name to hear it");
     keyboard.describe = [this] (int note) { return keyHint (note); };
+    keyboard.alsoShows = &player.hostNotes;   // a clip's or a MIDI keyboard's notes shown down too
     drumPads.onRename = [this] (const juce::String& kit, int note, const juce::String& name) { renameDrum (kit, note, name); };
     addChildComponent (drumPads);
     setWantsKeyboardFocus (true);   // keys with no focused child reach keyPressed (the drums)
@@ -1532,6 +1535,12 @@ void SF2PlayerEditor::drawSectionTitle (juce::Graphics& g, juce::Rectangle<int> 
 
 void SF2PlayerEditor::timerCallback()
 {
+    {
+        // The host's notes on the keyboard: it redraws its own state's keys by itself, these when they change.
+        std::bitset<128> hostKeys;
+        for (int n = 0; n < 128; ++n) hostKeys[(size_t) n] = player.hostNotes.isNoteOnForChannels (0xffff, n);
+        if (hostKeys != hostKeysShown) { hostKeysShown = hostKeys; keyboard.repaint(); }
+    }
     showHint();
     refreshGuitarPanel();
     refreshDrumPads (*player.state());   // a guitar shown or gone changes whether the pads show
@@ -1587,7 +1596,7 @@ void SF2PlayerEditor::timerCallback()
         juce::StringArray names;
         int classes = 0, lowest = -1;
         for (int n = 0; n < 128; ++n)
-            if (player.keyboardState.isNoteOnForChannels (0xffff, n))
+            if (player.keyboardState.isNoteOnForChannels (0xffff, n) || player.hostNotes.isNoteOnForChannels (0xffff, n))
             {
                 names.add (juce::MidiMessage::getMidiNoteName (n, true, false, 3));
                 classes |= 1 << (n % 12);
@@ -2612,11 +2621,7 @@ void SF2PlayerEditor::applyPanelChoice (const SF2PlayerProcessor::State& st)
     if (key == panelKey) return;
     panelKey = key;
     if (! picked) return;
-    const auto choices = juce::StringArray::fromLines (settings->getValue ("panelChoices"));
-    float choice = 0.0f;   // Auto
-    for (const auto& line : choices)
-        if (line.upToLastOccurrenceOf ("=", false, false) == key)
-            choice = (float) line.fromLastOccurrenceOf ("=", false, false).getIntValue();
+    const float choice = (float) listValue ("panelChoices", key).getIntValue();   // none: 0, Auto
     if (auto* parameter = player.parameters.getParameter ("guitarPanel"))
         if (juce::roundToInt (player.parameters.getRawParameterValue ("guitarPanel")->load()) != (int) choice)
             editParameter (*parameter, parameter->convertTo0to1 (choice));
@@ -2631,7 +2636,7 @@ void SF2PlayerEditor::showPanelMenu()
     menu.addItem (2, "Guitar panel", true, current == 1);
     menu.addItem (3, "Standard (no extra panel)", true, current == 2);
     menu.addSeparator();
-    const bool kit = isKitShown (*player.state());
+    const bool kit = isDetectedKit (*player.state());
     menu.addItem (4, juce::String ("Drum pads (") + (kit ? "detected: a kit" : "not detected") + ")", true, drumsShown);
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (panelButton), [this] (int chosen)
     {
@@ -2639,22 +2644,21 @@ void SF2PlayerEditor::showPanelMenu()
         if (chosen == 4)   // the pads on or off for this instrument, remembered
         {
             const auto st = player.state();
-            const bool kit = isKitShown (*st);
+            const bool kit = isDetectedKit (*st);
             const auto key = favouriteKey (*st, st->preset);
             // The pads and the Guitar panel don't share the keys: turning the pads on for a guitar
-            // turns its panel off for this instrument only, marked "2p" in its remembered choice,
-            // and turning them off again gives the panel back (Auto) where the pads took it.
-            auto panelChoices = juce::StringArray::fromLines (settings->getValue ("panelChoices"));
-            panelChoices.removeEmptyStrings();
-            const auto mark = key + "=2p";
+            // turns its panel off for this instrument only, remembered as "2p<the choice it had>",
+            // and turning them off again gives that choice back.
             auto* parameter = player.parameters.getParameter ("guitarPanel");
+            const auto remembered = listValue ("panelChoices", key);
             if (drumsShown)
             {
                 setDrumChoice (key, kit ? 2 : 0);
-                if (panelChoices.contains (mark))
+                if (remembered.startsWith ("2p"))
                 {
-                    panelChoices.removeString (mark);
-                    if (parameter != nullptr) editParameter (*parameter, parameter->convertTo0to1 (0.0f));
+                    const int before = juce::jlimit (0, 2, remembered.substring (2).getIntValue());
+                    setListValue ("panelChoices", key, before == 0 ? juce::String() : juce::String (before));
+                    if (parameter != nullptr) editParameter (*parameter, parameter->convertTo0to1 ((float) before));
                 }
             }
             else
@@ -2662,14 +2666,11 @@ void SF2PlayerEditor::showPanelMenu()
                 setDrumChoice (key, kit ? 0 : 1);
                 if (player.guitarPanelActive() && parameter != nullptr)
                 {
+                    const int before = juce::roundToInt (player.parameters.getRawParameterValue ("guitarPanel")->load());
                     editParameter (*parameter, parameter->convertTo0to1 (2.0f));
-                    for (int i = panelChoices.size(); --i >= 0;)
-                        if (panelChoices[i].upToLastOccurrenceOf ("=", false, false) == key) panelChoices.remove (i);
-                    panelChoices.add (mark);
+                    setListValue ("panelChoices", key, "2p" + juce::String (before));
                 }
             }
-            settings->setValue ("panelChoices", panelChoices.joinIntoString ("\n"));
-            settings->saveIfNeeded();
             refreshDrumPads (*st);
             refreshPanelButton();
             return;
@@ -2678,21 +2679,15 @@ void SF2PlayerEditor::showPanelMenu()
         if (auto* parameter = player.parameters.getParameter ("guitarPanel"))
             editParameter (*parameter, parameter->convertTo0to1 ((float) choice));
         // Remembered for this instrument: Auto needs no entry.
-        auto choices = juce::StringArray::fromLines (settings->getValue ("panelChoices"));
-        choices.removeEmptyStrings();
-        for (int i = choices.size(); --i >= 0;)
-            if (choices[i].upToLastOccurrenceOf ("=", false, false) == panelKey) choices.remove (i);
-        if (choice != 0 && panelKey.isNotEmpty()) choices.add (panelKey + "=" + juce::String (choice));
-        settings->setValue ("panelChoices", choices.joinIntoString ("\n"));
-        settings->saveIfNeeded();
+        setListValue ("panelChoices", panelKey, choice == 0 ? juce::String() : juce::String (choice));
         refreshPanelButton();
     });
 }
 
 // The button says what the instrument gets, Guitar (lit) or Standard, and whether that was detected.
 // DRUM KIT: the pads show for a kit (or an instrument forced on), never with the Guitar panel.
-// The instrument chosen is a kit (detected; the user's choice aside).
-bool SF2PlayerEditor::isKitShown (const SF2PlayerProcessor::State& st)
+// The instrument chosen is detected as a kit (whether the pads show is drumsShown: the user's choice too).
+bool SF2PlayerEditor::isDetectedKit (const SF2PlayerProcessor::State& st)
 {
     return juce::isPositiveAndBelow (st.preset, (int) st.presets.size()) && st.presets[(size_t) st.preset].drumKit;
 }
@@ -2811,27 +2806,41 @@ void SF2PlayerEditor::showDrumView (bool kit)
 // This Mac's choice for an instrument: 0 Auto, 1 on, 2 off; -1 when it has none (the project's counts).
 int SF2PlayerEditor::drumChoice (const juce::String& key) const
 {
-    if (key.isEmpty()) return -1;
-    for (const auto& line : juce::StringArray::fromLines (settings->getValue ("drumChoices")))
+    const auto value = listValue ("drumChoices", key);
+    return value.isEmpty() ? -1 : juce::jlimit (0, 2, value.getIntValue());
+}
+
+// The settings' "key=value" lists (one line per instrument): a key's value, empty for none.
+juce::String SF2PlayerEditor::listValue (const char* list, const juce::String& key) const
+{
+    if (key.isEmpty()) return {};
+    for (const auto& line : juce::StringArray::fromLines (settings->getValue (list)))
         if (line.upToLastOccurrenceOf ("=", false, false) == key)
-            return juce::jlimit (0, 2, line.fromLastOccurrenceOf ("=", false, false).getIntValue());
-    return -1;
+            return line.fromLastOccurrenceOf ("=", false, false);
+    return {};
+}
+
+// Sets a key's value in such a list (an empty value removes it) and saves.
+void SF2PlayerEditor::setListValue (const char* list, const juce::String& key, const juce::String& value)
+{
+    if (key.isEmpty()) return;
+    auto lines = juce::StringArray::fromLines (settings->getValue (list));
+    lines.removeEmptyStrings();
+    for (int i = lines.size(); --i >= 0;)
+        if (lines[i].upToLastOccurrenceOf ("=", false, false) == key) lines.remove (i);
+    if (value.isNotEmpty()) lines.add (key + "=" + value);
+    settings->setValue (list, lines.joinIntoString ("\n"));
+    settings->saveIfNeeded();
 }
 
 void SF2PlayerEditor::setDrumChoice (const juce::String& key, int choice)
 {
     if (key.isEmpty()) return;
-    auto choices = juce::StringArray::fromLines (settings->getValue ("drumChoices"));
-    choices.removeEmptyStrings();
-    for (int i = choices.size(); --i >= 0;)
-        if (choices[i].upToLastOccurrenceOf ("=", false, false) == key) choices.remove (i);
-    choices.add (key + "=" + juce::String (choice));   // Auto too: chosen here, it outranks a project's
+    setListValue ("drumChoices", key, juce::String (choice));   // Auto too: chosen here, it outranks a project's
     if (key == choiceKey) shownChoice = choice;
     const auto st = player.state();
     if (juce::isPositiveAndBelow (st->preset, (int) st->presets.size()) && favouriteKey (*st, st->preset) == key)
         player.setDrumChoice (st->presets[(size_t) st->preset].bank, st->presets[(size_t) st->preset].number, choice, true);
-    settings->setValue ("drumChoices", choices.joinIntoString ("\n"));
-    settings->saveIfNeeded();
 }
 
 // A pad's name, kept for this kit in the settings ("<kit>#<note>=<name>"); empty goes back to General MIDI's.

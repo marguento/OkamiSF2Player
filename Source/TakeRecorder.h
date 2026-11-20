@@ -19,8 +19,12 @@ namespace Take
     // running (and not looping back), it keeps its place in the bars: it starts at the bar the
     // first note fell in (drop it at that bar). Otherwise the first note is at 0, timed at the host's tempo. Notes still
     // held when it stopped end a sixteenth after the last event.
-    inline juce::MidiFile build (const std::vector<Event>& events, double bpm, double barQuarters, int& notes)
+    inline juce::MidiFile build (const std::vector<Event>& allEvents, double bpm, double barQuarters, int& notes)
     {
+        // The take starts at its first note: key-ups before it (a key held as REC was clicked) are left out.
+        const auto firstNote = std::find_if (allEvents.begin(), allEvents.end(),
+                                             [] (const Event& e) { return SF2PlayerProcessor::isNoteOnBytes (e.bytes, e.size); });
+        const std::vector<Event> events (firstNote, allEvents.end());
         if (! events.empty())   // the tempo and bar in force at the first note, not at the take's end
         {
             bpm = events.front().bpm;
