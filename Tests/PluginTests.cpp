@@ -1459,7 +1459,9 @@ int main()
                               && ! DrumKit::isKit (0, "Melodic Drums") && ! DrumKit::isKit (0, "Pitched Percussion") && ! DrumKit::isKit (0, "Taiko Drums") && ! DrumKit::isKit (0, "Synth Drums") && DrumKit::isKit (0, "Synth Kit")
                               && ! DrumKit::isKit (0, "Percussion Organ") && ! DrumKit::isKit (0, "Chromatic Percussion")
                               && DrumKit::soundsMelodic ("Glockenspiel") && DrumKit::soundsMelodic ("Tubular Bells") && ! DrumKit::soundsMelodic ("Room Kit")
-                              && ! DrumKit::soundsMelodic ("808 Pads") && ! DrumKit::soundsMelodic ("Bass Drum & Snare");
+                              && ! DrumKit::soundsMelodic ("808 Pads") && ! DrumKit::soundsMelodic ("Bass Drum & Snare")
+                              && DrumKit::soundsMelodic ("Chromatic Percussion") && DrumKit::soundsMelodic ("Steel Drums")
+                              && DrumKit::soundsMelodic ("Music Box") && DrumKit::soundsMelodic ("Harpsichord");
         juce::MidiKeyboardState state;
         juce::MidiKeyboardState shown;
         DrumKit::Pads pads (state, shown);

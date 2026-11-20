@@ -843,8 +843,8 @@ void SF2PlayerProcessor::prepareToPlay (double newSampleRate, int maximumExpecte
     work.setSize (6, juce::jmax (1, maximumExpectedSamplesPerBlock));
     playedHere.ensureSize (4096);
     shortMidi.ensureSize (32768);
-    blockMidi.ensureSize (1 << 19);
-    previewHere.ensureSize (1024);   // 512 KB: about 58,000 events, past any host's block
+    blockMidi.ensureSize (1 << 19);   // 512 KB: about 58,000 events, past any host's block
+    previewHere.ensureSize (1024);
     {
         const juce::SpinLock::ScopedLockType lock (engineLock);
         if (guitarEngaged && engine != nullptr)
@@ -2002,7 +2002,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
 
     const float peak = juce::jmax (work.getMagnitude (0, 0, numSamples), work.getMagnitude (1, 0, numSamples));
     float previous = outputPeak.load();
-    while (peak > previous && ! outputPeak.compare_exchange_weak (previous, peak)) {}
+    while (! bypassedBlock && peak > previous && ! outputPeak.compare_exchange_weak (previous, peak)) {}   // bypassed: silent, so the meter rests
 }
 
 // Main: dry (plus the built-in effects); Reverb / Chorus Send: the sends, only in send mode.

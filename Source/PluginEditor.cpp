@@ -2730,7 +2730,11 @@ void SF2PlayerEditor::refreshDrumPads (const SF2PlayerProcessor::State& st)
     // Humanize plays where the pads show, even once the window is closed (saved with the project).
     // Handed over only if the project's choice is still the one the window saw: one restored in
     // between wins, and the next tick reads it.
-    if (valid && stateId != nullptr)   // only for the instrument that's current now
+    // Only for the instrument that's current now, and only a choice someone made for it (this
+    // Mac's, or the project's own): an instrument nobody chose for leaves the project's choice
+    // for its kit as it is.
+    if (valid && stateId != nullptr
+        && (drumChoice (key) >= 0 || player.drumChoiceOf (st.presets[(size_t) st.preset].bank, st.presets[(size_t) st.preset].number) >= 0))
     {
         const auto& preset = st.presets[(size_t) st.preset];
         if (player.offerDrumChoice (seenProjectChoice, preset.bank, preset.number, choice))

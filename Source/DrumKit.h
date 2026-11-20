@@ -46,10 +46,13 @@ namespace DrumKit
     {
         const auto words = wordsOf (name);
         for (const char* melodic : { "glockenspiel", "glock", "celesta", "celeste", "marimba", "xylophone", "vibraphone", "vibes",
-                                     "bells", "chimes", "piano", "harp", "kalimba", "mallets", "timpani", "tubular", "organ",
-                                     "guitar", "strings", "voice", "choir", "flute", "horn", "trumpet", "sax", "violin", "cello" })
+                                     "bells", "chimes", "piano", "harp", "harpsichord", "clavinet", "dulcimer", "kalimba", "mallets",
+                                     "timpani", "tubular", "organ", "guitar", "banjo", "sitar", "koto", "strings", "voice", "choir",
+                                     "flute", "horn", "trumpet", "sax", "violin", "cello", "accordion", "harmonica",
+                                     // tuned drums and percussion play notes too
+                                     "melodic", "pitched", "tuned", "chromatic", "taiko", "steel" })
             if (words.contains (melodic)) return true;
-        return false;
+        return words.contains ("music") && words.contains ("box");
     }
 
     // A kit: General MIDI's drum bank (128), or an instrument named one ("TR-808 Kit", "Rock Drums", "Latin Percussion").
@@ -59,7 +62,7 @@ namespace DrumKit
         const auto words = wordsOf (name);
         // "Drum" alone is one instrument (General MIDI's Taiko Drum, Synth Drum), and Steel Drums too.
         // Melodic Drums, Pitched or Tuned Percussion, Taiko Drums, Timpani and Steel Drums play notes.
-        for (const char* tuned : { "melodic", "pitched", "tuned", "chromatic", "taiko", "timpani", "steel" })
+        for (const char* tuned : { "melodic", "pitched", "tuned", "chromatic", "taiko", "timpani", "steel" })   // also in soundsMelodic
             if (words.contains (tuned)) return false;
         if (words.contains ("kit") || words.contains ("drumkit") || words.contains ("drumset"))
             return true;

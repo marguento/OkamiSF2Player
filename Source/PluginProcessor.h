@@ -256,9 +256,9 @@ private:
     std::atomic<int> pinGeneration { 0 };   // bumped when the engine or a channel's preset changes: pin afresh
     int seenGeneration = 0;                    // audio thread only
     juce::MidiBuffer shortMidi;   // a block's MIDI without sysex (reserved in prepareToPlay)
-    juce::MidiBuffer blockMidi;
+    juce::MidiBuffer blockMidi;     // the host's MIDI plus the window's notes, as played (reserved in prepareToPlay)
     juce::MidiBuffer previewHere;   // this block's preview notes (reserved in prepareToPlay)
-    bool bypassedBlock = false;     // the block runs for processBlockBypassed: nothing goes into a take   // the host's MIDI plus the window's notes, as played (reserved in prepareToPlay)
+    bool bypassedBlock = false;     // the block runs for processBlockBypassed: nothing goes into a take or the meter
 
     // Guitar panel (audio thread, under engineLock): the strum timeline and its clock.
     GuitarEngine guitar;
