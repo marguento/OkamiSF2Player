@@ -21,6 +21,11 @@ namespace Take
     // held when it stopped end a sixteenth after the last event.
     inline juce::MidiFile build (const std::vector<Event>& events, double bpm, double barQuarters, int& notes)
     {
+        if (! events.empty())   // the tempo and bar in force at the first note, not at the take's end
+        {
+            bpm = events.front().bpm;
+            barQuarters = events.front().barQuarters;
+        }
         constexpr int tpq = 960;
         notes = 0;
         juce::MidiMessageSequence sequence;

@@ -571,7 +571,7 @@ bool SF2PlayerProcessor::changesLastingState (const juce::MidiMessage& m)
     return m.isNoteOff() || m.isProgramChange() || rpn || (cc >= 0 && keptInOrder (cc));
 }
 
-void SF2PlayerProcessor::playDeferredMidi (const GuitarEngine::Settings* guitarSettings, juce::int64 at, const Humanize* human)
+void SF2PlayerProcessor::playDeferredMidi (const GuitarEngine::Settings* guitarSettings, juce::int64 at, const Humanize& human)
 {
     if (numDeferred == 0 && ! anyCollapsed)
         return;   // the usual block: nothing kept
@@ -579,11 +579,9 @@ void SF2PlayerProcessor::playDeferredMidi (const GuitarEngine::Settings* guitarS
     {
         const auto& m = deferredEvents[(size_t) i];
         const int channel = m.getChannel() - 1;
-        jassert ((guitarSettings == nullptr) != (human == nullptr));   // one way or the other, never neither
         if (guitarSettings == nullptr)
         {
-            if (human != nullptr) playOrWait (m, at, *human);   // the block's own rules: Humanize, and waiting for its key
-            else handleMidi (m);
+            playOrWait (m, at, human);   // the block's own rules: Humanize, and waiting for its key
             continue;
         }
         if (juce::isPositiveAndBelow (channel, numMidiChannels))
@@ -743,6 +741,7 @@ void SF2PlayerProcessor::swapEngine (std::unique_ptr<Engine> fresh)
         guitarEngaged = false;
         clearWheels();   // the new engine's voices start in tune
         dropLateHits();   // Humanize's waiting hits were meant for the old instrument
+        kitGeneration.fetch_add (1);   // every channel plays the chosen instrument again: none is "moved" (under the lock, with the change)
         if (engine != nullptr)
         {
             applyEffectSettings (true);
@@ -828,6 +827,7 @@ void SF2PlayerProcessor::selectPreset (int presetIndex)
             return;
         fluid_synth_all_notes_off (engine->synth, -1);
         applyPreset (*engine, presetIndex);
+        kitGeneration.fetch_add (1);   // with the change itself, so a clip's program change right after it still counts
     }
     currentPreset = presetIndex;
     refreshKitFlag();
@@ -854,7 +854,6 @@ void SF2PlayerProcessor::prepareToPlay (double newSampleRate, int maximumExpecte
         // export starting shouldn't play one); a waiting note-off still ends its note, first thing
         // on the new timeline.
         dropLateHits();
-        kitGeneration.fetch_add (1);   // a rebuilt engine plays the kit on every channel again
     }
     toneFrequency = 0.0f;   // recompute the filters for this rate
     for (auto& channel : toneFilters)
@@ -1646,6 +1645,8 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
             event.seconds = takeSeconds + metadata.samplePosition / sr;   // a clock no audio restart sets back
             event.onGrid = ppq.hasValue();
             event.barStart = barStart;
+            event.bpm = bpm;
+            event.barQuarters = barQuarters;
             event.ppq = ppq ? *ppq + metadata.samplePosition / sr * bpm / 60.0 : 0.0;
             event.size = metadata.numBytes;
             std::copy (metadata.data, metadata.data + metadata.numBytes, event.bytes);
@@ -1656,7 +1657,16 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     struct SendPlayed   // at every way out of this block
     {
         juce::MidiBuffer& host; const juce::MidiBuffer& played;
-        ~SendPlayed() { host.clear(); host.addEvents (played, 0, -1, 0); }
+        ~SendPlayed()
+        {
+            // Into the host's own buffer only within the room it surely has: what it held this block,
+            // or the 2048 bytes JUCE's AU and VST3 wrappers reserve for it, so nothing allocates here.
+            // (A block's window notes are a few; past that they still sound, they just don't go out.)
+            const int room = juce::jmax (host.data.size(), 2048);
+            host.clear();
+            if (played.data.size() <= room)
+                host.data.addArray (played.data);
+        }
     } sendPlayed { hostMidi, playedHere };
 
     if (work.getNumSamples() < numSamples)   // a host sending more than it announced
@@ -1753,7 +1763,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         }
         else if (lateCount > 0)   // the guitar took over: Humanize's late notes play now, before anything after them
             playLateNotesNow();
-        playDeferredMidi (useGuitar ? &guitarSettings : nullptr, blockStart, useGuitar ? nullptr : &human);
+        playDeferredMidi (useGuitar ? &guitarSettings : nullptr, blockStart, human);
 
         if (! useGuitar)
         {

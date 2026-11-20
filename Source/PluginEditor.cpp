@@ -2682,9 +2682,12 @@ void SF2PlayerEditor::refreshDrumPads (const SF2PlayerProcessor::State& st)
     // The 20 Hz timer calls this: nothing to do unless the state, the panel or the project's choice moved.
     // The snapshot is compared by address only while it's held (current one), so a freed one's
     // address can't come back as a newer snapshot's.
+    // The project's choice first, then the snapshot: a state restored after this read either shows
+    // as a newer snapshot (nothing offered) or as a changed choice (read again next tick).
+    const int projectChoiceNow = player.drumChoice.load();
     auto current = player.state();
     const void* stateId = current.get() == &st ? &st : nullptr;
-    const DrumRefresh now { stateId, st.preset, (int) st.presets.size(), guitarShown, player.drumChoice.load(), shownChoice };
+    const DrumRefresh now { stateId, st.preset, (int) st.presets.size(), guitarShown, projectChoiceNow, shownChoice };
     if (stateId != nullptr && now == lastDrumRefresh) return;
     lastDrumRefresh = now;
     refreshedState = stateId != nullptr ? std::move (current) : nullptr;
@@ -2693,9 +2696,9 @@ void SF2PlayerEditor::refreshDrumPads (const SF2PlayerProcessor::State& st)
     // The settings read once per instrument; the project's choice when they have none (another
     // Mac). Read again when the project's choice changes behind the window's back (a state
     // restored into the open plugin: a preset recall, undo).
-    if (const int projectChoice = player.drumChoice.load(); projectChoice != seenProjectChoice)
+    if (projectChoiceNow != seenProjectChoice)
     {
-        seenProjectChoice = projectChoice;
+        seenProjectChoice = projectChoiceNow;
         choiceKey = {};
     }
     if (key != choiceKey)
@@ -2710,7 +2713,7 @@ void SF2PlayerEditor::refreshDrumPads (const SF2PlayerProcessor::State& st)
     // Humanize plays where the pads show, even once the window is closed (saved with the project).
     // Handed over only if the project's choice is still the one the window saw: one restored in
     // between wins, and the next tick reads it.
-    if (valid)
+    if (valid && stateId != nullptr)   // only for the instrument that's current now
     {
         const auto& preset = st.presets[(size_t) st.preset];
         if (player.offerDrumChoice (seenProjectChoice, preset.bank, preset.number, choice))

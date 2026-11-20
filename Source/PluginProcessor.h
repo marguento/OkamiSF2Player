@@ -140,7 +140,6 @@ public:
         const bool valid = juce::isPositiveAndBelow (currentPreset, (int) presetList.size());
         presetIsKit.store (valid && presetList[(size_t) currentPreset].drumKit);
         presetId.store (valid ? presetList[(size_t) currentPreset].bank * 128 + presetList[(size_t) currentPreset].number : -1);
-        kitGeneration.fetch_add (1);
     }
     // Message thread. byUser: the user chose it (the project changed); otherwise the window only
     // hands over what its settings hold (opening it doesn't make a project unsaved).
@@ -238,7 +237,7 @@ private:
     // `guitar`: the Guitar panel's settings when its engine is in use, so kept notes go through it.
     struct Humanize { float velocity = 0; double maxDelay = 0; int splitBelow = -1; bool panelShown = false; };
     void playOrWait (juce::MidiMessage, juce::int64 now, const Humanize&);
-    void playDeferredMidi (const GuitarEngine::Settings*, juce::int64 at, const Humanize* human);
+    void playDeferredMidi (const GuitarEngine::Settings*, juce::int64 at, const Humanize& human);
     // Ends every note the Guitar panel's engine started (its twins included) and forgets it all.
     void flushGuitar();
     std::array<std::array<juce::int16, 128>, 16> twinKey;   // the Double's twin, as transposed at its note-on (-1: none)
@@ -295,7 +294,8 @@ public:
     // transport runs, in quarter notes of its timeline (for a take that lands on its bars).
     // ppq: where the host's transport was (onGrid); barStart: the ppq its current bar began at
     // (-1: the host didn't say), so time-signature changes before the take still land right.
-    struct TakeEvent { double seconds = 0, ppq = 0, barStart = -1; bool onGrid = false; juce::uint8 bytes[3] {}; int size = 0; };
+    // bpm, barQuarters: the host's tempo and bar length when it was played (the take keeps the first note's).
+    struct TakeEvent { double seconds = 0, ppq = 0, barStart = -1, bpm = 120, barQuarters = 4; bool onGrid = false; juce::uint8 bytes[3] {}; int size = 0; };
     // REC's state, one atomic so the window and the audio thread never disagree: idle, waiting
     // for the host's play (the take starts with the transport), recording with the transport
     // (it ends when the host stops), recording on its own, or ended by the host (the window

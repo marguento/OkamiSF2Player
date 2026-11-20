@@ -200,14 +200,14 @@ namespace DrumKit
             for (int piece : { hatClosed, snare, tomHigh, tomMid, tomFloor, crash, crash2, splash, ride, china, kick })
             {
                 auto r = placeOf (piece);
-                if (piece != kick && piece != hatClosed && piece != crash && piece != crash2 && piece != splash
-                    && piece != ride && piece != china)
+                if (hasShell (piece))
                     r = r.withHeight (r.getHeight() + shellDepth (piece));   // a drum: its shell too
                 if (noteOf (piece) >= 0 && r.expanded (6.0f).contains (at)) return piece;
             }
             return -1;
         }
         static float shellDepth (int piece) { return piece == tomFloor ? 105.0f : piece == snare ? 42.0f : 52.0f; }
+        static bool hasShell (int piece) { return piece == tomHigh || piece == tomMid || piece == tomFloor || piece == snare; }
         float lightOf (int piece) const
         {
             if (drawingRest) return 0.0f;
@@ -307,7 +307,7 @@ namespace DrumKit
         void paintKitCached (juce::Graphics& g)
         {
             const float pixels = g.getInternalContext().getPhysicalPixelScaleFactor();
-            const RestKey key { getWidth(), getHeight(), lowKey, highKey, pixels, keys, hasKeyboardFocus (false) };   // no strings each frame
+            const RestKey key { getWidth(), getHeight(), lowKey, highKey, pixels, keys };   // no strings each frame
             if (! (key == restKey) || ! restImage.isValid())
             {
                 restKey = key;
@@ -341,7 +341,7 @@ namespace DrumKit
         juce::Rectangle<float> areaOf (int piece) const
         {
             auto r = placeOf (piece);
-            if (piece == tomHigh || piece == tomMid || piece == tomFloor || piece == snare)
+            if (hasShell (piece))
                 r = r.withHeight (r.getHeight() + shellDepth (piece));
             return r.transformedBy (stage()).expanded (14.0f).withTrimmedTop (-18.0f);
         }
@@ -705,10 +705,10 @@ namespace DrumKit
         juce::Image restImage;
         struct RestKey   // what the picture was drawn for
         {
-            int width = 0, height = 0, low = 0, high = 0; float pixels = 0; std::bitset<128> keys; bool focus = false;
+            int width = 0, height = 0, low = 0, high = 0; float pixels = 0; std::bitset<128> keys;   // focus is drawn on top, not in it
             bool operator== (const RestKey& o) const
             {
-                return width == o.width && height == o.height && low == o.low && high == o.high && pixels == o.pixels && keys == o.keys && focus == o.focus;
+                return width == o.width && height == o.height && low == o.low && high == o.high && pixels == o.pixels && keys == o.keys;
             }
         } restKey;
         std::vector<std::pair<int, int>> keysDown;   // (key code, note) held on the computer's keyboard
