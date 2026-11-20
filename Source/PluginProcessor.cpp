@@ -843,7 +843,8 @@ void SF2PlayerProcessor::prepareToPlay (double newSampleRate, int maximumExpecte
     work.setSize (6, juce::jmax (1, maximumExpectedSamplesPerBlock));
     playedHere.ensureSize (4096);
     shortMidi.ensureSize (32768);
-    blockMidi.ensureSize (1 << 19);   // 512 KB: about 58,000 events, past any host's block
+    blockMidi.ensureSize (1 << 19);
+    previewHere.ensureSize (1024);   // 512 KB: about 58,000 events, past any host's block
     {
         const juce::SpinLock::ScopedLockType lock (engineLock);
         if (guitarEngaged && engine != nullptr)
@@ -1608,6 +1609,10 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         blockMidi.addEvent (metadata.data, metadata.numBytes, metadata.samplePosition);
         playedNoteOn = playedNoteOn || isNoteOnBytes (metadata.data, metadata.numBytes);
     }
+    previewHere.clear();   // a preview plays too, but it's no one's playing: not sent out, not recorded
+    previewNotes.processNextMidiBuffer (previewHere, 0, numSamples, true);
+    for (const auto metadata : previewHere)
+        blockMidi.addEvent (metadata.data, metadata.numBytes, metadata.samplePosition);
     auto& midi = blockMidi;
     {
         // REC waiting for play starts with the transport; a take with the transport ends with it.
@@ -1619,7 +1624,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         if (! playingNow && playedNoteOn)
             takeState.compare_exchange_strong (expected, takeFree);
     }
-    if (const int take = takeState.load (std::memory_order_relaxed); (take == takeWithHost || take == takeFree) && ! playedHere.isEmpty())
+    if (const int take = takeState.load (std::memory_order_relaxed); (take == takeWithHost || take == takeFree) && ! playedHere.isEmpty() && ! bypassedBlock)
     {
         const double sr = juce::jmax (1.0, getSampleRate());
         double bpm = 120.0, barQuarters = 4.0;
@@ -1730,6 +1735,8 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
             auditionRequests.store (0, std::memory_order_relaxed);
             previewRequest.store (0, std::memory_order_relaxed);
         }
+        if (useGuitar && ! guitarEngaged)
+            forgetKeyWaits();   // Humanize's per-key delays don't outlive the guitar taking over
         if (useGuitar)
             guitarEngaged = true;
 

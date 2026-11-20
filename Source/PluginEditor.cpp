@@ -565,8 +565,8 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     // takes them back the moment the take starts (it was the user who armed it).
     recorder.onSongStarted = [this]
     {
-        if (dynamic_cast<juce::TextEditor*> (juce::Component::getCurrentlyFocusedComponent()) != nullptr)
-            return;   // typing in Search: the keys stay there
+        if (guide != nullptr || dynamic_cast<juce::TextEditor*> (juce::Component::getCurrentlyFocusedComponent()) != nullptr)
+            return;   // the guide open, or typing in Search: the keys stay there
         if (auto* peer = getPeer()) peer->grabFocus();
         if (drumsShown && drumPads.isShowing()) drumPads.grabKeyboardFocus();
         else grabKeyboardFocus();
@@ -677,6 +677,7 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     neck.setTooltip ("Click a string at a fret to draw a chord and see its name; click the name to hear it");
     keyboard.describe = [this] (int note) { return keyHint (note); };
     keyboard.alsoShows = &player.hostNotes;   // a clip's or a MIDI keyboard's notes shown down too
+    keyboard.alsoShowsPreview = &player.previewNotes;   // and a preview's or a chord audition's
     drumPads.onRename = [this] (const juce::String& kit, int note, const juce::String& name) { renameDrum (kit, note, name); };
     addChildComponent (drumPads);
     setWantsKeyboardFocus (true);   // keys with no focused child reach keyPressed (the drums)
@@ -718,7 +719,7 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
         auditionNotes = notes;
         auditionCount = count;
         auditionTicks = 30;   // 1.5 s at 20 Hz
-        for (int i = 0; i < count; ++i) player.keyboardState.noteOn (1, notes[(size_t) i], 0.8f);
+        for (int i = 0; i < count; ++i) player.previewNotes.noteOn (1, notes[(size_t) i], 0.8f);
     };
     attack.slider.setTooltip ("How long notes take to start: x1 is the SoundFont's own");
     release.slider.setTooltip ("How long notes take to fade after the key is let go: x1 is the SoundFont's own");
@@ -820,7 +821,7 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
 SF2PlayerEditor::~SF2PlayerEditor()
 {
     if (previewNote >= 0)
-        player.keyboardState.noteOff (1, previewNote, 0.0f);
+        player.previewNotes.noteOff (1, previewNote, 0.0f);
     stopAudition();   // a drawn chord still sounding from a click on its name
     player.removeChangeListener (this);
     setLookAndFeel (nullptr);
@@ -1224,7 +1225,7 @@ void SF2PlayerEditor::preview()
     if (! juce::isPositiveAndBelow (index, (int) presets.size()))
         return;
     if (previewNote >= 0)
-        player.keyboardState.noteOff (1, previewNote, 0.0f);
+        player.previewNotes.noteOff (1, previewNote, 0.0f);
     const auto& p = presets[(size_t) index];
     const int note = (60 >= p.lowKey && 60 <= p.highKey) ? 60 : (p.lowKey + p.highKey) / 2;
     if (player.guitarPlaying())
@@ -1234,7 +1235,7 @@ void SF2PlayerEditor::preview()
         return;
     }
     previewNote = note;
-    player.keyboardState.noteOn (1, previewNote, 0.8f);
+    player.previewNotes.noteOn (1, previewNote, 0.8f);
     previewTicks = 14;   // 20 Hz timer: 0.7 s
 }
 
@@ -1538,7 +1539,8 @@ void SF2PlayerEditor::timerCallback()
     {
         // The host's notes on the keyboard: it redraws its own state's keys by itself, these when they change.
         std::bitset<128> hostKeys;
-        for (int n = 0; n < 128; ++n) hostKeys[(size_t) n] = player.hostNotes.isNoteOnForChannels (0xffff, n);
+        for (int n = 0; n < 128; ++n)
+            hostKeys[(size_t) n] = player.hostNotes.isNoteOnForChannels (0xffff, n) || player.previewNotes.isNoteOnForChannels (0xffff, n);
         if (hostKeys != hostKeysShown) { hostKeysShown = hostKeys; keyboard.repaint(); }
     }
     showHint();
@@ -1690,7 +1692,7 @@ void SF2PlayerEditor::timerCallback()
     showEffectPreset (false);
     if (previewNote >= 0 && --previewTicks <= 0)
     {
-        player.keyboardState.noteOff (1, previewNote, 0.0f);
+        player.previewNotes.noteOff (1, previewNote, 0.0f);
         previewNote = -1;
     }
 
@@ -2192,7 +2194,7 @@ void SF2PlayerEditor::showMode()
 
 void SF2PlayerEditor::stopAudition()
 {
-    for (int i = 0; i < auditionCount; ++i) player.keyboardState.noteOff (1, auditionNotes[(size_t) i], 0.0f);
+    for (int i = 0; i < auditionCount; ++i) player.previewNotes.noteOff (1, auditionNotes[(size_t) i], 0.0f);
     auditionCount = 0;
 }
 
@@ -2762,7 +2764,7 @@ void SF2PlayerEditor::refreshDrumPads (const SF2PlayerProcessor::State& st)
     {
         auto* focused = juce::Component::getCurrentlyFocusedComponent();
         auto* peer = getPeer();
-        if (peer != nullptr && peer->isFocused() && dynamic_cast<juce::TextEditor*> (focused) == nullptr && drumPads.isShowing())
+        if (guide == nullptr && peer != nullptr && peer->isFocused() && dynamic_cast<juce::TextEditor*> (focused) == nullptr && drumPads.isShowing())
             drumPads.grabKeyboardFocus();
     };
     if (show == drumsShown && (! show || drumPads.rows() == rowsBefore))

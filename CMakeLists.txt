@@ -20,7 +20,7 @@ juce_add_plugin(SF2Player
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT TRUE
     IS_MIDI_EFFECT FALSE
-    EDITOR_WANTS_KEYBOARD_FOCUS FALSE
+    EDITOR_WANTS_KEYBOARD_FOCUS TRUE   # the drums play from the computer's keys (VST3 ignores keys without it)
     AU_MAIN_TYPE kAudioUnitType_MusicDevice
     VST3_CATEGORIES Instrument Sampler
     COPY_PLUGIN_AFTER_BUILD TRUE)

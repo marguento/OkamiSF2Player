@@ -1874,7 +1874,18 @@ int main()
             for (const auto metadata : m)
                 ownKeyUp = ownKeyUp || (metadata.getMessage().isNoteOff() && metadata.getMessage().getNoteNumber() == 42);
         }
-        expect (piano && guitar && drums && ownKeyUp, "MIDI out: notes played in the window reach the host (piano, guitar, kit), the host's own don't echo, a clip can't swallow the window's key-up", detail);
+        // A preview (or a chord audition) sounds but isn't the user's playing: not sent out.
+        bool previewQuiet = false;
+        {
+            Player player (testFont);
+            juce::AudioBuffer<float> buffer (6, block);
+            player.p.previewNotes.noteOn (1, 60, 0.8f);
+            juce::MidiBuffer m;
+            player.p.processBlock (buffer, m);
+            previewQuiet = m.isEmpty() && buffer.getMagnitude (0, 0, block) > 0.0f;
+            player.p.previewNotes.noteOff (1, 60, 0.0f);
+        }
+        expect (piano && guitar && drums && ownKeyUp && previewQuiet, "MIDI out: notes played in the window reach the host (piano, guitar, kit), the host's own don't echo, a clip can't swallow the window's key-up, a preview isn't sent", detail);
     }
 
     {
@@ -2035,7 +2046,18 @@ int main()
         }
         withSong = withSong && player.p.takeState.load() == SF2PlayerProcessor::takeIdle && keysIn (closedTake) == std::vector<int> { 69 };
         closedTake.deleteFile();
-        // Bypassed: silence and no MIDI out, though the block still runs.
+        // Bypassed: silence and no MIDI out, though the block still runs; nothing goes into a take.
+        {
+            const int waiting = player.p.takeFifo.getNumReady();
+            player.p.takeState.store (SF2PlayerProcessor::takeFree);
+            player.p.keyboardState.noteOn (1, 65, 0.8f);
+            juce::MidiBuffer quiet;
+            player.p.processBlockBypassed (buffer, quiet);
+            player.p.keyboardState.noteOff (1, 65, 0.0f);
+            juce::MidiBuffer after; player.p.processBlockBypassed (buffer, after);
+            withSong = withSong && player.p.takeFifo.getNumReady() == waiting;
+            player.p.takeState.store (SF2PlayerProcessor::takeIdle);
+        }
         {
             juce::MidiBuffer m;
             m.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
@@ -2045,7 +2067,7 @@ int main()
             player.p.keyboardState.noteOff (1, 64, 0.0f);
             juce::MidiBuffer none; player.p.processBlockBypassed (buffer, none);
         }
-        expect (withSong, "REC: waits for the host's play and ends with it; played without the song it records at once; called off, the last take stays; closing the window keeps the take; a take spans an audio restart; bypass sends nothing");
+        expect (withSong, "REC: waits for the host's play and ends with it; played without the song it records at once; called off, the last take stays; closing the window keeps the take; a take spans an audio restart; bypass sends and records nothing");
     }
 
     std::printf ("\n%d of %d checks passed\n", checks - failures, checks);

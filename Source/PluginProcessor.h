@@ -30,7 +30,9 @@ public:
     // but the block still runs, so a key let go meanwhile still ends its note and nothing waits.
     void processBlockBypassed (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) override
     {
+        bypassedBlock = true;
         processBlock (buffer, midi);
+        bypassedBlock = false;
         buffer.clear();
         midi.clear();
     }
@@ -199,6 +201,7 @@ public:
     // Notes from the host light the on-screen keyboard; its clicks play the synth.
     juce::MidiKeyboardState keyboardState;   // the window's notes (its keyboard, the drums): what it plays and sends out
     juce::MidiKeyboardState hostNotes;       // the host's notes, only to show them (keys, lights); nothing plays from it
+    juce::MidiKeyboardState previewNotes;    // a preview or a chord audition: plays, but isn't played by the user (not sent out, not recorded)
 
     struct Engine;   // a FluidSynth instance with the SoundFont loaded
 
@@ -253,7 +256,9 @@ private:
     std::atomic<int> pinGeneration { 0 };   // bumped when the engine or a channel's preset changes: pin afresh
     int seenGeneration = 0;                    // audio thread only
     juce::MidiBuffer shortMidi;   // a block's MIDI without sysex (reserved in prepareToPlay)
-    juce::MidiBuffer blockMidi;   // the host's MIDI plus the window's notes, as played (reserved in prepareToPlay)
+    juce::MidiBuffer blockMidi;
+    juce::MidiBuffer previewHere;   // this block's preview notes (reserved in prepareToPlay)
+    bool bypassedBlock = false;     // the block runs for processBlockBypassed: nothing goes into a take   // the host's MIDI plus the window's notes, as played (reserved in prepareToPlay)
 
     // Guitar panel (audio thread, under engineLock): the strum timeline and its clock.
     GuitarEngine guitar;

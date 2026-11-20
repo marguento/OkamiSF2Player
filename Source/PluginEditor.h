@@ -140,7 +140,12 @@ struct RangeKeyboard : juce::MidiKeyboardComponent, juce::TooltipClient
     }
     int lowKey = 0, highKey = 127;
     const juce::MidiKeyboardState* alsoShows = nullptr;   // other notes shown down (the host's); the window's own state plays
-    bool shownDown (int note) const { return alsoShows != nullptr && alsoShows->isNoteOnForChannels (0xffff, note); }
+    const juce::MidiKeyboardState* alsoShowsPreview = nullptr;
+    bool shownDown (int note) const
+    {
+        return (alsoShows != nullptr && alsoShows->isNoteOnForChannels (0xffff, note))
+            || (alsoShowsPreview != nullptr && alsoShowsPreview->isNoteOnForChannels (0xffff, note));
+    }
     int splitKey = -1;   // Split: the keys below it play the second instrument (tinted)
     bool repeatZones = false;   // the Guitar panel's Repeat zones (C1-D#1, C5-C6), tinted
     // What the guitar sounds (the notes on the neck), marked with the neck's green dots, fading as it does.
