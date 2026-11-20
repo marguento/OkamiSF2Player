@@ -324,7 +324,8 @@ the search field).
   kit of each SoundFont, in the plugin's settings; an empty name goes back to General MIDI's.
 - The panel button (next to the instrument) says **Drums** while the pads show. Its menu has
   **Drum pads**, to turn them off for a kit or on for an instrument the name doesn't give away;
-  the choice is remembered for that instrument and saved with the project. The pads and the
+  the choice is remembered for that instrument on this Mac, and the project saves the one for the
+instrument it plays. The pads and the
 Guitar panel never show together.
 - The keyboard's tooltip names the drum on each key too.
 

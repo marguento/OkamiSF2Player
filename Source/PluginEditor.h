@@ -173,9 +173,8 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
     // The drums' computer keys work wherever the focus is in the window (a button, the kit's
-    // menu), except in a text field; keys nothing else takes come up here.
-    // The drums' keys reach the kit from anywhere in the window, but not through the guide (a
-    // key let go still does, so nothing is left held).
+    // menu), except in a text field or through the open guide (a key let go still does, so
+    // nothing is left held); keys nothing else takes come up here.
     bool keyPressed (const juce::KeyPress& key) override { return drumsShown && guide == nullptr && drumPads.keyPressed (key); }
     bool keyStateChanged (bool isKeyDown) override { return drumsShown && (guide == nullptr || ! isKeyDown) && drumPads.keyStateChanged (isKeyDown); }
 

@@ -5,6 +5,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <functional>
 #include <map>
+#include <thread>
 #include <vector>
 
 // REC and Drag MIDI, in the window's title row: hosts don't record what an instrument plays
@@ -178,6 +179,9 @@ namespace Take
         void stop()
         {
             const int was = player.takeState.exchange (SF2PlayerProcessor::takeIdle);
+            // A block that read "recording" just before is still writing: its notes are the take's.
+            for (int spins = 0; player.takeWriters.load() > 0 && spins < 100000; ++spins)
+                std::this_thread::yield();
             rec.setToggleState (false, juce::dontSendNotification);
             drain();
             stopTimer();
@@ -192,8 +196,7 @@ namespace Take
             const auto midi = build (events, player.takeBpm.load(), player.takeBarQuarters.load(), notes);
             if (notes > 0)   // a take with nothing in it leaves the last one to drag
             {
-                const auto previous = chip.file;   // the take this window offered until now: kept
-                chip.file = juce::File();
+                const auto previous = chip.file;   // the take this window offered until now: kept (and offered still if this one can't be saved)
                 auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("Okami SF2 Player takes");
                 folder.createDirectory();
                 // A week's worth kept (another window may still offer one of them), never this window's last take.
@@ -208,9 +211,11 @@ namespace Take
                     out.setPosition (0);
                     out.truncate();
                     if (midi.writeTo (out)) chip.file = file;
+                    else { out.setPosition (0); out.truncate(); }
                 }
-                chip.text = chip.file.existsAsFile() ? juce::String::fromUTF8 ("\xe2\x87\xa9 Drag MIDI \xc2\xb7 ") + juce::String (notes) + (notes == 1 ? " note" : " notes")
-                                                     : juce::String ("Couldn't save the take");
+                chip.text = chip.file != previous && chip.file.existsAsFile()
+                              ? juce::String::fromUTF8 ("\xe2\x87\xa9 Drag MIDI \xc2\xb7 ") + juce::String (notes) + (notes == 1 ? " note" : " notes")
+                              : juce::String ("Couldn't save the take") + (previous.existsAsFile() ? " (the last one stays)" : "");
             }
             else
                 chip.text = chip.file.existsAsFile() ? lastText : juce::String ("Nothing played");

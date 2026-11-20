@@ -1601,6 +1601,9 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     playedHere.clear();
     keyboardState.processNextMidiBuffer (playedHere, 0, numSamples, true);
     hostNotes.processNextMidiBuffer (const_cast<juce::MidiBuffer&> (fromHost), 0, numSamples, false);   // reads it only (nothing injected)
+    for (const auto metadata : fromHost)   // an all-sound-off ends the host's notes on the keys too (JUCE's state only knows CC123)
+        if (metadata.numBytes == 3 && (metadata.data[0] & 0xf0) == 0xb0 && metadata.data[1] == 120)
+            hostNotes.allNotesOff ((metadata.data[0] & 0x0f) + 1);
     blockMidi.clear();
     blockMidi.data.addArray (fromHost.data);   // the bytes as they are: one copy, not an insertion per event
     bool playedNoteOn = false;   // a note played in the window (not a key let go)
@@ -1609,10 +1612,8 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         blockMidi.addEvent (metadata.data, metadata.numBytes, metadata.samplePosition);
         playedNoteOn = playedNoteOn || isNoteOnBytes (metadata.data, metadata.numBytes);
     }
-    previewHere.clear();   // a preview plays too, but it's no one's playing: not sent out, not recorded
+    previewHere.clear();   // a preview plays too, but it's no one's playing: not sent out, not recorded, not humanized
     previewNotes.processNextMidiBuffer (previewHere, 0, numSamples, true);
-    for (const auto metadata : previewHere)
-        blockMidi.addEvent (metadata.data, metadata.numBytes, metadata.samplePosition);
     auto& midi = blockMidi;
     {
         // REC waiting for play starts with the transport; a take with the transport ends with it.
@@ -1624,7 +1625,10 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         if (! playingNow && playedNoteOn)
             takeState.compare_exchange_strong (expected, takeFree);
     }
-    if (const int take = takeState.load (std::memory_order_relaxed); (take == takeWithHost || take == takeFree) && ! playedHere.isEmpty() && ! bypassedBlock)
+    // REC's stop waits for a block writing its events (counted before it reads the state), so the
+    // last notes of a take reach it instead of the next take's leftovers.
+    takeWriters.fetch_add (1);
+    if (const int take = takeState.load(); (take == takeWithHost || take == takeFree) && ! playedHere.isEmpty() && ! bypassedBlock)
     {
         const double sr = juce::jmax (1.0, getSampleRate());
         double bpm = 120.0, barQuarters = 4.0;
@@ -1658,6 +1662,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
             takeFifo.write (1).forEach ([&] (int index) { takeEvents[(size_t) index] = event; });   // full: dropped
         }
     }
+    takeWriters.fetch_sub (1);
     takeSeconds += numSamples / juce::jmax (1.0, getSampleRate());
     struct SendPlayed   // at every way out of this block
     {
@@ -1770,6 +1775,8 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         else if (lateCount > 0)   // the guitar took over: Humanize's late notes play now, before anything after them
             playLateNotesNow();
         playDeferredMidi (useGuitar ? &guitarSettings : nullptr, blockStart, human);
+        for (const auto metadata : previewHere)   // as they are, at the block's start (a preview needs no exact sample)
+            if (metadata.numBytes <= 3) handleMidi (juce::MidiMessage (metadata.data, metadata.numBytes));
 
         if (! useGuitar)
         {
