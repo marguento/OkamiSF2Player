@@ -209,7 +209,7 @@ namespace Take
             chip.repaint();
         }
 
-        juce::File takeFile() const { return chip.recording ? juce::File() : chip.file; }   // what dragging the chip hands over
+        juce::File takeFile() const { return chip.recording ? juce::File() : chip.file; }   // the take on offer (none while recording); for tests
 
     private:
         SF2PlayerProcessor& player;

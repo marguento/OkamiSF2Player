@@ -69,8 +69,9 @@ GitHub noreply email (`git config user.email` is set to it in this repo).
   snapshot (the editor takes one per operation; `getStateInformation` saves from it). Writers
   change the members only inside a `StateWriter`, which publishes when the outermost ends; a
   new writer path that bypasses it would leave readers stale.
-- Drum Humanize's late notes (`lateNotes`, `keyDue`, `nextLateAt`) belong to the audio thread
-  (and `prepareToPlay`, under `engineLock`). Only a key's messages wait, and only for that key;
+- Drum Humanize's late notes (`lateNotes`, `keyDue`, `keyDelay`, `nextLateAt`) belong to the
+  audio thread; the message thread touches them only under `engineLock` (`prepareToPlay`,
+  `swapEngine`, `selectPreset`, through `dropLateHits`). Only a key's messages wait, and only for that key;
   ties keep arrival order (`order`); what's due on an event's own sample plays before it (except
   an all-notes-off's); a full list plays the key's waiting messages first (`playKeyNow`).
   `PluginTests` lands note-offs, hits again and all-notes-offs on a seeded hit's exact sample:

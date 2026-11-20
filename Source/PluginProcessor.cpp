@@ -741,7 +741,8 @@ void SF2PlayerProcessor::swapEngine (std::unique_ptr<Engine> fresh)
         guitarEngaged = false;
         clearWheels();   // the new engine's voices start in tune
         dropLateHits();   // Humanize's waiting hits were meant for the old instrument
-        kitGeneration.fetch_add (1);   // every channel plays the chosen instrument again: none is "moved" (under the lock, with the change)
+        refreshKitFlag();   // the instrument's id and kit flag with the engine, under the lock
+        kitGeneration.fetch_add (1);   // every channel plays the chosen instrument again: none is "moved"
         if (engine != nullptr)
         {
             applyEffectSettings (true);
@@ -802,6 +803,7 @@ bool SF2PlayerProcessor::loadSoundFont (const juce::File& file)
     applyPreset (*fresh, preset);
     applyLayerPreset (*fresh, layer);
     layerPreset = layer;
+    currentPreset = preset;   // before the swap, which publishes the kit flag with it
     swapEngine (std::move (fresh));
 
     currentFile = file;
@@ -827,10 +829,11 @@ void SF2PlayerProcessor::selectPreset (int presetIndex)
             return;
         fluid_synth_all_notes_off (engine->synth, -1);
         applyPreset (*engine, presetIndex);
-        kitGeneration.fetch_add (1);   // with the change itself, so a clip's program change right after it still counts
+        dropLateHits();   // Humanize's waiting hits were meant for the old instrument
+        currentPreset = presetIndex;
+        refreshKitFlag();   // with the change itself, under the lock: no block sees the new
+        kitGeneration.fetch_add (1);   // instrument with the old one's id, and a clip's program change right after still counts
     }
-    currentPreset = presetIndex;
-    refreshKitFlag();
     stateChanged = true;
     markProjectChanged();
 }
@@ -1088,6 +1091,8 @@ void SF2PlayerProcessor::playOrWait (juce::MidiMessage message, juce::int64 now,
             lateAt = now + delay;
         if (waits > now)
             lateAt = juce::jmax (lateAt, waits);
+        if (message.isNoteOn())   // what the hit really waits (its own delay, or longer behind its key): its note-off waits as long
+            delay = (juce::int32) juce::jmax ((juce::int64) 0, lateAt - now);
         if (lateAt > now && lateCount == (int) lateNotes.size())
         {
             // No room to wait: the key's waiting messages play now, in order, then this
@@ -1656,18 +1661,19 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     takeSeconds += numSamples / juce::jmax (1.0, getSampleRate());
     struct SendPlayed   // at every way out of this block
     {
-        juce::MidiBuffer& host; const juce::MidiBuffer& played;
+        juce::MidiBuffer& host; const juce::MidiBuffer& played; bool standalone;
         ~SendPlayed()
         {
             // Into the host's own buffer only within the room it surely has: what it held this block,
-            // or the 2048 bytes JUCE's AU and VST3 wrappers reserve for it, so nothing allocates here.
+            // or the 2048 bytes JUCE's AU and VST3 wrappers reserve for it (not the standalone's), so
+            // nothing allocates here.
             // (A block's window notes are a few; past that they still sound, they just don't go out.)
-            const int room = juce::jmax (host.data.size(), 2048);
+            const int room = standalone ? host.data.size() : juce::jmax (host.data.size(), 2048);
             host.clear();
             if (played.data.size() <= room)
                 host.data.addArray (played.data);
         }
-    } sendPlayed { hostMidi, playedHere };
+    } sendPlayed { hostMidi, playedHere, wrapperType == wrapperType_Standalone };   // the standalone's buffer reserves nothing (and has no host to send to)
 
     if (work.getNumSamples() < numSamples)   // a host sending more than it announced
         work.setSize (6, numSamples, false, false, true);
@@ -1745,7 +1751,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         }
         Humanize human;
         {
-            const bool kit = ! useGuitar && ! panelShown && drumsActive();
+            const bool kit = ! panelShown && drumsActive();   // (the Guitar panel playing implies it shows)
             human.velocity = kit ? parameters.getRawParameterValue ("drumVelocityHuman")->load() : 0.0f;
             human.maxDelay = kit ? getSampleRate() * 0.020 * parameters.getRawParameterValue ("drumTimingHuman")->load() : 0.0;
             const int layerMode = juce::roundToInt (parameters.getRawParameterValue ("layerMode")->load());
@@ -2083,13 +2089,14 @@ void SF2PlayerProcessor::setStateInformation (const void* data, int sizeInBytes)
     savedNumber = (int) state.getProperty ("presetNumber", -1);
     savedLayerBank = (int) state.getProperty ("layerBank", -1);
     savedLayerNumber = (int) state.getProperty ("layerNumber", -1);
+    int restoredDrumChoice = -1;   // stored once the restoring snapshot is out (below)
     {
         // Saved as one number (instrument * 4 + choice); 1.4 builds before it saved the two apart.
         int packed = (int) state.getProperty ("drumChoice", -1);
         if (state.hasProperty ("drumChoiceFor"))
         {
             const int instrument = (int) state.getProperty ("drumChoiceFor", -1);
-            packed = instrument >= 0 && juce::isPositiveAndBelow (packed, 3) ? instrument * 4 + packed : -1;
+            packed = juce::isPositiveAndBelow (instrument, 16384 * 128) && juce::isPositiveAndBelow (packed, 3) ? instrument * 4 + packed : -1;
         }
         restoredDrumChoice = packed >= 0 && packed % 4 <= 2 && packed / 4 < 16384 * 128 ? packed : -1;   // banks up to 14 bits
         state.removeProperty ("drumChoice", nullptr);

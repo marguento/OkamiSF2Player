@@ -359,7 +359,6 @@ private:
     void refreshNextLate();   // after taking messages off the list other than through takeEarliestLate
     void playKeyNow (int channel, int key, int splitBelow);
     void dropLateHits();
-    int restoredDrumChoice = -1;   // setStateInformation's, stored once the restoring snapshot is out
     void forgetKeyWaits (int channel = -1);
     void playLateNotes (juce::int64 until, juce::int64 blockStart, int& position);
     std::array<int, 16384> overflowIndices {};   // a flood's messages past guitarItems, by their place in the block

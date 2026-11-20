@@ -43,7 +43,7 @@ namespace DrumKit
             if (words.contains (tuned)) return false;
         if (words.contains ("kit") || words.contains ("drumkit") || words.contains ("drumset") || words.contains ("percussion"))
             return true;
-        return words.contains ("drums");
+        return words.contains ("drums") && ! words.contains ("synth");   // "Synth Drums": General MIDI's melodic 118
     }
 
     // A name that says a melodic instrument: one sampled key by key (a glockenspiel, a celesta)
