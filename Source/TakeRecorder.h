@@ -188,11 +188,15 @@ namespace Take
             const auto midi = build (events, player.takeBpm.load(), player.takeBarQuarters.load(), notes);
             if (notes > 0)   // a take with nothing in it leaves the last one to drag
             {
+                const auto previous = chip.file;   // the take this window offered until now: kept
                 chip.file = juce::File();
                 auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("Okami SF2 Player takes");
                 folder.createDirectory();
-                for (const auto& old : folder.findChildFiles (juce::File::findFiles, false, "*.mid"))   // a day's worth kept
-                    if (old.getLastModificationTime() < juce::Time::getCurrentTime() - juce::RelativeTime::days (1)) old.deleteFile();
+                // A week's worth kept (another window may still offer one of them), never this window's last take.
+                for (const auto& old : folder.findChildFiles (juce::File::findFiles, false, "Okami Take *.mid"))
+                    if (old != previous && old != player.lastTakeFile
+                        && old.getLastModificationTime() < juce::Time::getCurrentTime() - juce::RelativeTime::days (7))
+                        old.deleteFile();
                 auto file = folder.getChildFile ("Okami Take " + juce::Time::getCurrentTime().formatted ("%H-%M-%S") + ".mid")
                                 .getNonexistentSibling();   // two takes in one second never share a file
                 if (juce::FileOutputStream out (file); out.openedOk())

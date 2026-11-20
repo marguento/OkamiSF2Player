@@ -165,8 +165,10 @@ public:
     void resized() override;
     // The drums' computer keys work wherever the focus is in the window (a button, the kit's
     // menu), except in a text field; keys nothing else takes come up here.
-    bool keyPressed (const juce::KeyPress& key) override { return drumsShown && drumPads.keyPressed (key); }
-    bool keyStateChanged (bool isKeyDown) override { return drumsShown && drumPads.keyStateChanged (isKeyDown); }
+    // The drums' keys reach the kit from anywhere in the window, but not through the guide (a
+    // key let go still does, so nothing is left held).
+    bool keyPressed (const juce::KeyPress& key) override { return drumsShown && guide == nullptr && drumPads.keyPressed (key); }
+    bool keyStateChanged (bool isKeyDown) override { return drumsShown && (guide == nullptr || ! isKeyDown) && drumPads.keyStateChanged (isKeyDown); }
 
     bool isInterestedInFileDrag (const juce::StringArray& files) override;
     void fileDragEnter (const juce::StringArray&, int, int) override { dragging = true; repaint(); }
@@ -309,7 +311,7 @@ private:
     void refreshDrumPads (const SF2PlayerProcessor::State&);
     int drumChoice (const juce::String& key) const;   // 0 Auto, 1 pads on, 2 pads off; -1: none on this Mac (the project's counts)
     void setDrumChoice (const juce::String& key, int choice);
-    void renameDrum (int note, const juce::String& name);
+    void renameDrum (const juce::String& kit, int note, const juce::String& name);
     int drumStageHeight() const { return drumPads.preferredHeight (getWidth() - 52 - humanizeWidth); }
     int instrumentHeight() const { return pianoHeight + (drumsShown ? drumStageHeight() + 10 : 0); }
 

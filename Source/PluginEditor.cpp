@@ -674,7 +674,7 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     addAndMakeVisible (keysButton);
     neck.setTooltip ("Click a string at a fret to draw a chord and see its name; click the name to hear it");
     keyboard.describe = [this] (int note) { return keyHint (note); };
-    drumPads.onRename = [this] (int note, const juce::String& name) { renameDrum (note, name); };
+    drumPads.onRename = [this] (const juce::String& kit, int note, const juce::String& name) { renameDrum (kit, note, name); };
     addChildComponent (drumPads);
     setWantsKeyboardFocus (true);   // keys with no focused child reach keyPressed (the drums)
     for (auto* knob : { &drumVelocityHuman, &drumTimingHuman })
@@ -2641,15 +2641,35 @@ void SF2PlayerEditor::showPanelMenu()
             const auto st = player.state();
             const bool kit = isKitShown (*st);
             const auto key = favouriteKey (*st, st->preset);
+            // The pads and the Guitar panel don't share the keys: turning the pads on for a guitar
+            // turns its panel off for this instrument only, marked "2p" in its remembered choice,
+            // and turning them off again gives the panel back (Auto) where the pads took it.
+            auto panelChoices = juce::StringArray::fromLines (settings->getValue ("panelChoices"));
+            panelChoices.removeEmptyStrings();
+            const auto mark = key + "=2p";
+            auto* parameter = player.parameters.getParameter ("guitarPanel");
             if (drumsShown)
+            {
                 setDrumChoice (key, kit ? 2 : 0);
+                if (panelChoices.contains (mark))
+                {
+                    panelChoices.removeString (mark);
+                    if (parameter != nullptr) editParameter (*parameter, parameter->convertTo0to1 (0.0f));
+                }
+            }
             else
             {
                 setDrumChoice (key, kit ? 0 : 1);
-                if (player.guitarPanelActive())   // the pads and the Guitar panel don't share the keys
-                    if (auto* parameter = player.parameters.getParameter ("guitarPanel"))
-                        editParameter (*parameter, parameter->convertTo0to1 (2.0f));
+                if (player.guitarPanelActive() && parameter != nullptr)
+                {
+                    editParameter (*parameter, parameter->convertTo0to1 (2.0f));
+                    for (int i = panelChoices.size(); --i >= 0;)
+                        if (panelChoices[i].upToLastOccurrenceOf ("=", false, false) == key) panelChoices.remove (i);
+                    panelChoices.add (mark);
+                }
             }
+            settings->setValue ("panelChoices", panelChoices.joinIntoString ("\n"));
+            settings->saveIfNeeded();
             refreshDrumPads (*st);
             refreshPanelButton();
             return;
@@ -2742,6 +2762,7 @@ void SF2PlayerEditor::refreshDrumPads (const SF2PlayerProcessor::State& st)
     // A new kit takes the computer's keys at once (no click needed), unless a text field has them.
     const bool newKit = show && key != drumKey;
     drumKey = show ? key : juce::String();
+    drumPads.kitId = drumKey;
     auto takeKeys = [this]   // only inside a window that has the keys: never taken from the host (a preset recalled behind it)
     {
         auto* focused = juce::Component::getCurrentlyFocusedComponent();
@@ -2814,11 +2835,11 @@ void SF2PlayerEditor::setDrumChoice (const juce::String& key, int choice)
 }
 
 // A pad's name, kept for this kit in the settings ("<kit>#<note>=<name>"); empty goes back to General MIDI's.
-void SF2PlayerEditor::renameDrum (int note, const juce::String& name)
+void SF2PlayerEditor::renameDrum (const juce::String& kit, int note, const juce::String& name)
 {
-    if (drumKey.isEmpty() || ! juce::isPositiveAndBelow (note, 128)) return;
+    if (kit.isEmpty() || ! juce::isPositiveAndBelow (note, 128)) return;
     const auto clean = name.removeCharacters ("\r\n\t").trim();
-    const auto prefix = drumKey + "#" + juce::String (note) + "=";
+    const auto prefix = kit + "#" + juce::String (note) + "=";
     auto lines = juce::StringArray::fromLines (settings->getValue ("drumNames"));
     lines.removeEmptyStrings();
     for (int i = lines.size(); --i >= 0;)
@@ -2826,6 +2847,7 @@ void SF2PlayerEditor::renameDrum (int note, const juce::String& name)
     if (clean.isNotEmpty()) lines.add (prefix + clean);
     settings->setValue ("drumNames", lines.joinIntoString ("\n"));
     settings->saveIfNeeded();
+    if (kit != drumKey) return;   // saved for the kit it was opened on; another one shows now
     if (clean.isNotEmpty()) drumPads.customNames[note] = clean;
     else drumPads.customNames.erase (note);
     drumPads.repaint();

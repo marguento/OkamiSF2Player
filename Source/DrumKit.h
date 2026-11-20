@@ -32,21 +32,7 @@ namespace DrumKit
     }
 
     // A kit: General MIDI's drum bank (128), or an instrument named one ("TR-808 Kit", "Rock Drums", "Latin Percussion").
-    inline bool isKit (int bank, const juce::String& name)
-    {
-        if (bank == 128) return true;
-        juce::StringArray words;
-        words.addTokens (name.toLowerCase(), " -_/()[].,:", "");
-        // "Drum" alone is one instrument (General MIDI's Taiko Drum, Synth Drum), and Steel Drums too.
-        // Melodic Drums, Pitched or Tuned Percussion, Taiko Drums, Timpani and Steel Drums play notes.
-        for (const char* tuned : { "melodic", "pitched", "tuned", "taiko", "timpani", "steel" })
-            if (words.contains (tuned)) return false;
-        if (words.contains ("kit") || words.contains ("drumkit") || words.contains ("drumset") || words.contains ("percussion"))
-            return true;
-        return words.contains ("drums") && ! words.contains ("synth");   // "Synth Drums": General MIDI's melodic 118
-    }
-
-    // A name that says a melodic instrument: one sampled key by key (a glockenspiel, a celesta)
+// A name that says a melodic instrument: one sampled key by key (a glockenspiel, a celesta)
     // has a kit's layout, so the layout alone doesn't make it a kit.
     inline bool soundsMelodic (const juce::String& name)
     {
@@ -58,6 +44,25 @@ namespace DrumKit
             if (words.contains (melodic)) return true;
         return false;
     }
+
+    inline bool isKit (int bank, const juce::String& name)
+    {
+        if (bank == 128) return true;
+        juce::StringArray words;
+        words.addTokens (name.toLowerCase(), " -_/()[].,:", "");
+        // "Drum" alone is one instrument (General MIDI's Taiko Drum, Synth Drum), and Steel Drums too.
+        // Melodic Drums, Pitched or Tuned Percussion, Taiko Drums, Timpani and Steel Drums play notes.
+        for (const char* tuned : { "melodic", "pitched", "tuned", "chromatic", "taiko", "timpani", "steel" })
+            if (words.contains (tuned)) return false;
+        if (words.contains ("kit") || words.contains ("drumkit") || words.contains ("drumset"))
+            return true;
+        // "Percussion" and "Drums" with a melodic instrument's name (Percussion Organ, Synth Drums) play notes.
+        if (words.contains ("percussion") || words.contains ("drums"))
+            return ! words.contains ("synth") && ! soundsMelodic (name);
+        return false;
+    }
+
+
 
     // A drum set's pieces, each played by the first of its keys the kit has (General MIDI's map),
     // with the computer key that plays it.
@@ -119,7 +124,8 @@ namespace DrumKit
         std::bitset<128> keys = std::bitset<128>().set();   // the keys the kit has samples on (gaps in its range are silent)
         bool kitView = true;   // the drum set; false: the pads
         std::map<int, juce::String> customNames;   // the user's names for this kit, by key
-        std::function<void (int note, const juce::String& name)> onRename;   // an empty name: back to General MIDI's
+        std::function<void (const juce::String& kit, int note, const juce::String& name)> onRename;   // an empty name: back to General MIDI's
+        juce::String kitId;   // which kit these pads are (set by the window): a rename is saved for the kit it was opened on
 
         static constexpr int rowHeight = 30, gap = 4, hintHeight = 16;
         int firstOctave() const { return lowKey / 12; }
@@ -231,20 +237,27 @@ namespace DrumKit
                     for (const auto& [code, note] : keysDown) state.noteOff (1, note, 0.0f);
                     keysDown.clear();
                 }
+            // Only lights that really change count: a held note resting at its floor doesn't repaint.
             bool changed = false;
+            juce::Rectangle<int> padsArea;
             for (int note = 0; note < 128; ++note)
             {
                 auto& level = glow[(size_t) note];
-                if (struck[(size_t) note].exchange (false, std::memory_order_relaxed)) { level = 1.0f; changed = true; }
+                const float before = level;
+                if (struck[(size_t) note].exchange (false, std::memory_order_relaxed)) level = 1.0f;
                 else if (level > 0.0f)
                 {
                     const bool on = state.isNoteOnForChannels (0xffff, note);
                     level = on ? juce::jmax (level - 0.015f, 0.45f) : juce::jmax (0.0f, level - 0.035f);
+                }
+                if (! juce::exactlyEqual (level, before))
+                {
                     changed = true;
+                    if (! kitView && plays (note)) padsArea = padsArea.getUnion (padBounds (note).getSmallestIntegerContainer().expanded (2));
                 }
             }
             if (! changed) return;
-            if (! kitView) { repaint(); return; }
+            if (! kitView) { if (! padsArea.isEmpty()) repaint (padsArea); return; }
             // Only where something moves (and where it moved last frame, to clear it).
             juce::Rectangle<float> area;
             for (int piece : drawOrder)
@@ -645,11 +658,11 @@ namespace DrumKit
             window->addButton ("Rename", 1, juce::KeyPress (juce::KeyPress::returnKey));
             window->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
             window->enterModalState (true, juce::ModalCallbackFunction::create (
-                [safe = juce::Component::SafePointer<Pads> (this), window, note] (int result)
+                [safe = juce::Component::SafePointer<Pads> (this), window, note, kit = kitId] (int result)
                 {
                     const auto text = window->getTextEditorContents ("name").trim().substring (0, 40);
                     if (result == 1 && safe != nullptr && safe->onRename != nullptr)
-                        safe->onRename (note, text == gmName (note) ? juce::String() : text);
+                        safe->onRename (kit, note, text == gmName (note) ? juce::String() : text);
                 }), true);
         }
 

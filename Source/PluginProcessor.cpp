@@ -804,15 +804,13 @@ bool SF2PlayerProcessor::loadSoundFont (const juce::File& file)
     applyLayerPreset (*fresh, layer);
     layerPreset = layer;
     currentPreset = preset;   // before the swap, which publishes the kit flag with it
-    swapEngine (std::move (fresh));
+    swapEngine (std::move (fresh));   // publishes the kit flag with the engine
 
     currentFile = file;
     missingFile = juce::File();
     failedFile = juce::File();   // a later failure starts again from a one-minute wait
     retryWaitMs = 60000;
     currentInfo = std::move (info);
-    currentPreset = preset;
-    refreshKitFlag();
     stateChanged = true;
     markProjectChanged();
     return true;
@@ -1099,6 +1097,7 @@ void SF2PlayerProcessor::playOrWait (juce::MidiMessage message, juce::int64 now,
             // one, so its order holds whatever the list holds (a rare flood).
             playKeyNow (channel, key, human.splitBelow);
             lateAt = -1;
+            if (message.isNoteOn()) delay = 0;   // it plays now, so its note-off needn't wait
         }
     }
     if (lateAt > now && lateCount < (int) lateNotes.size())
@@ -1122,6 +1121,14 @@ void SF2PlayerProcessor::playLateNotesNow()
     while (takeEarliestLate (std::numeric_limits<juce::int64>::max(), late))
         handleMidi (juce::MidiMessage (late.bytes, late.size));
     forgetKeyWaits();   // nothing waits: what comes next needn't wait for these
+}
+
+// Every waiting late note, gone (the engine that would play them is).
+void SF2PlayerProcessor::clearLateNotes()
+{
+    lateCount = 0;
+    refreshNextLate();
+    forgetKeyWaits();
 }
 
 // Humanize's waiting hits are dropped (their timeline or instrument is gone); a waiting note-off
@@ -1696,9 +1703,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
             clearDeferredMidi();
             if (lateCount > 0)   // Humanize's waiting notes go with the engine (none plays when a file comes back)
             {
-                lateCount = 0;
-                refreshNextLate();
-                forgetKeyWaits();
+                clearLateNotes();
             }
             return;
         }
