@@ -2116,7 +2116,7 @@ void SF2PlayerEditor::resized()
             drumVelocityHuman.setBounds (human.removeFromTop (knobHeight));
             drumTimingHuman.setBounds (human.removeFromTop (knobHeight));
             humanizeArea = stage.withX (stage.getRight()).withWidth (humanizeWidth);
-            drumPads.setBounds (stage);
+            drumPads.setBounds (stage.withHeight (juce::jmin (stage.getHeight(), drumPads.preferredHeight (stage.getWidth()))));   // its own height, at the top
             padsViewButton.setBounds (pianoPanel.getRight() - 10 - 56, pianoPanel.getY() + 5, 56, 19);
             kitViewButton.setBounds (padsViewButton.getX() - 58, pianoPanel.getY() + 5, 56, 19);
         }
@@ -2872,7 +2872,9 @@ void SF2PlayerEditor::renameDrum (const juce::String& kit, int note, const juce:
 void SF2PlayerEditor::refreshPanelButton()
 {
     const bool guitar = player.guitarPanelActive();
-    const bool automatic = juce::roundToInt (player.parameters.getRawParameterValue ("guitarPanel")->load()) == 0;
+    // "auto": the panel shown came by itself, the Guitar panel's setting for a guitar, the pads' choice for drums.
+    const bool automatic = drumsShown ? shownChoice == 0
+                                      : juce::roundToInt (player.parameters.getRawParameterValue ("guitarPanel")->load()) == 0;
     const auto text = juce::String (guitar ? "Guitar" : drumsShown ? "Drums" : "Standard") + (automatic ? juce::String::fromUTF8 (" \xc2\xb7 auto") : juce::String());
     if (panelButton.getButtonText() != text)
     {

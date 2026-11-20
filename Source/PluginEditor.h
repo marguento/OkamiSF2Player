@@ -323,7 +323,10 @@ private:
     int drumChoice (const juce::String& key) const;   // 0 Auto, 1 pads on, 2 pads off; -1: none on this Mac (the project's counts)
     void setDrumChoice (const juce::String& key, int choice);
     void renameDrum (const juce::String& kit, int note, const juce::String& name);
-    int drumStageHeight() const { return drumPads.preferredHeight (getWidth() - 52 - humanizeWidth); }
+    // The kit's or the pads' own height, but never shorter than HUMANIZE's two knobs need (a one- or
+    // two-octave kit in the Pads view is only 30-64 px tall).
+    static constexpr int humanizeMinHeight = 200;
+    int drumStageHeight() const { return juce::jmax (humanizeMinHeight, drumPads.preferredHeight (getWidth() - 52 - humanizeWidth)); }
     int instrumentHeight() const { return pianoHeight + (drumsShown ? drumStageHeight() + 10 : 0); }
 
     std::unique_ptr<juce::FileChooser> chooser;

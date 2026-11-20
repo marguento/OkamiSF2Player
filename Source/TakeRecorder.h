@@ -93,6 +93,8 @@ namespace Take
         void paint (juce::Graphics& g) override
         {
             if (text.isEmpty()) return;
+            if (! recording && file != juce::File() && ! file.existsAsFile())
+                text = "That take is gone";   // deleted from its folder meanwhile: nothing to drag
             const auto r = getLocalBounds().toFloat().reduced (0.5f);
             const juce::Colour accent (0xffe0a64b);
             g.setColour (recording ? juce::Colour (0x33e05050) : accent.withAlpha (file.existsAsFile() ? 0.18f : 0.08f));
@@ -197,7 +199,9 @@ namespace Take
             if (notes > 0)   // a take with nothing in it leaves the last one to drag
             {
                 const auto previous = chip.file;   // the take this window offered until now: kept (and offered still if this one can't be saved)
-                auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("Okami SF2 Player takes");
+                // In the plugin's own folder, not the system's temporary one (macOS clears that after about 3 days).
+                auto folder = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                                  .getChildFile ("Application Support").getChildFile ("SF2 Player").getChildFile ("Takes");
                 folder.createDirectory();
                 // A week's worth kept (another window may still offer one of them), never this window's last take.
                 for (const auto& old : folder.findChildFiles (juce::File::findFiles, false, "Okami Take *.mid"))

@@ -1796,7 +1796,14 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         previewHere.clear();
         previewNotes.processNextMidiBuffer (previewHere, 0, numSamples, true);
         for (const auto metadata : previewHere)
-            if (metadata.numBytes <= 3) handleMidi (juce::MidiMessage (metadata.data, metadata.numBytes));
+        {
+            if (metadata.numBytes > 3) continue;
+            const juce::MidiMessage m (metadata.data, metadata.numBytes);
+            // A preview ending on a key someone still holds (the window or the host) would end that note too.
+            if (m.isNoteOff() && (keyboardState.isNoteOnForChannels (0xffff, m.getNoteNumber()) || hostNotes.isNoteOnForChannels (0xffff, m.getNoteNumber())))
+                continue;
+            handleMidi (m);
+        }
 
         if (! useGuitar)
         {
