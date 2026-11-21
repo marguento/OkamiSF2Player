@@ -1005,12 +1005,12 @@ bool SF2PlayerProcessor::takeEarliestLate (juce::int64 until, LateNote& out)
 
 // A key's waiting messages, now, in the order they came in (the list is full and one more must
 // follow them): moved to the list's end, played, then cut off.
-void SF2PlayerProcessor::playKeyNow (int channel, int key, int splitBelow)
+void SF2PlayerProcessor::playKeyNow (int channel, int key)
 {
     const auto begin = lateNotes.begin(), end = begin + lateCount;
     // std::partition doesn't allocate (stable_partition may); the order of what stays doesn't matter.
     const auto mine = std::partition (begin, end, [&] (const LateNote& late)
-                                      { return channelOf (late) != channel || slotOf (late.bytes[1] & 0x7f, splitBelow) != key; });
+                                      { return channelOf (late) != channel || late.slot != key; });   // as queued (a split moved since can't hide it)
     std::sort (mine, end, [] (const LateNote& a, const LateNote& b) { return a.order < b.order; });
     lateCount = (int) (mine - begin);
     for (auto it = mine; it != end; ++it)
@@ -1097,7 +1097,7 @@ void SF2PlayerProcessor::playOrWait (juce::MidiMessage message, juce::int64 now,
         {
             // No room to wait: the key's waiting messages play now, in order, then this
             // one, so its order holds whatever the list holds (a rare flood).
-            playKeyNow (channel, key, human.splitBelow);
+            playKeyNow (channel, key);
             lateAt = -1;
             if (message.isNoteOn()) delay = 0;   // it plays now, so its note-off needn't wait
         }
@@ -1109,6 +1109,7 @@ void SF2PlayerProcessor::playOrWait (juce::MidiMessage message, juce::int64 now,
         auto& late = lateNotes[(size_t) lateCount++];
         late.at = lateAt;
         late.order = lateOrder++;
+        late.slot = key;
         late.size = 3;
         std::copy (message.getRawData(), message.getRawData() + 3, late.bytes);
         return;
@@ -1646,8 +1647,12 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         int expected = takeArmed;
         if ((! blockPosition.hasValue() && ! hostTransportSeen) || wrapperType == wrapperType_Standalone)   // the standalone's playhead never plays
             takeState.compare_exchange_strong (expected, takeFree);
-        expected = playingNow ? takeArmed : takeWithHost;
-        takeState.compare_exchange_strong (expected, playingNow ? takeWithHost : takeEndedByHost);
+        // A take with the song ends only when the host says it stopped (a block without a position is a gap).
+        const bool stoppedNow = blockPosition.hasValue() && ! blockPosition->getIsPlaying();
+        expected = takeArmed;
+        if (playingNow) takeState.compare_exchange_strong (expected, takeWithHost);
+        expected = takeWithHost;
+        if (stoppedNow) takeState.compare_exchange_strong (expected, takeEndedByHost);
         expected = takeArmed;   // played without starting the song: a take of its own, at once
         if (! playingNow && playedNoteOn && ! bypassedBlock)   // a note while bypassed is no one's take
             takeState.compare_exchange_strong (expected, takeFree);

@@ -233,10 +233,14 @@ Parameters (automatable, saved in the project; IDs with their version):
 | `layerLevel` | -30 to 0 dB | 0 | SF2 attenuation on channels 16-31 |
 
 Saved alongside the parameters: `sf2Path`, `preset`, `presetBank`, `presetNumber`,
-`layerBank`, `layerNumber` (state tag `SF2Player`).
+`layerBank`, `layerNumber`, `guitarShape`, `drumChoice` (the drum pads choice for the instrument
+played, as `(bank * 128 + program) * 4 + choice`) (state tag `SF2Player`).
 
 Settings file `~/Library/Application Support/SF2 Player/SF2 Player.settings`: `recentFiles`
-(last 12) and `favorites` (`<file name>|<bank>:<program>`, one per line).
+(last 12), `favorites` (`<file name>|<bank>:<program>`, one per line), and per instrument,
+one `<key>=<value>` line each: `panelChoices` (the Guitar panel), `drumChoices` (the drum pads:
+0 Auto, 1 on, 2 off), `drumNames` (`<key>#<note>=<name>`); `drumView` (`kit` or `pads`). REC's
+takes are kept a week in `Takes/` beside it.
 
 ## Tests
 

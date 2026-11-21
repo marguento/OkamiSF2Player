@@ -1447,6 +1447,17 @@ void SF2PlayerEditor::fitToScreen (int keep)
         toggleControllers();
 }
 
+// The kit's own height for the window's width, never shorter than HUMANIZE needs, and never more
+// than about half the screen (a wide window on a laptop would otherwise grow past its bottom edge).
+int SF2PlayerEditor::drumStageHeight() const
+{
+    const auto& displays = juce::Desktop::getInstance().getDisplays();
+    const auto* display = isShowing() ? displays.getDisplayForRect (getScreenBounds()) : displays.getPrimaryDisplay();
+    const int screenCap = display != nullptr ? juce::jmax (humanizeMinHeight, display->userArea.getHeight() / 2 - 40) : 460;
+    return juce::jlimit (humanizeMinHeight, juce::jmax (humanizeMinHeight, screenCap),
+                         drumPads.preferredHeight (getWidth() - 52 - humanizeWidth));
+}
+
 void SF2PlayerEditor::applyHeight()
 {
     const int height = minimumHeight();
@@ -2793,6 +2804,7 @@ void SF2PlayerEditor::refreshDrumPads (const SF2PlayerProcessor::State& st)
     if (show) juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<SF2PlayerEditor> (this), takeKeys]
                                                { if (safe != nullptr) takeKeys(); });   // once it's laid out and showing
     applyHeight();
+    if (show) fitToScreen (-1);   // other panels fold if the kit doesn't fit
     resized();
     repaint();
 }

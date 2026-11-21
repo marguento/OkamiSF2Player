@@ -325,7 +325,7 @@ public:
 private:
     // Drum Humanize's late hits and the notes of the same key that must follow them, by absolute
     // sample. Audio thread.
-    struct LateNote { juce::int64 at; juce::uint64 order; juce::uint8 bytes[3]; int size; };
+    struct LateNote { juce::int64 at; juce::uint64 order; juce::uint8 bytes[3]; int size; int slot; };   // slot: the key slot it waits in, as queued
     static int channelOf (const LateNote& late) { return late.bytes[0] & 0x0f; }
     // General MIDI's keys that cut each other off (exclusive classes) share one waiting slot.
     static int waitSlot (int key)
@@ -348,7 +348,8 @@ private:
     {
         if (key < splitBelow) return key;
         const int slot = waitSlot (key);
-        for (int k = juce::jmax (0, splitBelow); k <= key; ++k)
+        if (slot == key || slot >= splitBelow) return slot;   // the usual case, at once
+        for (int k = splitBelow; k <= key; ++k)   // a group the split key cuts: a few keys at most
             if (waitSlot (k) == slot) return k;
         return key;
     }
@@ -377,7 +378,7 @@ private:
     void playLateNotesNow();
     bool takeEarliestLate (juce::int64 until, LateNote& out);
     void refreshNextLate();   // after taking messages off the list other than through takeEarliestLate
-    void playKeyNow (int channel, int key, int splitBelow);
+    void playKeyNow (int channel, int key);
     void dropLateHits();
     void clearLateNotes();
     void forgetKeyWaits (int channel = -1);
