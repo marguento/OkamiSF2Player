@@ -2079,6 +2079,10 @@ int main()
             withSong = withSong && m.isEmpty() && buffer.getMagnitude (0, buffer.getNumSamples()) == 0.0f;
             player.p.keyboardState.noteOff (1, 64, 0.0f);
             juce::MidiBuffer none; player.p.processBlockBypassed (buffer, none);
+            bool keyUpOut = false;   // a key let go while bypassed still ends the note it sent before
+            for (const auto metadata : none)
+                keyUpOut = keyUpOut || (metadata.getMessage().isNoteOff() && metadata.getMessage().getNoteNumber() == 64);
+            withSong = withSong && keyUpOut;
         }
         expect (withSong, "REC: waits for the host's play and ends with it; played without the song it records at once; called off, the last take stays; closing the window keeps the take; a take spans an audio restart; bypass sends and records nothing");
     }

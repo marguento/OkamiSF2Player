@@ -2742,7 +2742,10 @@ void SF2PlayerEditor::refreshDrumPads (const SF2PlayerProcessor::State& st)
             seenProjectChoice = SF2PlayerProcessor::packDrumChoice (preset.bank, preset.number, choice);   // what it wrote, not a later read
     }
     const int rowsBefore = drumPads.rows();
-    if (show && key != drumKey)
+    // A new kit, or the same one whose keys changed (its file saved again and reloaded under the same name).
+    const bool layoutChanged = show && (st.presets[(size_t) st.preset].keys != drumPads.keys
+                                        || juce::jlimit (24, 95, st.presets[(size_t) st.preset].lowKey) != drumPads.lowKey);
+    if (show && (key != drumKey || layoutChanged))
     {
         const auto& preset = st.presets[(size_t) st.preset];
         // At most six octaves of pads (C1-B6): a kit is rarely wider, and a whole keyboard would be too tall.

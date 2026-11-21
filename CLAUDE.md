@@ -76,6 +76,11 @@ GitHub noreply email (`git config user.email` is set to it in this repo).
   an all-notes-off's); a full list plays the key's waiting messages first (`playKeyNow`).
   `PluginTests` lands note-offs, hits again and all-notes-offs on a seeded hit's exact sample:
   run it after any change here.
+- The keyboard states (`keyboardState` for the window's notes, `hostNotes` shown only,
+  `previewNotes` for previews) are JUCE `MidiKeyboardState`s: the audio thread reads each once a
+  block through `processNextMidiBuffer`, which takes its short critical section (as JUCE's own
+  plugins do); the window holds it only for a `noteOn`/`noteOff` or a listener change. The one
+  accepted exception to "only try-locks".
 - REC: `takeState` is one atomic shared by the window and the audio thread (armed, with the
   host, free, ended by the host), moved with compare-exchange on the audio side; the take's
   events go through `takeFifo` (lock-free). The drum pads choice is one packed atomic

@@ -34,7 +34,12 @@ public:
         processBlock (buffer, midi);
         bypassedBlock = false;
         buffer.clear();
+        // Only the window's key-ups go out: a note it sent before the bypass still ends on the track
+        // recording it (they're fewer than what the buffer just held: no allocation).
         midi.clear();
+        for (const auto metadata : playedHere)
+            if (isNoteOffBytes (metadata.data, metadata.numBytes))
+                midi.addEvent (metadata.data, metadata.numBytes, metadata.samplePosition);
     }
 
     juce::AudioProcessorEditor* createEditor() override;
@@ -309,8 +314,8 @@ public:
     // then hands the take over).
     enum TakeState { takeIdle = 0, takeArmed, takeWithHost, takeFree, takeEndedByHost };
     std::atomic<int> takeState { takeIdle };
-    std::atomic<int> takeWriters { 0 };
-    bool hostTransportSeen = false;   // audio thread: a block ever came with the host's position   // audio blocks between reading takeState and writing the take's events
+    std::atomic<int> takeWriters { 0 };   // audio blocks between reading takeState and writing the take's events
+    bool hostTransportSeen = false;   // audio thread: a block ever came with the host's position
     juce::File lastTakeFile;   // message thread: the last take, kept while the window is closed
     juce::String lastTakeText;
     juce::AbstractFifo takeFifo { 8192 };
