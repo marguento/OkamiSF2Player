@@ -309,7 +309,8 @@ public:
     // then hands the take over).
     enum TakeState { takeIdle = 0, takeArmed, takeWithHost, takeFree, takeEndedByHost };
     std::atomic<int> takeState { takeIdle };
-    std::atomic<int> takeWriters { 0 };   // audio blocks between reading takeState and writing the take's events
+    std::atomic<int> takeWriters { 0 };
+    bool hostTransportSeen = false;   // audio thread: a block ever came with the host's position   // audio blocks between reading takeState and writing the take's events
     juce::File lastTakeFile;   // message thread: the last take, kept while the window is closed
     juce::String lastTakeText;
     juce::AbstractFifo takeFifo { 8192 };

@@ -1631,8 +1631,9 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         // REC always arms; a host without a transport (no playhead) records at once instead, decided
         // here at the first block, so a REC clicked before any block ran still waits for play.
         const bool playingNow = blockPosition && blockPosition->getIsPlaying();
+        if (blockPosition.hasValue()) hostTransportSeen = true;   // once a position came, a block without one is a gap, not "no transport"
         int expected = takeArmed;
-        if (! blockPosition.hasValue() || wrapperType == wrapperType_Standalone)   // the standalone's playhead never plays
+        if ((! blockPosition.hasValue() && ! hostTransportSeen) || wrapperType == wrapperType_Standalone)   // the standalone's playhead never plays
             takeState.compare_exchange_strong (expected, takeFree);
         expected = playingNow ? takeArmed : takeWithHost;
         takeState.compare_exchange_strong (expected, playingNow ? takeWithHost : takeEndedByHost);
@@ -1718,6 +1719,8 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
             {
                 clearLateNotes();
             }
+            previewHere.clear();   // previews clicked meanwhile are dropped, not saved up for when a file comes back
+            previewNotes.processNextMidiBuffer (previewHere, 0, numSamples, false);
             return;
         }
         if (const int generation = pinGeneration.load(); generation != seenGeneration)
@@ -1795,15 +1798,8 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         // engine held, so a block skipped for a busy engine leaves it waiting there, not lost.
         previewHere.clear();
         previewNotes.processNextMidiBuffer (previewHere, 0, numSamples, true);
-        for (const auto metadata : previewHere)
-        {
-            if (metadata.numBytes > 3) continue;
-            const juce::MidiMessage m (metadata.data, metadata.numBytes);
-            // A preview ending on a key someone still holds (the window or the host) would end that note too.
-            if (m.isNoteOff() && (keyboardState.isNoteOnForChannels (0xffff, m.getNoteNumber()) || hostNotes.isNoteOnForChannels (0xffff, m.getNoteNumber())))
-                continue;
-            handleMidi (m);
-        }
+        for (const auto metadata : previewHere)   // as 1.3 did: a preview's note-off is never held back, so a preview always ends
+            if (metadata.numBytes <= 3) handleMidi (juce::MidiMessage (metadata.data, metadata.numBytes));
 
         if (! useGuitar)
         {
