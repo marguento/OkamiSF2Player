@@ -341,11 +341,16 @@ private:
         }
     }
     // A key's slot: coupled only on the kit's side of a Split (a lower instrument's key waits alone).
-    // By the key played (a Transpose changed mid-hit can't move a wait to another slot).
+    // By the key played (a Transpose changed mid-hit can't move a wait to another slot). On the kit's
+    // side of a Split only: a group cut by the split key waits as its lowest member above it (the
+    // pedal and open hats together when the closed one plays the lower instrument).
     static int slotOf (int key, int splitBelow)
     {
+        if (key < splitBelow) return key;
         const int slot = waitSlot (key);
-        return key >= splitBelow && slot >= splitBelow ? slot : key;
+        for (int k = juce::jmax (0, splitBelow); k <= key; ++k)
+            if (waitSlot (k) == slot) return k;
+        return key;
     }
     // An all-notes-off or all-sound-off, in raw bytes (one definition for every place that asks).
     static bool isAllOffBytes (const juce::uint8* data, int size)

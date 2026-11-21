@@ -1579,7 +1579,10 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     if (numSamples <= 0)   // a host flushing parameters: the MIDI waits for a block with samples (the window's notes stay queued)
     {
         playedHere.clear();   // nothing of the window's goes out from this block
-        hostNotes.processNextMidiBuffer (hostMidi, 0, 1, false);   // the host's notes still show (read only)
+        bool sysex = false;   // JUCE's read builds a message per event, and a sysex one would allocate
+        for (const auto metadata : hostMidi) sysex = sysex || metadata.numBytes > 3;
+        if (! sysex)
+            hostNotes.processNextMidiBuffer (hostMidi, 0, 1, false);   // the host's notes still show (read only)
         deferMidi (hostMidi);
         hostMidi.clear();
         return;
