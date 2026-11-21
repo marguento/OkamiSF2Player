@@ -203,7 +203,7 @@ private:
                 { "Accents", "Hold Shift with a key for a full-velocity hit. Without it, keys play a little softer, like a normal hit." },
                 { "Humanize (at the kit's right)", "" },
                 { "Velocity", "Each hit a little louder or softer at random: up to 30 % either way at 100 %." },
-                { "Timing", "Each hit a little late, up to 20 ms at 100 % (never early). Keep it at 0 while recording a part you want tight." },
+                { "Timing", "Each hit a little late, up to 20 ms at 100 % (never early). It changes only what the plugin plays: REC takes and MIDI out keep the notes as you played them." },
                 { "What it applies to", "Everything that plays the kit: clips, a MIDI keyboard, clicks, the computer's keys. At 0 % every hit plays exactly as it comes; a few percent of each is usually enough for a programmed beat to stop sounding like a machine." },
                 { "Names and recording", "" },
                 { "Renaming", "In Pads, double-click a pad to name it. Many kits follow General MIDI only in part; name their extra keys yourself. Names are kept per kit and SoundFont; an empty name goes back to General MIDI's." },

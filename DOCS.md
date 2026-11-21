@@ -356,8 +356,10 @@ on the plugin's track as usual.
 
 **MIDI out**, for hosts that read it: notes played in the plugin's window (its keyboard, the drum
 kit's pieces, pads and computer keys) sound, and are also sent out of the plugin as MIDI, so the
-host can record them. Notes coming from Ableton (clips, a MIDI keyboard) aren't sent back. (The
-standalone app sends none; use REC and Drag MIDI there.)
+host can record them. Notes coming from Ableton (clips, a MIDI keyboard) aren't sent back. While
+the plugin is bypassed only the window's key-ups go out, so a note sent before the bypass still
+ends. (The standalone app sends none; use REC and Drag MIDI there.) Drum Humanize changes only
+what the plugin plays: MIDI out and REC takes keep the notes as you played them.
 
 In Ableton:
 1. Make a new MIDI track (no instrument needed on it).

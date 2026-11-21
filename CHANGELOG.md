@@ -39,8 +39,8 @@ release bumps it and adds an entry here: one line per change a player would noti
   after a change of time signature). The window takes the computer's keys back when the song
   starts, and playing without the song records at once.
 - **MIDI out:** what's played in the window is also sent to the host, for hosts that record a
-  plugin's output on another track. Notes from clips aren't sent back, nor anything while the
-  plugin is bypassed. Closing the window mid-take keeps the take.
+  plugin's output on another track. Notes from clips aren't sent back; while the plugin is
+  bypassed only the window's key-ups go out, so a note sent before still ends. Closing the window mid-take keeps the take.
 
 **Guide**
 - **A Drums page** (? → Guide → Drums): the kit, its keys, Humanize, names and recording a beat.
