@@ -313,8 +313,7 @@ private:
         }
     };
     DrumRefresh lastDrumRefresh;   // what refreshDrumPads last ran for
-    int seenProjectChoice = -2;
-    int lastDrumStage = -1;   // the drum stage's height last laid out (it follows the screen's)   // the processor's drum choice as the window last saw it (-2: not yet)
+    int seenProjectChoice = -2;   // the processor\'s drum choice as the window last saw it (-2: not yet)
     int heightTriedWidth = -1;   // the width the kit last asked the window's height for
     bool drumsShown = false;
     juce::String drumKey;   // the kit the pads show (favouriteKey)

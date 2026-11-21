@@ -255,7 +255,7 @@ namespace DrumKit
             if (! keysDown.empty())
                 if (auto* peer = getPeer(); peer == nullptr || ! peer->isFocused())
                 {
-                    for (const auto& [code, note] : keysDown) state.noteOff (1, note, 0.0f);
+                    for (const auto& [code, note] : keysDown) lift (note);
                     keysDown.clear();
                 }
             // Only lights that really change count: a held note resting at its floor doesn't repaint.
@@ -663,10 +663,8 @@ namespace DrumKit
                 velocity = juce::jlimit (0.2f, 1.0f, 0.35f + 0.65f * (e.position.y - r.getY()) / r.getHeight());
             }
             releaseMouse();
-            state.noteOn (1, note, velocity);
-            // A note a computer key holds too keeps sounding until that key lets go: the click doesn't end it.
-            const bool keyHolds = std::any_of (keysDown.begin(), keysDown.end(), [note] (const auto& k) { return k.second == note; });
-            mouseNote = keyHolds ? -1 : note;
+            press (note, velocity);
+            mouseNote = note;
         }
         void mouseUp (const juce::MouseEvent&) override { releaseMouse(); }
         void mouseDoubleClick (const juce::MouseEvent& e) override
@@ -701,7 +699,7 @@ namespace DrumKit
             for (const auto& [heldCode, heldNote] : keysDown)
                 if (heldCode == code) return true;   // auto-repeat
             keysDown.push_back ({ code, note });
-            state.noteOn (1, note, key.getModifiers().isShiftDown() ? 1.0f : 0.8f);
+            press (note, key.getModifiers().isShiftDown() ? 1.0f : 0.8f);
             return true;
         }
         bool keyStateChanged (bool isKeyDown) override
@@ -711,8 +709,7 @@ namespace DrumKit
             for (auto it = keysDown.begin(); it != keysDown.end();)
                 if (! juce::KeyPress::isKeyCurrentlyDown (it->first))
                 {
-                    if (it->second != mouseNote)   // the mouse still holds it: its release ends it
-                        state.noteOff (1, it->second, 0.0f);
+                    lift (it->second);
                     it = keysDown.erase (it);
                     any = true;
                 }
@@ -723,7 +720,7 @@ namespace DrumKit
         void releaseAll()
         {
             releaseMouse();
-            for (const auto& [code, note] : keysDown) state.noteOff (1, note, 0.0f);
+            for (const auto& [code, note] : keysDown) lift (note);
             keysDown.clear();
         }
 
@@ -754,8 +751,21 @@ namespace DrumKit
         std::vector<std::pair<int, int>> keysDown;   // (key code, note) held on the computer's keyboard
         void releaseMouse()
         {
-            if (mouseNote >= 0) state.noteOff (1, mouseNote, 0.0f);
+            if (mouseNote >= 0) lift (mouseNote);
             mouseNote = -1;
+        }
+        // The mouse and the computer's keys can hold the same piece: it sounds with the first and
+        // ends with the last (a click on a held piece neither restarts nor cuts it).
+        std::array<int, 128> holders {};
+        void press (int note, float velocity)
+        {
+            if (! juce::isPositiveAndBelow (note, 128)) return;
+            if (holders[(size_t) note]++ == 0) state.noteOn (1, note, velocity);
+        }
+        void lift (int note)
+        {
+            if (! juce::isPositiveAndBelow (note, 128) || holders[(size_t) note] == 0) return;
+            if (--holders[(size_t) note] == 0) state.noteOff (1, note, 0.0f);
         }
         void setHovered (int value) { if (value != hovered) { hovered = value; repaint(); } }
     };

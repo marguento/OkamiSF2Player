@@ -1452,7 +1452,9 @@ void SF2PlayerEditor::fitToScreen (int keep)
 int SF2PlayerEditor::drumStageHeight() const
 {
     const auto& displays = juce::Desktop::getInstance().getDisplays();
-    const auto* display = isShowing() ? displays.getDisplayForRect (getScreenBounds()) : displays.getPrimaryDisplay();
+    // The screen under the window's top-left corner: a fixed point, so the height it allows can't
+    // flip with the window's own height when it straddles two screens.
+    const auto* display = isShowing() ? displays.getDisplayForPoint (getScreenPosition()) : displays.getPrimaryDisplay();
     const int screenCap = display != nullptr ? juce::jmax (humanizeMinHeight, display->userArea.getHeight() / 2 - 40) : 460;
     return juce::jlimit (humanizeMinHeight, juce::jmax (humanizeMinHeight, screenCap),
                          drumPads.preferredHeight (getWidth() - 52 - humanizeWidth));
@@ -1547,13 +1549,6 @@ void SF2PlayerEditor::drawSectionTitle (juce::Graphics& g, juce::Rectangle<int> 
 
 void SF2PlayerEditor::timerCallback()
 {
-    if (drumsShown && isShowing())   // moved to a screen of another height: the kit's cap changes with it
-        if (const int stage = drumStageHeight(); stage != lastDrumStage)
-        {
-            lastDrumStage = stage;
-            applyHeight();
-            resized();
-        }
     {
         // The host's notes on the keyboard: it redraws its own state's keys by itself, these when they change.
         std::bitset<128> hostKeys;

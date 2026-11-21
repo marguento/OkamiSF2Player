@@ -1120,6 +1120,24 @@ void SF2PlayerProcessor::playOrWait (juce::MidiMessage message, juce::int64 now,
     handleMidi (message);
 }
 
+// The host's notes onto the window's keys and lights. JUCE's state ends notes on CC123, not on an
+// all-sound-off (CC120): each is shown as one, in its place in the block, by patching the byte in
+// place for that one read (no allocation), then putting it back.
+void SF2PlayerProcessor::showHostNotes (juce::MidiBuffer& fromHost, int numSamples)
+{
+    int patchedCount = 0;
+    for (const auto metadata : fromHost)
+        if (metadata.numBytes == 3 && (metadata.data[0] & 0xf0) == 0xb0 && metadata.data[1] == 120 && patchedCount < (int) patchedSoundOffs.size())
+        {
+            auto* byte = const_cast<juce::uint8*> (metadata.data) + 1;
+            *byte = 123;
+            patchedSoundOffs[(size_t) patchedCount++] = byte;
+        }
+    hostNotes.processNextMidiBuffer (fromHost, 0, numSamples, false);   // reads it only (nothing injected)
+    for (int i = 0; i < patchedCount; ++i)
+        *patchedSoundOffs[(size_t) i] = 120;
+}
+
 // Every late note at once, in time order, rendering nothing (whoever renders the block next plays them).
 void SF2PlayerProcessor::playLateNotesNow()
 {
@@ -1587,7 +1605,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         bool sysex = false;   // JUCE's read builds a message per event, and a sysex one would allocate
         for (const auto metadata : hostMidi) sysex = sysex || metadata.numBytes > 3;
         if (! sysex)
-            hostNotes.processNextMidiBuffer (hostMidi, 0, 1, false);   // the host's notes still show (read only)
+            showHostNotes (hostMidi, 1);   // the host's notes still show
         deferMidi (hostMidi);
         hostMidi.clear();
         return;
@@ -1616,23 +1634,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     // a block carries, so nothing allocates here.
     playedHere.clear();
     keyboardState.processNextMidiBuffer (playedHere, 0, numSamples, true);
-    {
-        // JUCE's state ends notes on CC123, not on an all-sound-off (CC120): shown as one for the
-        // keys and lights, in its place in the block, by patching the byte in place for that one
-        // read (no allocation), then putting it back.
-        auto& shown = const_cast<juce::MidiBuffer&> (fromHost);   // read only, but for these bytes, restored below
-        int patchedCount = 0;
-        for (const auto metadata : shown)
-            if (metadata.numBytes == 3 && (metadata.data[0] & 0xf0) == 0xb0 && metadata.data[1] == 120 && patchedCount < (int) patchedSoundOffs.size())
-            {
-                auto* byte = const_cast<juce::uint8*> (metadata.data) + 1;
-                *byte = 123;
-                patchedSoundOffs[(size_t) patchedCount++] = byte;
-            }
-        hostNotes.processNextMidiBuffer (shown, 0, numSamples, false);   // reads it only (nothing injected)
-        for (int i = 0; i < patchedCount; ++i)
-            *patchedSoundOffs[(size_t) i] = 120;
-    }
+    showHostNotes (const_cast<juce::MidiBuffer&> (fromHost), numSamples);   // read only (bytes patched and restored)
     blockMidi.clear();
     blockMidi.data.addArray (fromHost.data);   // the bytes as they are: one copy, not an insertion per event
     bool playedNoteOn = false;   // a note played in the window (not a key let go)

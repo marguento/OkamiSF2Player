@@ -34,6 +34,7 @@ public:
         processBlock (buffer, midi);
         bypassedBlock = false;
         buffer.clear();
+        if (wrapperType == wrapperType_Standalone) { midi.clear(); return; }   // no room reserved there: sends nothing (as SendPlayed)
         // Only the window's key-ups go out: a note it sent before the bypass still ends on the track
         // recording it. Within the room MIDI out has anyway (see SendPlayed): no allocation.
         const int room = juce::jmax (midi.data.size(), 2048);
@@ -316,8 +317,8 @@ public:
     enum TakeState { takeIdle = 0, takeArmed, takeWithHost, takeFree, takeEndedByHost };
     std::atomic<int> takeState { takeIdle };
     std::atomic<int> takeWriters { 0 };   // audio blocks between reading takeState and writing the take's events
-    bool hostTransportSeen = false;
-    bool velocityRecorded = false;   // audio thread: handleMidi leaves lastVelocity alone (already the note's own)   // audio thread: a block ever came with the host's position
+    bool hostTransportSeen = false;   // audio thread: a block ever came with the host's position
+    bool velocityRecorded = false;    // audio thread: handleMidi leaves lastVelocity alone (already the note's own)
     juce::File lastTakeFile;   // message thread: the last take, kept while the window is closed
     juce::String lastTakeText;
     juce::AbstractFifo takeFifo { 8192 };
@@ -380,6 +381,7 @@ private:
     bool takeEarliestLate (juce::int64 until, LateNote& out);
     void refreshNextLate();   // after taking messages off the list other than through takeEarliestLate
     void playKeyNow (int channel, int key);
+    void showHostNotes (juce::MidiBuffer& fromHost, int numSamples);
     void dropLateHits();
     void clearLateNotes();
     void forgetKeyWaits (int channel = -1);
