@@ -245,7 +245,7 @@ private:
     std::array<std::array<juce::int8, 128>, 16> deferredController;
     void deferMidi (const juce::MidiBuffer&);
     // `guitar`: the Guitar panel's settings when its engine is in use, so kept notes go through it.
-    struct Humanize { float velocity = 0; double maxDelay = 0; int splitBelow = -1; int transpose = 0; bool panelShown = false; };
+    struct Humanize { float velocity = 0; double maxDelay = 0; int splitBelow = -1; bool panelShown = false; };
     void playOrWait (juce::MidiMessage, juce::int64 now, const Humanize&);
     void playDeferredMidi (const GuitarEngine::Settings*, juce::int64 at, const Humanize& human);
     // Ends every note the Guitar panel's engine started (its twins included) and forgets it all.
@@ -341,12 +341,11 @@ private:
         }
     }
     // A key's slot: coupled only on the kit's side of a Split (a lower instrument's key waits alone).
-    // With Transpose, the keys that sound are the ones that cut each other off, so they're grouped as heard.
-    static int slotOf (int key, int splitBelow, int transpose)
+    // By the key played (a Transpose changed mid-hit can't move a wait to another slot).
+    static int slotOf (int key, int splitBelow)
     {
-        const int heard = juce::jlimit (0, 127, key + transpose);
-        const int slot = waitSlot (heard);
-        return key >= splitBelow && slot - transpose >= splitBelow ? slot : heard;
+        const int slot = waitSlot (key);
+        return key >= splitBelow && slot >= splitBelow ? slot : key;
     }
     // An all-notes-off or all-sound-off, in raw bytes (one definition for every place that asks).
     static bool isAllOffBytes (const juce::uint8* data, int size)
@@ -373,7 +372,7 @@ private:
     void playLateNotesNow();
     bool takeEarliestLate (juce::int64 until, LateNote& out);
     void refreshNextLate();   // after taking messages off the list other than through takeEarliestLate
-    void playKeyNow (int channel, int key, int splitBelow, int transpose);
+    void playKeyNow (int channel, int key, int splitBelow);
     void dropLateHits();
     void clearLateNotes();
     void forgetKeyWaits (int channel = -1);

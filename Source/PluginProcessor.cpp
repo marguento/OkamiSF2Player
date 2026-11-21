@@ -1005,12 +1005,12 @@ bool SF2PlayerProcessor::takeEarliestLate (juce::int64 until, LateNote& out)
 
 // A key's waiting messages, now, in the order they came in (the list is full and one more must
 // follow them): moved to the list's end, played, then cut off.
-void SF2PlayerProcessor::playKeyNow (int channel, int key, int splitBelow, int transpose)
+void SF2PlayerProcessor::playKeyNow (int channel, int key, int splitBelow)
 {
     const auto begin = lateNotes.begin(), end = begin + lateCount;
     // std::partition doesn't allocate (stable_partition may); the order of what stays doesn't matter.
     const auto mine = std::partition (begin, end, [&] (const LateNote& late)
-                                      { return channelOf (late) != channel || slotOf (late.bytes[1] & 0x7f, splitBelow, transpose) != key; });
+                                      { return channelOf (late) != channel || slotOf (late.bytes[1] & 0x7f, splitBelow) != key; });
     std::sort (mine, end, [] (const LateNote& a, const LateNote& b) { return a.order < b.order; });
     lateCount = (int) (mine - begin);
     for (auto it = mine; it != end; ++it)
@@ -1074,7 +1074,7 @@ void SF2PlayerProcessor::playOrWait (juce::MidiMessage message, juce::int64 now,
     const bool keyMessage = onChannel && message.getRawDataSize() == 3 && (message.isNoteOnOrOff() || message.isAftertouch());
     // Keys that cut each other off (a kit's hi-hat: closed, pedal, open) wait as one, so a later
     // closed hat never sounds before the open one it must stop.
-    const int key = keyMessage ? slotOf (message.getNoteNumber() & 0x7f, human.splitBelow, human.transpose) : 0;
+    const int key = keyMessage ? slotOf (message.getNoteNumber() & 0x7f, human.splitBelow) : 0;
     if (keyMessage)
     {
         // A quarter of the list stays for what must follow a waiting hit (its note-off,
@@ -1097,7 +1097,7 @@ void SF2PlayerProcessor::playOrWait (juce::MidiMessage message, juce::int64 now,
         {
             // No room to wait: the key's waiting messages play now, in order, then this
             // one, so its order holds whatever the list holds (a rare flood).
-            playKeyNow (channel, key, human.splitBelow, human.transpose);
+            playKeyNow (channel, key, human.splitBelow);
             lateAt = -1;
             if (message.isNoteOn()) delay = 0;   // it plays now, so its note-off needn't wait
         }
@@ -1578,6 +1578,8 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     // event).
     if (numSamples <= 0)   // a host flushing parameters: the MIDI waits for a block with samples (the window's notes stay queued)
     {
+        playedHere.clear();   // nothing of the window's goes out from this block
+        hostNotes.processNextMidiBuffer (hostMidi, 0, 1, false);   // the host's notes still show (read only)
         deferMidi (hostMidi);
         hostMidi.clear();
         return;
@@ -1787,7 +1789,6 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
             human.splitBelow = layerMode == 1 ? 128
                              : layerMode == 2 ? juce::roundToInt (parameters.getRawParameterValue ("splitKey")->load()) : -1;
             human.panelShown = panelShown;
-            human.transpose = juce::roundToInt (parameters.getRawParameterValue ("transpose")->load());
         }
 
         // Events a skipped block kept, first: through the guitar engine when it's in use, else by
