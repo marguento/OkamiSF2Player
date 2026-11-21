@@ -664,7 +664,9 @@ namespace DrumKit
             }
             releaseMouse();
             state.noteOn (1, note, velocity);
-            mouseNote = note;
+            // A note a computer key holds too keeps sounding until that key lets go: the click doesn't end it.
+            const bool keyHolds = std::any_of (keysDown.begin(), keysDown.end(), [note] (const auto& k) { return k.second == note; });
+            mouseNote = keyHolds ? -1 : note;
         }
         void mouseUp (const juce::MouseEvent&) override { releaseMouse(); }
         void mouseDoubleClick (const juce::MouseEvent& e) override
@@ -709,7 +711,8 @@ namespace DrumKit
             for (auto it = keysDown.begin(); it != keysDown.end();)
                 if (! juce::KeyPress::isKeyCurrentlyDown (it->first))
                 {
-                    state.noteOff (1, it->second, 0.0f);
+                    if (it->second != mouseNote)   // the mouse still holds it: its release ends it
+                        state.noteOff (1, it->second, 0.0f);
                     it = keysDown.erase (it);
                     any = true;
                 }

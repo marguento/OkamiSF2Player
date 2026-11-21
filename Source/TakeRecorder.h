@@ -93,8 +93,8 @@ namespace Take
         void paint (juce::Graphics& g) override
         {
             if (text.isEmpty()) return;
-            if (! recording && file != juce::File() && ! file.existsAsFile())
-                text = "That take is gone";   // deleted from its folder meanwhile: nothing to drag
+            // Deleted from its folder meanwhile: nothing to drag (said, not kept: it may come back).
+            const auto shown = ! recording && file != juce::File() && ! file.existsAsFile() ? juce::String ("That take is gone") : text;
             const auto r = getLocalBounds().toFloat().reduced (0.5f);
             const juce::Colour accent (0xffe0a64b);
             g.setColour (recording ? juce::Colour (0x33e05050) : accent.withAlpha (file.existsAsFile() ? 0.18f : 0.08f));
@@ -102,7 +102,7 @@ namespace Take
             g.setColour (recording ? juce::Colour (0xffe05050) : accent.withAlpha (0.8f));
             g.drawRoundedRectangle (r, 5.0f, 1.0f);
             g.setFont (juce::FontOptions (12.0f, juce::Font::bold));
-            g.drawFittedText (text, getLocalBounds().reduced (6, 0), juce::Justification::centred, 1, 0.75f);
+            g.drawFittedText (shown, getLocalBounds().reduced (6, 0), juce::Justification::centred, 1, 0.75f);
         }
         juce::String getTooltip() override
         {

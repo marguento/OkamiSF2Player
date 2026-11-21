@@ -896,7 +896,7 @@ void SF2PlayerProcessor::handleMidi (const juce::MidiMessage& m)
     if (m.isNoteOn())
     {
         ++notesReceived;
-        lastVelocity = m.getVelocity();
+        if (! velocityRecorded) lastVelocity = m.getVelocity();   // (Humanize records the clip's own, before it varies it)
         const int note = transposeFor (m.getNoteNumber());
         if (! juce::isPositiveAndBelow (note, 128))
             return;   // transposed off the keyboard
@@ -1030,6 +1030,7 @@ void SF2PlayerProcessor::refreshNextLate()
 // block (rendering up to it); one already overdue (a block skipped) plays at once.
 void SF2PlayerProcessor::playLateNotes (juce::int64 until, juce::int64 blockStart, int& position)
 {
+    const juce::ScopedValueSetter<bool> recorded (velocityRecorded, true);   // their velocities were recorded as they came
     LateNote late;
     while (takeEarliestLate (until, late))
     {
@@ -1058,6 +1059,8 @@ void SF2PlayerProcessor::playOrWait (juce::MidiMessage message, juce::int64 now,
         forgetKeyWaits (channel);
         refreshNextLate();
     }
+    if (message.isNoteOn()) lastVelocity = message.getVelocity();   // as it came, for the soft-notes warning
+    const juce::ScopedValueSetter<bool> recorded (velocityRecorded, true);
     const bool kitNote = message.isNoteOn() && onChannel && ! channelMoved.test ((size_t) channel)
                       && message.getNoteNumber() >= human.splitBelow;
     if (kitNote && human.velocity > 0.0f)
@@ -1120,6 +1123,7 @@ void SF2PlayerProcessor::playOrWait (juce::MidiMessage message, juce::int64 now,
 // Every late note at once, in time order, rendering nothing (whoever renders the block next plays them).
 void SF2PlayerProcessor::playLateNotesNow()
 {
+    const juce::ScopedValueSetter<bool> recorded (velocityRecorded, true);
     LateNote late;
     while (takeEarliestLate (std::numeric_limits<juce::int64>::max(), late))
         handleMidi (juce::MidiMessage (late.bytes, late.size));

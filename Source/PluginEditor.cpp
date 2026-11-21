@@ -1547,6 +1547,13 @@ void SF2PlayerEditor::drawSectionTitle (juce::Graphics& g, juce::Rectangle<int> 
 
 void SF2PlayerEditor::timerCallback()
 {
+    if (drumsShown && isShowing())   // moved to a screen of another height: the kit's cap changes with it
+        if (const int stage = drumStageHeight(); stage != lastDrumStage)
+        {
+            lastDrumStage = stage;
+            applyHeight();
+            resized();
+        }
     {
         // The host's notes on the keyboard: it redraws its own state's keys by itself, these when they change.
         std::bitset<128> hostKeys;
@@ -2804,7 +2811,7 @@ void SF2PlayerEditor::refreshDrumPads (const SF2PlayerProcessor::State& st)
     if (show) juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<SF2PlayerEditor> (this), takeKeys]
                                                { if (safe != nullptr) takeKeys(); });   // once it's laid out and showing
     applyHeight();
-    if (show) fitToScreen (-1);   // other panels fold if the kit doesn't fit
+    if (show && isShowing()) fitToScreen (-1);   // other panels fold if the kit doesn't fit (once the window is up and its folds read)
     resized();
     repaint();
 }

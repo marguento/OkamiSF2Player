@@ -316,7 +316,8 @@ public:
     enum TakeState { takeIdle = 0, takeArmed, takeWithHost, takeFree, takeEndedByHost };
     std::atomic<int> takeState { takeIdle };
     std::atomic<int> takeWriters { 0 };   // audio blocks between reading takeState and writing the take's events
-    bool hostTransportSeen = false;   // audio thread: a block ever came with the host's position
+    bool hostTransportSeen = false;
+    bool velocityRecorded = false;   // audio thread: handleMidi leaves lastVelocity alone (already the note's own)   // audio thread: a block ever came with the host's position
     juce::File lastTakeFile;   // message thread: the last take, kept while the window is closed
     juce::String lastTakeText;
     juce::AbstractFifo takeFifo { 8192 };
