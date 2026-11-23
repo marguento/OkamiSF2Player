@@ -1839,6 +1839,18 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         // the same rules as this block's (what waits since before plays first, then they wait in turn).
         if (! useGuitar)
         {
+            // An all-notes-off a skipped block carried drops its channel's waiting hits first, as it
+            // would have in its own block (they were due after it), then the rest due by now plays.
+            for (int i = 0; i < numDeferred; ++i)
+                if (const auto& m = deferredEvents[(size_t) i]; m.isAllNotesOff() || m.isAllSoundOff())
+                    if (const int channel = m.getChannel() - 1; juce::isPositiveAndBelow (channel, 16))
+                    {
+                        for (int j = lateCount; --j >= 0;)
+                            if (channelOf (lateNotes[(size_t) j]) == channel)
+                                lateNotes[(size_t) j] = lateNotes[(size_t) --lateCount];
+                        forgetKeyWaits (channel);
+                        refreshNextLate();
+                    }
             int start = 0;
             playLateNotes (blockStart + 1, blockStart, start);
         }

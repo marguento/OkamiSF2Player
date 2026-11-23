@@ -2758,9 +2758,10 @@ void SF2PlayerEditor::refreshDrumPads (const SF2PlayerProcessor::State& st)
     if (key != choiceKey)
     {
         choiceKey = key;
-        shownChoice = drumChoice (key);   // -1: this Mac has no choice for it
-        if (shownChoice < 0)
-            shownChoice = valid ? juce::jmax (0, player.drumChoiceOf (st.presets[(size_t) st.preset].bank, st.presets[(size_t) st.preset].number)) : 0;
+        // The project's own choice for this instrument first (opening the window never changes what
+        // plays), then this Mac's (-1: none), else Auto.
+        const int projects = valid ? player.drumChoiceOf (st.presets[(size_t) st.preset].bank, st.presets[(size_t) st.preset].number) : -1;
+        shownChoice = projects >= 0 ? projects : juce::jmax (0, drumChoice (key));
     }
     const int choice = shownChoice;
     const bool show = valid && ! guitarShown && (choice == 1 || (choice == 0 && st.presets[(size_t) st.preset].drumKit));
@@ -2884,7 +2885,7 @@ void SF2PlayerEditor::setListValue (const char* list, const juce::String& key, c
 void SF2PlayerEditor::setDrumChoice (const juce::String& key, int choice)
 {
     if (key.isEmpty()) return;
-    setListValue ("drumChoices", key, juce::String (choice));   // Auto too: chosen here, it outranks a project's
+    setListValue ("drumChoices", key, juce::String (choice));   // Auto too (and handed to the project below, which then keeps it)
     if (key == choiceKey) shownChoice = choice;
     const auto st = player.state();
     if (juce::isPositiveAndBelow (st->preset, (int) st->presets.size()) && favouriteKey (*st, st->preset) == key)

@@ -139,7 +139,7 @@ namespace Take
             if (player.lastTakeFile.existsAsFile())
             {
                 chip.file = player.lastTakeFile;
-                chip.text = player.lastTakeText;
+                chip.text = offerText = player.lastTakeText;
             }
         }
         // Closing the window mid-take ends it (written like REC would), and the last take is kept
@@ -149,7 +149,7 @@ namespace Take
             if (player.takeState.load() != SF2PlayerProcessor::takeIdle)
                 stop();
             player.lastTakeFile = chip.file;
-            player.lastTakeText = chip.text;
+            player.lastTakeText = offerText;
         }
 
         void resized() override
@@ -171,10 +171,9 @@ namespace Take
             drain();   // anything left from before is dropped
             events.clear();
             notesSoFar = 0;
-            lastText = chip.text;   // the last take stays on disk; offered again if this one is called off before it starts
             chip.recording = true;   // no drag while recording
             player.takeState.store (SF2PlayerProcessor::takeArmed);   // the audio thread starts it at once in a host without a transport
-            seenState = player.takeState.load();
+            seenState = SF2PlayerProcessor::takeArmed;   // what was stored (the audio thread may move it on before a read)
             started = juce::Time::getMillisecondCounterHiRes();
             update();
             startTimerHz (20);
@@ -191,7 +190,7 @@ namespace Take
             chip.recording = false;
             if (was == SF2PlayerProcessor::takeArmed)   // called off before it started: the last take is offered again
             {
-                chip.text = chip.file.existsAsFile() ? lastText : juce::String();
+                chip.text = chip.file.existsAsFile() ? offerText : juce::String();   // the last take, offered again
                 chip.repaint();
                 return;
             }
@@ -221,14 +220,18 @@ namespace Take
                     out.flush();   // a full disk shows here, not in writeTo (it only fills the stream's buffer)
                     saved = saved && out.getStatus().wasOk();
                 }
-                if (saved) chip.file = file;
+                if (saved)
+                {
+                    chip.file = file;
+                    offerText = juce::String::fromUTF8 ("\xe2\x87\xa9 Drag MIDI \xc2\xb7 ") + juce::String (notes) + (notes == 1 ? " note" : " notes");
+                }
                 else file.deleteFile();   // nothing half-written left behind
                 chip.text = chip.file != previous && chip.file.existsAsFile()
-                              ? juce::String::fromUTF8 ("\xe2\x87\xa9 Drag MIDI \xc2\xb7 ") + juce::String (notes) + (notes == 1 ? " note" : " notes")
+                              ? offerText
                               : juce::String ("Couldn't save the take") + (previous.existsAsFile() ? " (the last one stays)" : "");
             }
             else
-                chip.text = chip.file.existsAsFile() ? lastText : juce::String ("Nothing played");
+                chip.text = chip.file.existsAsFile() ? offerText : juce::String ("Nothing played");
             chip.repaint();
         }
 
@@ -240,7 +243,7 @@ namespace Take
         DragChip chip;
         std::vector<Event> events;
         double started = 0;
-        juce::String lastText;
+        juce::String offerText;   // what the chip says about the take it offers ("Drag MIDI · N notes"), never a status
         int seenState = SF2PlayerProcessor::takeIdle;
         int notesSoFar = 0;
 
