@@ -755,7 +755,8 @@ namespace DrumKit
             mouseNote = -1;
         }
         // The mouse and the computer's keys can hold the same piece: it sounds with the first and
-        // ends with the last (a click on a held piece neither restarts nor cuts it).
+        // ends with the last (a click on a held piece neither restarts nor cuts it). The PIANO
+        // keyboard's own clicks aren't counted here (as in 1.3, a click there plays the key as is).
         std::array<int, 128> holders {};
         void press (int note, float velocity)
         {

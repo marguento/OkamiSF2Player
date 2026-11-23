@@ -814,8 +814,15 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     gainSlider.setDoubleClickReturnValue (true, 0.0);
     toneSlider.setDoubleClickReturnValue (true, toneSlider.getMaximum());
     layerLevelSlider.setDoubleClickReturnValue (true, 0.0);
+    // Once the window shows on its screen (which may not be the main one): the kit's height for
+    // that screen, then fold what doesn't fit.
     juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<SF2PlayerEditor> (this)]
-                                     { if (safe != nullptr) safe->fitToScreen(); });
+                                     {
+                                         if (safe == nullptr) return;
+                                         safe->applyHeight();
+                                         safe->resized();
+                                         safe->fitToScreen();
+                                     });
 }
 
 SF2PlayerEditor::~SF2PlayerEditor()
@@ -1437,7 +1444,7 @@ void SF2PlayerEditor::fitToScreen (int keep)
     if (fitting) return;
     const juce::ScopedValueSetter<bool> busy (fitting, true);
     const auto& displays = juce::Desktop::getInstance().getDisplays();
-    const auto* display = isShowing() ? displays.getDisplayForRect (getScreenBounds()) : displays.getPrimaryDisplay();
+    const auto* display = isShowing() ? displays.getDisplayForPoint (getScreenPosition()) : displays.getPrimaryDisplay();   // as drumStageHeight picks it
     if (display == nullptr) return;
     const int available = display->userArea.getHeight() - 60;   // the host's title bar and a margin
     for (auto section : { effectsSection, playSection })
