@@ -145,7 +145,7 @@ namespace DrumKit
             // The editor forwards the keys (the standalone's own window has buttons outside it that don't).
             auto* now = juce::Component::getCurrentlyFocusedComponent();
             auto* editor = findParentComponentOfClass<juce::AudioProcessorEditor>();
-            if (now == nullptr || editor == nullptr || ! editor->isParentOf (now))
+            if (now == nullptr || editor == nullptr || ! (now == editor || editor->isParentOf (now)))
                 releaseAll();
             repaint();
         }
@@ -680,6 +680,7 @@ namespace DrumKit
         void mouseUp (const juce::MouseEvent&) override { releaseMouse(); }
         void mouseDoubleClick (const juce::MouseEvent& e) override
         {
+            if (e.mods.isPopupMenu()) return;   // a right double-click isn't a rename either
             if (kitView) return;   // renaming is the pads'
             const int note = noteAt (e.position);
             if (note < 0 || onRename == nullptr) return;

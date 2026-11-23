@@ -1663,6 +1663,8 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         if (! playingNow && playedNoteOn && ! bypassedBlock)   // a note while bypassed is no one's take
             takeState.compare_exchange_strong (expected, takeFree);
     }
+    if (const int take = takeState.load(); take == takeIdle || take == takeArmed)
+        takeHeld.reset();   // no take running: the next one starts holding nothing
     // REC's stop waits for a block writing its events (counted before it reads the state), so the
     // last notes of a take reach it instead of the next take's leftovers.
     takeWriters.fetch_add (1);

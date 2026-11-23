@@ -2706,7 +2706,8 @@ void SF2PlayerEditor::showPanelMenu()
                 {
                     const int setting = juce::roundToInt (player.parameters.getRawParameterValue ("guitarPanel")->load());
                     editParameter (*parameter, parameter->convertTo0to1 (2.0f));
-                    setListValue ("panelChoices", key, "2p" + remembered + ":" + juce::String (setting));
+                    if (! remembered.startsWith ("2p"))   // already the pads' mark: what it remembers stays as it was
+                        setListValue ("panelChoices", key, "2p" + remembered + ":" + juce::String (setting));
                 }
             }
             refreshDrumPads (*st);
