@@ -1681,7 +1681,7 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     }
     else if (blockPosition)
         lastGrid.known = false;   // stopped: nothing to carry
-    if (const int take = takeState.load(); (take == takeWithHost || take == takeFree) && ! playedHere.isEmpty() && ! bypassedBlock)
+    if (const int take = takeState.load(); (take == takeWithHost || take == takeFree) && ! playedHere.isEmpty())
     {
         const double sr = juce::jmax (1.0, getSampleRate());
         double bpm = 120.0, barQuarters = 4.0;
@@ -1710,6 +1710,12 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         for (const auto metadata : playedHere)
         {
             if (metadata.numBytes > 3) continue;
+            // While bypassed nothing new goes in, but a key let go still ends a note the take holds.
+            const int key = metadata.numBytes == 3 ? (metadata.data[0] & 0x0f) * 128 + (metadata.data[1] & 0x7f) : -1;
+            const bool on = isNoteOnBytes (metadata.data, metadata.numBytes), off = isNoteOffBytes (metadata.data, metadata.numBytes);
+            if (bypassedBlock && ! (off && key >= 0 && takeHeld.test ((size_t) key))) continue;
+            if (on && key >= 0) takeHeld.set ((size_t) key);
+            if (off && key >= 0) takeHeld.reset ((size_t) key);
             TakeEvent event;
             event.seconds = takeSeconds + metadata.samplePosition / sr;   // a clock no audio restart sets back
             event.onGrid = ppq.hasValue();

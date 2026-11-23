@@ -54,6 +54,7 @@ struct Player
         p.prepareToPlay (rate, block);
         p.loadSoundFont (sf2);
         p.selectPreset (preset);
+        p.takesFolder = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("SF2PlayerTests-takes");   // never the user's takes
         set ("fsReverbOn", effects ? 1.0f : 0.0f);
         set ("fsChorusOn", effects ? 1.0f : 0.0f);
     }
@@ -2079,6 +2080,13 @@ int main()
             player.p.keyboardState.noteOff (1, 65, 0.0f);
             juce::MidiBuffer after; player.p.processBlockBypassed (buffer, after);
             withSong = withSong && player.p.takeFifo.getNumReady() == waiting;
+            // A note the take holds, let go while bypassed: its key-up still ends it in the take.
+            player.p.takeState.store (SF2PlayerProcessor::takeFree);
+            player.p.keyboardState.noteOn (1, 67, 0.8f);
+            { juce::MidiBuffer m; player.p.processBlock (buffer, m); }
+            player.p.keyboardState.noteOff (1, 67, 0.0f);
+            { juce::MidiBuffer m; player.p.processBlockBypassed (buffer, m); }
+            withSong = withSong && player.p.takeFifo.getNumReady() == waiting + 2;
             // Armed and bypassed, a note doesn't start a take of its own: REC still waits for the song.
             player.p.setPlayHead (&head);
             head.playing = false;

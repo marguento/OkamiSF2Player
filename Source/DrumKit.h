@@ -664,6 +664,7 @@ namespace DrumKit
         void mouseExit (const juce::MouseEvent&) override { setHovered (-1); }
         void mouseDown (const juce::MouseEvent& e) override
         {
+            if (e.mods.isPopupMenu()) return;   // a right-click isn't a hit
             const int note = noteAt (e.position);
             if (note < 0 || (! kitView && e.getNumberOfClicks() > 1)) return;   // a pad's double-click renames; the kit's quick hits all play
             float velocity = 0.85f;

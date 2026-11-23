@@ -201,7 +201,8 @@ namespace Take
             {
                 const auto previous = chip.file;   // the take this window offered until now: kept (and offered still if this one can't be saved)
                 // In the plugin's own folder, not the system's temporary one (macOS clears that after about 3 days).
-                auto folder = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                auto folder = player.takesFolder != juce::File() ? player.takesFolder
+                            : juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
                                   .getChildFile ("Application Support").getChildFile ("SF2 Player").getChildFile ("Takes");
                 folder.createDirectory();
                 // A week's worth kept (another window may still offer one of them), never this window's last take.

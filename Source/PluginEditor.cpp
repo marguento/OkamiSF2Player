@@ -2668,7 +2668,7 @@ void SF2PlayerEditor::showPanelMenu()
     menu.addSectionHeader ("Panel for this instrument");
     menu.addItem (1, juce::String ("Automatic (detected: ") + (player.detectedGuitar() ? "guitar" : "standard instrument") + ")", true, current == 0);
     menu.addItem (2, "Guitar panel", true, current == 1);
-    menu.addItem (3, "Standard (no extra panel)", true, current == 2);
+    menu.addItem (3, "Standard (no Guitar panel)", true, current == 2);
     menu.addSeparator();
     const bool kit = isDetectedKit (*player.state());
     menu.addItem (4, juce::String ("Drum pads (") + (kit ? "detected: a kit" : "not detected") + ")", true, drumsShown);
@@ -2685,14 +2685,18 @@ void SF2PlayerEditor::showPanelMenu()
             // and turning them off again gives that choice back.
             auto* parameter = player.parameters.getParameter ("guitarPanel");
             const auto remembered = listValue ("panelChoices", key);
+            // Remembered as "2p<this Mac's entry before>:<the panel's setting before>": both come back
+            // as they were (an empty entry stays empty, so no choice is made up for this Mac).
             if (drumsShown)
             {
                 setDrumChoice (key, kit ? 2 : 0);
                 if (remembered.startsWith ("2p"))
                 {
-                    const int before = juce::jlimit (0, 2, remembered.substring (2).getIntValue());
-                    setListValue ("panelChoices", key, before == 0 ? juce::String() : juce::String (before));
-                    if (parameter != nullptr) editParameter (*parameter, parameter->convertTo0to1 ((float) before));
+                    const auto rest = remembered.substring (2);
+                    const auto entry = rest.upToFirstOccurrenceOf (":", false, false);
+                    const int setting = juce::jlimit (0, 2, rest.fromFirstOccurrenceOf (":", false, false).getIntValue());
+                    setListValue ("panelChoices", key, entry);
+                    if (parameter != nullptr) editParameter (*parameter, parameter->convertTo0to1 ((float) setting));
                 }
             }
             else
@@ -2700,9 +2704,9 @@ void SF2PlayerEditor::showPanelMenu()
                 setDrumChoice (key, kit ? 0 : 1);
                 if (player.guitarPanelActive() && parameter != nullptr)
                 {
-                    const int before = juce::roundToInt (player.parameters.getRawParameterValue ("guitarPanel")->load());
+                    const int setting = juce::roundToInt (player.parameters.getRawParameterValue ("guitarPanel")->load());
                     editParameter (*parameter, parameter->convertTo0to1 (2.0f));
-                    setListValue ("panelChoices", key, "2p" + juce::String (before));
+                    setListValue ("panelChoices", key, "2p" + remembered + ":" + juce::String (setting));
                 }
             }
             refreshDrumPads (*st);
