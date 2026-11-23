@@ -786,14 +786,15 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     keyboard.setColour (juce::MidiKeyboardComponent::keyDownOverlayColourId, juce::Colours::transparentBlack);
     addAndMakeVisible (keyboard);
 
+    {
+        // The saved folds first: the first refresh may show the Guitar panel, which folds others and saves.
+        const auto folded = juce::StringArray::fromTokens (settings->getValue ("collapsedSections"), ",", "");
+        collapsed = { folded.contains ("effects"), folded.contains ("play"), folded.contains ("guitar"), folded.contains ("keyboard") };
+    }
     player.addChangeListener (this);
     refresh();
     startTimerHz (20);
     setResizable (true, true);
-    {
-        const auto folded = juce::StringArray::fromTokens (settings->getValue ("collapsedSections"), ",", "");
-        collapsed = { folded.contains ("effects"), folded.contains ("play"), folded.contains ("guitar"), folded.contains ("keyboard") };
-    }
     applyHeight();
     showSectionContents();
     showSoundContents();

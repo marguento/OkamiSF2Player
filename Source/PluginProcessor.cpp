@@ -789,6 +789,7 @@ bool SF2PlayerProcessor::loadSoundFont (const juce::File& file)
     // The project's instrument by bank:program (its index changes if the file gained presets),
     // else the same index when the same file is reloaded, else the first.
     int preset = (file == currentFile) ? juce::jlimit (0, juce::jmax (0, (int) list.size() - 1), currentPreset) : 0;
+    const bool projectsInstrument = savedBank >= 0;   // the project's instrument comes back (kept for its pads choice below)
     if (savedBank >= 0)
         for (size_t i = 0; i < list.size(); ++i)
             if (list[i].bank == savedBank && list[i].number == savedNumber)
@@ -805,7 +806,9 @@ bool SF2PlayerProcessor::loadSoundFont (const juce::File& file)
     applyLayerPreset (*fresh, layer);
     layerPreset = layer;
     currentPreset = preset;   // before the swap, which publishes the kit flag with it
-    if (file != currentFile && ! restoringState)   // another file: its instruments' pads choice starts over (a project restore keeps its own)
+    // Another file: its instruments' pads choice starts over. A project restore keeps its own, and so
+    // does a project's missing file found again (it brings the project's instrument back).
+    if (file != currentFile && ! restoringState && missingFile == juce::File() && ! projectsInstrument)
         drumChoice.store (-1);
     swapEngine (std::move (fresh));   // publishes the kit flag with the engine
 
