@@ -2655,7 +2655,10 @@ void SF2PlayerEditor::applyPanelChoice (const SF2PlayerProcessor::State& st)
     if (key == panelKey) return;
     panelKey = key;
     if (! picked) return;
-    const float choice = (float) listValue ("panelChoices", key).getIntValue();   // none: 0, Auto
+    auto value = listValue ("panelChoices", key);
+    if (value.startsWith ("2p"))   // left by a 1.4 build that kept the pads' mark here: the entry it saved
+        value = value.substring (2).upToFirstOccurrenceOf (":", false, false);
+    const float choice = (float) value.getIntValue();   // none: 0, Auto
     if (auto* parameter = player.parameters.getParameter ("guitarPanel"))
         if (juce::roundToInt (player.parameters.getRawParameterValue ("guitarPanel")->load()) != (int) choice)
             editParameter (*parameter, parameter->convertTo0to1 (choice));
@@ -2675,40 +2678,27 @@ void SF2PlayerEditor::showPanelMenu()
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (panelButton), [this] (int chosen)
     {
         if (chosen <= 0) return;
-        if (chosen == 4)   // the pads on or off for this instrument, remembered
+        if (chosen == 4)   // the pads on or off for this instrument, in this project
         {
             const auto st = player.state();
             const bool kit = isDetectedKit (*st);
             const auto key = favouriteKey (*st, st->preset);
-            // The pads and the Guitar panel don't share the keys: turning the pads on for a guitar
-            // turns its panel off for this instrument only, remembered as "2p<the choice it had>",
-            // and turning them off again gives that choice back.
+            // The pads and the Guitar panel don't share the keys: turning the pads on for a guitar turns
+            // its panel off in this project (the panel's setting, like the pads choice, is the
+            // project's), and turning them off gives it back to Auto. Nothing is kept on this Mac.
             auto* parameter = player.parameters.getParameter ("guitarPanel");
-            const auto remembered = listValue ("panelChoices", key);
-            // Remembered as "2p<this Mac's entry before>:<the panel's setting before>": both come back
-            // as they were (an empty entry stays empty, so no choice is made up for this Mac).
             if (drumsShown)
             {
                 setDrumChoice (key, kit ? 2 : 0);
-                if (remembered.startsWith ("2p"))
-                {
-                    const auto rest = remembered.substring (2);
-                    const auto entry = rest.upToFirstOccurrenceOf (":", false, false);
-                    const int setting = juce::jlimit (0, 2, rest.fromFirstOccurrenceOf (":", false, false).getIntValue());
-                    setListValue ("panelChoices", key, entry);
-                    if (parameter != nullptr) editParameter (*parameter, parameter->convertTo0to1 ((float) setting));
-                }
+                if (parameter != nullptr && juce::roundToInt (player.parameters.getRawParameterValue ("guitarPanel")->load()) == 2
+                    && player.detectedGuitar())
+                    editParameter (*parameter, parameter->convertTo0to1 (0.0f));
             }
             else
             {
                 setDrumChoice (key, kit ? 0 : 1);
                 if (player.guitarPanelActive() && parameter != nullptr)
-                {
-                    const int setting = juce::roundToInt (player.parameters.getRawParameterValue ("guitarPanel")->load());
                     editParameter (*parameter, parameter->convertTo0to1 (2.0f));
-                    if (! remembered.startsWith ("2p"))   // already the pads' mark: what it remembers stays as it was
-                        setListValue ("panelChoices", key, "2p" + remembered + ":" + juce::String (setting));
-                }
             }
             refreshDrumPads (*st);
             refreshPanelButton();
@@ -2741,7 +2731,7 @@ void SF2PlayerEditor::refreshDrumPads (const SF2PlayerProcessor::State& st)
     const int projectChoiceNow = player.drumChoice.load();
     auto current = player.state();
     const void* stateId = current.get() == &st ? &st : nullptr;
-    const DrumRefresh now { stateId, st.preset, (int) st.presets.size(), guitarShown, projectChoiceNow, 0 };
+    const DrumRefresh now { stateId, st.preset, (int) st.presets.size(), guitarShown, projectChoiceNow };
     if (stateId != nullptr && now == lastDrumRefresh) return;
     lastDrumRefresh = now;
     refreshedState = stateId != nullptr ? std::move (current) : nullptr;

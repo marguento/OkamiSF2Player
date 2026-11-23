@@ -308,18 +308,18 @@ private:
     std::shared_ptr<const SF2PlayerProcessor::State> refreshedState;   // held, so its address can't be reused by a newer one
     struct DrumRefresh
     {
-        const void* state = nullptr; int preset = -1, presets = 0; bool guitar = false; int projectChoice = -2, shown = -2;
+        const void* state = nullptr; int preset = -1, presets = 0; bool guitar = false; int projectChoice = -2;
         bool operator== (const DrumRefresh& o) const
         {
             return state == o.state && preset == o.preset && presets == o.presets && guitar == o.guitar
-                && projectChoice == o.projectChoice && shown == o.shown;
+                && projectChoice == o.projectChoice;
         }
     };
     DrumRefresh lastDrumRefresh;   // what refreshDrumPads last ran for
     int heightTriedWidth = -1;   // the width the kit last asked the window's height for
     bool drumsShown = false;
     juce::String drumKey;   // the kit the pads show (favouriteKey)
-    int shownChoice = 0;      // its drumChoice
+    int shownChoice = 0;   // the drum pads choice shown: the project's for this instrument (0 Auto, 1 on, 2 off)
     void refreshDrumPads (const SF2PlayerProcessor::State&);
     void setDrumChoice (const juce::String& key, int choice);
     void renameDrum (const juce::String& kit, int note, const juce::String& name);

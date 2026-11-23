@@ -150,8 +150,8 @@ public:
         presetIsKit.store (valid && presetList[(size_t) currentPreset].drumKit);
         presetId.store (valid ? presetList[(size_t) currentPreset].bank * 128 + presetList[(size_t) currentPreset].number : -1);
     }
-    // Message thread. byUser: the user chose it (the project changed); otherwise the window only
-    // hands over what its settings hold (opening it doesn't make a project unsaved).
+    // Message thread. byUser: the user chose it in the menu (the project changed); false only for
+    // restores and tests.
     void setDrumChoice (int bank, int number, int choice, bool byUser)
     {
         const int packed = packDrumChoice (bank, number, choice);
@@ -159,7 +159,7 @@ public:
             markProjectChanged();
     }
     static int packDrumChoice (int bank, int number, int choice) { return (bank * 128 + number) * 4 + juce::jlimit (0, 2, choice); }
-    // The choice the project holds for that instrument (-1: none, the editor's settings decide).
+    // The choice the project holds for that instrument (-1: none, which plays as Auto).
     int drumChoiceOf (int bank, int number) const
     {
         const int packed = drumChoice.load();
