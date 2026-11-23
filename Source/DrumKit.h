@@ -138,7 +138,16 @@ namespace DrumKit
             if (isVisible()) startTimerHz (60);   // the lights and the hits' motion
             else { stopTimer(); releaseAll(); }   // never a note left held
         }
-        void focusLost (FocusChangeType) override { releaseAll(); repaint(); }
+        void focusLost (FocusChangeType) override
+        {
+            // Focus moving to another control of the same window: the window still forwards the keys,
+            // so what's held stays held. Leaving the window lets go (here, or in tick() if missed).
+            auto* now = juce::Component::getCurrentlyFocusedComponent();
+            auto* window = getTopLevelComponent();
+            if (now == nullptr || window == nullptr || ! window->isParentOf (now))
+                releaseAll();
+            repaint();
+        }
         void focusGained (FocusChangeType) override { repaint(); }
 
         int lowKey = 36, highKey = 60;
