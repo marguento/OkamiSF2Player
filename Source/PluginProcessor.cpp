@@ -1052,13 +1052,7 @@ void SF2PlayerProcessor::playOrWait (juce::MidiMessage message, juce::int64 now,
     const int channel = message.getChannel() - 1;
     const bool onChannel = juce::isPositiveAndBelow (channel, 16);
     if (onChannel && isAllOffBytes (message.getRawData(), message.getRawDataSize()))   // nothing on that channel waits past it (only notes wait)
-    {
-        for (int i = lateCount; --i >= 0;)
-            if (channelOf (lateNotes[(size_t) i]) == channel)
-                lateNotes[(size_t) i] = lateNotes[(size_t) --lateCount];
-        forgetKeyWaits (channel);
-        refreshNextLate();
-    }
+        dropChannelLate (channel);
     if (message.isNoteOn()) lastVelocity = message.getVelocity();   // as it came, for the soft-notes warning
     const juce::ScopedValueSetter<bool> recorded (velocityRecorded, true);
     const bool kitNote = message.isNoteOn() && onChannel && ! channelMoved.test ((size_t) channel)
@@ -1146,6 +1140,16 @@ void SF2PlayerProcessor::playLateNotesNow()
     while (takeEarliestLate (std::numeric_limits<juce::int64>::max(), late))
         handleMidi (juce::MidiMessage (late.bytes, late.size));
     forgetKeyWaits();   // nothing waits: what comes next needn't wait for these
+}
+
+// A channel's waiting late notes, dropped (an all-notes-off came for it).
+void SF2PlayerProcessor::dropChannelLate (int channel)
+{
+    for (int i = lateCount; --i >= 0;)
+        if (channelOf (lateNotes[(size_t) i]) == channel)
+            lateNotes[(size_t) i] = lateNotes[(size_t) --lateCount];
+    forgetKeyWaits (channel);
+    refreshNextLate();
 }
 
 // Every waiting late note, gone (the engine that would play them is).
@@ -1842,15 +1846,9 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
             // An all-notes-off a skipped block carried drops its channel's waiting hits first, as it
             // would have in its own block (they were due after it), then the rest due by now plays.
             for (int i = 0; i < numDeferred; ++i)
-                if (const auto& m = deferredEvents[(size_t) i]; m.isAllNotesOff() || m.isAllSoundOff())
+                if (const auto& m = deferredEvents[(size_t) i]; isAllOffBytes (m.getRawData(), m.getRawDataSize()))
                     if (const int channel = m.getChannel() - 1; juce::isPositiveAndBelow (channel, 16))
-                    {
-                        for (int j = lateCount; --j >= 0;)
-                            if (channelOf (lateNotes[(size_t) j]) == channel)
-                                lateNotes[(size_t) j] = lateNotes[(size_t) --lateCount];
-                        forgetKeyWaits (channel);
-                        refreshNextLate();
-                    }
+                        dropChannelLate (channel);
             int start = 0;
             playLateNotes (blockStart + 1, blockStart, start);
         }

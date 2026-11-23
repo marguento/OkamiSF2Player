@@ -2652,6 +2652,7 @@ void SF2PlayerEditor::applyPanelChoice (const SF2PlayerProcessor::State& st)
     // clip's program change) brings keeps the choice saved with the project. A pick is spent on
     // the first instrument shown after it (picks load synchronously), changed or not.
     const bool picked = std::exchange (userPickedInstrument, false);
+    if (picked) pickedDrumKey = key;   // this Mac's drum pads choice applies to it (refreshDrumPads)
     if (key == panelKey) return;
     panelKey = key;
     if (! picked) return;
@@ -2747,8 +2748,8 @@ void SF2PlayerEditor::refreshDrumPads (const SF2PlayerProcessor::State& st)
     refreshedState = stateId != nullptr ? std::move (current) : nullptr;
     const bool valid = juce::isPositiveAndBelow (st.preset, (int) st.presets.size());
     const auto key = valid ? favouriteKey (st, st.preset) : juce::String();
-    // The settings read once per instrument; the project's choice when they have none (another
-    // Mac). Read again when the project's choice changes behind the window's back (a state
+    // The choice read once per instrument (the project's, or this Mac's for an instrument picked
+    // here). Read again when the project's choice changes behind the window's back (a state
     // restored into the open plugin: a preset recall, undo).
     if (projectChoiceNow != seenProjectChoice)
     {
@@ -2758,10 +2759,11 @@ void SF2PlayerEditor::refreshDrumPads (const SF2PlayerProcessor::State& st)
     if (key != choiceKey)
     {
         choiceKey = key;
-        // The project's own choice for this instrument first (opening the window never changes what
-        // plays), then this Mac's (-1: none), else Auto.
+        // The project's own choice for this instrument first; this Mac's only for an instrument the
+        // user picked in the window (as the Guitar panel's choice works), so opening the window or
+        // loading a project never changes what plays; else Auto.
         const int projects = valid ? player.drumChoiceOf (st.presets[(size_t) st.preset].bank, st.presets[(size_t) st.preset].number) : -1;
-        shownChoice = projects >= 0 ? projects : juce::jmax (0, drumChoice (key));
+        shownChoice = projects >= 0 ? projects : key == pickedDrumKey ? juce::jmax (0, drumChoice (key)) : 0;
     }
     const int choice = shownChoice;
     const bool show = valid && ! guitarShown && (choice == 1 || (choice == 0 && st.presets[(size_t) st.preset].drumKit));
@@ -2852,7 +2854,7 @@ void SF2PlayerEditor::showDrumView (bool kit)
     repaint();
 }
 
-// This Mac's choice for an instrument: 0 Auto, 1 on, 2 off; -1 when it has none (the project's counts).
+// This Mac's choice for an instrument: 0 Auto, 1 on, 2 off; -1 when it has none.
 int SF2PlayerEditor::drumChoice (const juce::String& key) const
 {
     const auto value = listValue ("drumChoices", key);

@@ -232,6 +232,7 @@ namespace Take
             }
             else
                 chip.text = chip.file.existsAsFile() ? offerText : juce::String ("Nothing played");
+            if (! chip.file.existsAsFile()) chip.file = juce::File();   // a take gone meanwhile isn't offered: the status shows as is
             chip.repaint();
         }
 

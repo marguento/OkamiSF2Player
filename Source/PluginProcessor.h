@@ -387,6 +387,7 @@ private:
     void showHostNotes (juce::MidiBuffer& fromHost, int numSamples);
     void dropLateHits();
     void clearLateNotes();
+    void dropChannelLate (int channel);
     void forgetKeyWaits (int channel = -1);
     void playLateNotes (juce::int64 until, juce::int64 blockStart, int& position);
     std::array<int, 16384> overflowIndices {};   // a flood's messages past guitarItems, by their place in the block
