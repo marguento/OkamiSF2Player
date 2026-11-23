@@ -138,7 +138,7 @@ public:
     // given later would change what was recorded). Atomics: hosts restore state on any thread.
     std::atomic<bool> stateRestored { false }, guitarStartGiven { false };
     // DRUM KIT: the instrument is a kit, and the user's Drum pads choice for it (0 auto, 1 on,
-    // 2 off; the editor keeps it per instrument and hands it over, the project saves it), so
+    // 2 off), the project's like a parameter (set from the panel button's menu, saved with it), so
     // Humanize plays exactly where the panel shows, with or without the window open.
     std::atomic<bool> presetIsKit { false };
     std::atomic<int> presetId { -1 };   // bank * 128 + program of the instrument
@@ -157,12 +157,6 @@ public:
         const int packed = packDrumChoice (bank, number, choice);
         if (drumChoice.exchange (packed) != packed && byUser)
             markProjectChanged();
-    }
-    // The window's choice, written only if the project's is still `expected` (what the window last
-    // saw); false: something else changed it meanwhile (a state restored), so it's read again.
-    bool offerDrumChoice (int expected, int bank, int number, int choice)
-    {
-        return drumChoice.compare_exchange_strong (expected, packDrumChoice (bank, number, choice));
     }
     static int packDrumChoice (int bank, int number, int choice) { return (bank * 128 + number) * 4 + juce::jlimit (0, 2, choice); }
     // The choice the project holds for that instrument (-1: none, the editor's settings decide).

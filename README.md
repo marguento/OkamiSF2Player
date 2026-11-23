@@ -238,8 +238,7 @@ played, as `(bank * 128 + program) * 4 + choice`) (state tag `SF2Player`).
 
 Settings file `~/Library/Application Support/SF2 Player/SF2 Player.settings`: `recentFiles`
 (last 12), `favorites` (`<file name>|<bank>:<program>`, one per line), and per instrument,
-one `<key>=<value>` line each: `panelChoices` (the Guitar panel), `drumChoices` (the drum pads:
-0 Auto, 1 on, 2 off), `drumNames` (`<key>#<note>=<name>`); `drumView` (`kit` or `pads`). REC's
+one `<key>=<value>` line each: `panelChoices` (the Guitar panel), `drumNames` (`<key>#<note>=<name>`); `drumView` (`kit` or `pads`). REC's
 takes are kept a week in `Takes/` beside it.
 
 ## Tests

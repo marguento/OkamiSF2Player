@@ -25,7 +25,7 @@ release bumps it and adds an entry here: one line per change a player would noti
 - **Kits are found by themselves:** the drum bank (128), an instrument named a kit ("TR-808 Kit",
   "Rock Drums", "Latin Percussion"), or one laid out like a kit (one sound per key), so a name
   cut short still counts. The panel button says **Drums**; its menu turns the pads off for a kit
-  or on for any instrument, remembered, and saved with the project.
+  or on for any instrument, saved with the project.
 - **Fits the screen:** the kit takes at most about half of it, and on a small screen the other
   panels fold when a kit shows.
 - **Rename any pad** with a double-click, for kits that don't follow General MIDI; names are kept

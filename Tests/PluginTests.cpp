@@ -1557,10 +1557,7 @@ int main()
         Player b (testFont, kit);
         b.p.setStateInformation (saved.getData(), (int) saved.getSize());
         const bool restored = ! b.p.drumsActive() && b.p.drumChoiceOf (k.bank, k.number) == 2;
-        // The window's write loses to a choice restored in between, and a bank past 128 is kept.
-        const int before = b.p.drumChoice.load();
-        b.p.setDrumChoice (k.bank, k.number, 1, false);   // "restored" meanwhile
-        const bool yields = ! b.p.offerDrumChoice (before, k.bank, k.number, 0) && b.p.drumChoiceOf (k.bank, k.number) == 1;
+        // A bank past 128 is kept.
         b.p.setDrumChoice (300, 5, 2, false);
         juce::MemoryBlock highBank;
         b.p.getStateInformation (highBank);
@@ -1603,7 +1600,7 @@ int main()
         gaps.lowKey = 35; gaps.highKey = 60;
         gaps.keys.reset (36); gaps.keys.reset (38);
         const bool exact = gaps.noteForKey ('z') == 35 && gaps.noteForKey ('x') == 40 && ! gaps.plays (36);
-        expect (autoKit && off && restored && yields && bankKept && migrated && notKit && forced && otherInstrument && exact,
+        expect (autoKit && off && restored && bankKept && migrated && notKit && forced && otherInstrument && exact,
                 "Drum Humanize: only where the pads show (the user's choice, saved with the project); pieces on the keys the kit has");
     }
 

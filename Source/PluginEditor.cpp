@@ -2652,7 +2652,6 @@ void SF2PlayerEditor::applyPanelChoice (const SF2PlayerProcessor::State& st)
     // clip's program change) brings keeps the choice saved with the project. A pick is spent on
     // the first instrument shown after it (picks load synchronously), changed or not.
     const bool picked = std::exchange (userPickedInstrument, false);
-    if (picked) pickedDrumKey = key;   // this Mac's drum pads choice applies to it (refreshDrumPads)
     if (key == panelKey) return;
     panelKey = key;
     if (! picked) return;
@@ -2734,52 +2733,23 @@ bool SF2PlayerEditor::isDetectedKit (const SF2PlayerProcessor::State& st)
 
 void SF2PlayerEditor::refreshDrumPads (const SF2PlayerProcessor::State& st)
 {
-    // The 20 Hz timer calls this: nothing to do unless the state, the panel or the project's choice moved.
-    // The snapshot is compared by address only while it's held (current one), so a freed one's
-    // address can't come back as a newer snapshot's.
-    // The project's choice first, then the snapshot: a state restored after this read either shows
-    // as a newer snapshot (nothing offered) or as a changed choice (read again next tick).
+    // The drum pads choice is the project's (like a parameter): read from the processor for the
+    // instrument shown, Auto when it holds none for it. Nothing here writes it, so opening the
+    // window or loading a project never changes what plays. The 20 Hz timer calls this: nothing
+    // to do unless the state, the panel or that choice moved (the snapshot is compared while held,
+    // so a freed one's address can't come back as a newer one's).
     const int projectChoiceNow = player.drumChoice.load();
     auto current = player.state();
     const void* stateId = current.get() == &st ? &st : nullptr;
-    const DrumRefresh now { stateId, st.preset, (int) st.presets.size(), guitarShown, projectChoiceNow, shownChoice };
+    const DrumRefresh now { stateId, st.preset, (int) st.presets.size(), guitarShown, projectChoiceNow, 0 };
     if (stateId != nullptr && now == lastDrumRefresh) return;
     lastDrumRefresh = now;
     refreshedState = stateId != nullptr ? std::move (current) : nullptr;
     const bool valid = juce::isPositiveAndBelow (st.preset, (int) st.presets.size());
     const auto key = valid ? favouriteKey (st, st.preset) : juce::String();
-    // The choice read once per instrument (the project's, or this Mac's for an instrument picked
-    // here). Read again when the project's choice changes behind the window's back (a state
-    // restored into the open plugin: a preset recall, undo).
-    if (projectChoiceNow != seenProjectChoice)
-    {
-        seenProjectChoice = projectChoiceNow;
-        choiceKey = {};
-    }
-    if (key != choiceKey)
-    {
-        choiceKey = key;
-        // The project's own choice for this instrument first; this Mac's only for an instrument the
-        // user picked in the window (as the Guitar panel's choice works), so opening the window or
-        // loading a project never changes what plays; else Auto.
-        const int projects = valid ? player.drumChoiceOf (st.presets[(size_t) st.preset].bank, st.presets[(size_t) st.preset].number) : -1;
-        shownChoice = projects >= 0 ? projects : key == pickedDrumKey ? juce::jmax (0, drumChoice (key)) : 0;
-    }
+    shownChoice = valid ? juce::jmax (0, player.drumChoiceOf (st.presets[(size_t) st.preset].bank, st.presets[(size_t) st.preset].number)) : 0;
     const int choice = shownChoice;
     const bool show = valid && ! guitarShown && (choice == 1 || (choice == 0 && st.presets[(size_t) st.preset].drumKit));
-    // Humanize plays where the pads show, even once the window is closed (saved with the project).
-    // Handed over only if the project's choice is still the one the window saw: one restored in
-    // between wins, and the next tick reads it.
-    // Only for the instrument that's current now, and only a choice someone made for it (this
-    // Mac's, or the project's own): an instrument nobody chose for leaves the project's choice
-    // for its kit as it is.
-    if (valid && stateId != nullptr
-        && (drumChoice (key) >= 0 || player.drumChoiceOf (st.presets[(size_t) st.preset].bank, st.presets[(size_t) st.preset].number) >= 0))
-    {
-        const auto& preset = st.presets[(size_t) st.preset];
-        if (player.offerDrumChoice (seenProjectChoice, preset.bank, preset.number, choice))
-            seenProjectChoice = SF2PlayerProcessor::packDrumChoice (preset.bank, preset.number, choice);   // what it wrote, not a later read
-    }
     const int rowsBefore = drumPads.rows();
     // A new kit, or the same one whose keys changed (its file saved again and reloaded under the same name).
     const bool layoutChanged = show && (st.presets[(size_t) st.preset].keys != drumPads.keys
@@ -2854,13 +2824,6 @@ void SF2PlayerEditor::showDrumView (bool kit)
     repaint();
 }
 
-// This Mac's choice for an instrument: 0 Auto, 1 on, 2 off; -1 when it has none.
-int SF2PlayerEditor::drumChoice (const juce::String& key) const
-{
-    const auto value = listValue ("drumChoices", key);
-    return value.isEmpty() ? -1 : juce::jlimit (0, 2, value.getIntValue());
-}
-
 // The settings' "key=value" lists (one line per instrument): a key's value, empty for none.
 juce::String SF2PlayerEditor::listValue (const char* list, const juce::String& key) const
 {
@@ -2884,14 +2847,13 @@ void SF2PlayerEditor::setListValue (const char* list, const juce::String& key, c
     settings->saveIfNeeded();
 }
 
+// The user's drum pads choice for the instrument shown: the project's (marked changed), like a parameter.
 void SF2PlayerEditor::setDrumChoice (const juce::String& key, int choice)
 {
-    if (key.isEmpty()) return;
-    setListValue ("drumChoices", key, juce::String (choice));   // Auto too (and handed to the project below, which then keeps it)
-    if (key == choiceKey) shownChoice = choice;
     const auto st = player.state();
-    if (juce::isPositiveAndBelow (st->preset, (int) st->presets.size()) && favouriteKey (*st, st->preset) == key)
-        player.setDrumChoice (st->presets[(size_t) st->preset].bank, st->presets[(size_t) st->preset].number, choice, true);
+    if (key.isEmpty() || ! juce::isPositiveAndBelow (st->preset, (int) st->presets.size()) || favouriteKey (*st, st->preset) != key) return;
+    shownChoice = choice;
+    player.setDrumChoice (st->presets[(size_t) st->preset].bank, st->presets[(size_t) st->preset].number, choice, true);
 }
 
 // A pad's name, kept for this kit in the settings ("<kit>#<note>=<name>"); empty goes back to General MIDI's.

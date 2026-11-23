@@ -195,7 +195,7 @@ private:
             };
             case drums: return {
                 { "The Drum Kit panel", "" },
-                { "When it shows", "By itself for a kit: General MIDI's drum bank (128), an instrument named Kit, Drums or Percussion, or one laid out like a kit (every sound on a key of its own), so a name cut short still counts. The button beside the instrument says Drums; its menu's Drum pads turns the panel off for a kit, or on for an instrument that isn't detected. Remembered for that instrument. It never shows with the Guitar panel." },
+                { "When it shows", "By itself for a kit: General MIDI's drum bank (128), an instrument named Kit, Drums or Percussion, or one laid out like a kit (every sound on a key of its own), so a name cut short still counts. The button beside the instrument says Drums; its menu's Drum pads turns the panel off for a kit, or on for an instrument that isn't detected. Saved with the project. It never shows with the Guitar panel." },
                 { "Kit and Pads", "The two buttons at the panel's top right, remembered. Kit: a drum set with the pieces the kit has, on General MIDI's keys. Pads: a pad for every key the kit plays, a row per octave, the lowest at the bottom; lower on a pad plays louder. Click a piece or a pad to hear it." },
                 { "Playing with the computer's keys", "" },
                 { "Giving the kit the keys", "Choosing a kit gives it the keys right away (not while typing in Search); otherwise click the panel. A thin orange line says it has them. In Ableton, turn off the computer MIDI keyboard (M) so both don't take the same letters." },

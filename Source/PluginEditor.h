@@ -290,7 +290,7 @@ private:
     juce::Label warningLabel;
     RangeKeyboard keyboard { player.keyboardState, juce::MidiKeyboardComponent::horizontalKeyboard };
     // DRUM KIT: a kit's pads, in the INSTRUMENT panel under the layer row (Auto for a kit, or
-    // forced on or off per instrument from the panel button's menu, remembered in "drumChoices").
+    // forced on or off from the panel button's menu, saved with the project).
     DrumKit::Pads drumPads { player.keyboardState, player.hostNotes, &player.previewNotes };
     std::bitset<128> hostKeysShown;   // the host's notes the keyboard drew last (redrawn when they change)
     juce::TextButton kitViewButton { "Kit" }, padsViewButton { "Pads" };   // the panel's two views (remembered: "drumView")
@@ -316,15 +316,11 @@ private:
         }
     };
     DrumRefresh lastDrumRefresh;   // what refreshDrumPads last ran for
-    int seenProjectChoice = -2;   // the processor's drum choice as the window last saw it (-2: not yet)
     int heightTriedWidth = -1;   // the width the kit last asked the window's height for
     bool drumsShown = false;
     juce::String drumKey;   // the kit the pads show (favouriteKey)
-    juce::String choiceKey;   // the instrument shownChoice was read for
     int shownChoice = 0;      // its drumChoice
     void refreshDrumPads (const SF2PlayerProcessor::State&);
-    int drumChoice (const juce::String& key) const;   // 0 Auto, 1 pads on, 2 pads off; -1: none on this Mac
-    juce::String pickedDrumKey;   // the last instrument the user picked in the window: this Mac's drum choice applies to it
     void setDrumChoice (const juce::String& key, int choice);
     void renameDrum (const juce::String& kit, int note, const juce::String& name);
     // The kit's or the pads' own height, but never shorter than HUMANIZE's two knobs need (a one- or
