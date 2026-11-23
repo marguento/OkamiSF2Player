@@ -2658,7 +2658,11 @@ void SF2PlayerEditor::applyPanelChoice (const SF2PlayerProcessor::State& st)
     auto value = listValue ("panelChoices", key);
     if (value.startsWith ("2p"))   // left by a 1.4 build that kept the pads' mark here: the entry it saved
         value = value.substring (2).upToFirstOccurrenceOf (":", false, false);
-    const float choice = (float) value.getIntValue();   // none: 0, Auto
+    float choice = (float) value.getIntValue();   // none: 0, Auto
+    // Pads the project turned on for this instrument keep the Guitar panel off (they don't share the keys).
+    if (juce::isPositiveAndBelow (st.preset, (int) st.presets.size())
+        && player.drumChoiceOf (st.presets[(size_t) st.preset].bank, st.presets[(size_t) st.preset].number) == 1)
+        choice = 2.0f;
     if (auto* parameter = player.parameters.getParameter ("guitarPanel"))
         if (juce::roundToInt (player.parameters.getRawParameterValue ("guitarPanel")->load()) != (int) choice)
             editParameter (*parameter, parameter->convertTo0to1 (choice));
@@ -2683,6 +2687,7 @@ void SF2PlayerEditor::showPanelMenu()
             const auto st = player.state();
             const bool kit = isDetectedKit (*st);
             const auto key = favouriteKey (*st, st->preset);
+            if (key.isEmpty() || ! juce::isPositiveAndBelow (st->preset, (int) st->presets.size())) return;   // no instrument: nothing to choose for
             // The pads and the Guitar panel don't share the keys: turning the pads on for a guitar turns
             // its panel off in this project (the panel's setting, like the pads choice, is the
             // project's), and turning them off gives it back to Auto. Nothing is kept on this Mac.
@@ -2700,6 +2705,7 @@ void SF2PlayerEditor::showPanelMenu()
                 if (player.guitarPanelActive() && parameter != nullptr)
                     editParameter (*parameter, parameter->convertTo0to1 (2.0f));
             }
+            refreshGuitarPanel();   // the Guitar panel's change first, so the pads see it at once
             refreshDrumPads (*st);
             refreshPanelButton();
             return;
