@@ -49,7 +49,7 @@ namespace DrumKit
                                      "bells", "chimes", "piano", "harp", "harpsichord", "clavinet", "dulcimer", "kalimba", "mallets",
                                      "timpani", "tubular", "organ", "guitar", "banjo", "sitar", "koto", "strings", "voice", "choir",
                                      "flute", "horn", "trumpet", "sax", "violin", "cello", "accordion", "harmonica",
-                                     "oboe", "clarinet", "bassoon", "trombone", "tuba", "viola", "brass", "lead", "synth",
+                                     "oboe", "clarinet", "bassoon", "trombone", "tuba", "viola",
                                      // tuned drums and percussion play notes too
                                      "melodic", "pitched", "tuned", "chromatic", "taiko", "steel" })
             if (words.contains (melodic)) return true;

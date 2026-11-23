@@ -805,6 +805,8 @@ bool SF2PlayerProcessor::loadSoundFont (const juce::File& file)
     applyLayerPreset (*fresh, layer);
     layerPreset = layer;
     currentPreset = preset;   // before the swap, which publishes the kit flag with it
+    if (file != currentFile && ! restoringState)   // another file: its instruments' pads choice starts over (a project restore keeps its own)
+        drumChoice.store (-1);
     swapEngine (std::move (fresh));   // publishes the kit flag with the engine
 
     currentFile = file;

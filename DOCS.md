@@ -326,7 +326,7 @@ the search field).
 - The panel button (next to the instrument) says **Drums** while the pads show. Its menu has
   **Drum pads**, to turn them off for a kit or on for an instrument the name doesn't give away;
   the choice is saved with the project, for the instrument it plays. The pads and the Guitar panel
-  never show together.
+  never show together: when an instrument brings its Guitar panel back, the pads give way.
 - The keyboard's tooltip names the drum on each key too.
 
 ## Recording what you play in the window
