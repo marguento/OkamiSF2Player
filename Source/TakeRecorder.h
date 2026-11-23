@@ -71,7 +71,8 @@ namespace Take
             const double tick = ticksOf (e);
             last = juce::jmax (last, tick);
             if (message.isNoteOn()) { open[message.getChannel() * 128 + message.getNoteNumber()] = tick; ++notes; }
-            else if (message.isNoteOff()) open.erase (message.getChannel() * 128 + message.getNoteNumber());
+            else if (message.isNoteOff() && open.erase (message.getChannel() * 128 + message.getNoteNumber()) == 0)
+                continue;   // a key held before the take began: its note-on isn't in it, so neither is its note-off
             sequence.addEvent (message, tick);
         }
         for (const auto& [key, tick] : open)

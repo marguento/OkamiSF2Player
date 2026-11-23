@@ -1984,7 +1984,7 @@ int main()
                 PositionInfo info;
                 info.setIsPlaying (playing);
                 info.setBpm (120.0);
-                info.setPpqPosition (playing ? 4.0 : 0.0);
+                info.setPpqPosition (playing ? 5.0 : 0.0);   // a quarter into the bar that starts at 4
                 info.setPpqPositionOfLastBarStart (4.0);
                 return info;
             }
@@ -2011,6 +2011,27 @@ int main()
         recorder.stop();
         const auto jammed = recorder.takeFile();
         withSong = withSong && jam && keysIn (jammed) == std::vector<int> { 62 };
+        // A block without a position mid-song (a gap) keeps the take on the bars: its first note a quarter in.
+        {
+            recorder.start();
+            head.playing = true;
+            { juce::MidiBuffer none; player.p.processBlock (buffer, none); }   // the song plays: the take starts
+            player.p.setPlayHead (nullptr);
+            play (69);                                                       // played in the gap
+            player.p.setPlayHead (&head);
+            head.playing = false;
+            { juce::MidiBuffer none; player.p.processBlock (buffer, none); }
+            recorder.stop();
+            const auto gapTake = recorder.takeFile();
+            juce::FileInputStream in (gapTake);
+            juce::MidiFile midiFile;
+            double firstOn = -1;
+            if (in.openedOk() && midiFile.readFrom (in))
+                for (const auto* holder : *midiFile.getTrack (0))
+                    if (holder->message.isNoteOn() && firstOn < 0) firstOn = holder->message.getTimeStamp();
+            withSong = withSong && firstOn >= 960.0 - 1;   // on the bars: a quarter (or a little more) in, not at 0
+            gapTake.deleteFile();
+        }
         synced.deleteFile(); jammed.deleteFile();
         player.p.setPlayHead (nullptr);
         // A take that spans an audio restart (the host re-prepares the plugin) keeps its notes in order.

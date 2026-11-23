@@ -1666,6 +1666,21 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     // REC's stop waits for a block writing its events (counted before it reads the state), so the
     // last notes of a take reach it instead of the next take's leftovers.
     takeWriters.fetch_add (1);
+    // The host's timeline as last seen while playing, to carry a take with the song across a block
+    // that comes without a position (a gap), so it keeps its place in the bars.
+    if (blockPosition && blockPosition->getIsPlaying() && blockPosition->getPpqPosition())
+    {
+        lastGrid.known = true;
+        lastGrid.ppq = *blockPosition->getPpqPosition();
+        lastGrid.seconds = takeSeconds;
+        lastGrid.bpm = blockPosition->getBpm() ? juce::jlimit (20.0, 400.0, *blockPosition->getBpm()) : 120.0;
+        const auto sig = blockPosition->getTimeSignature();
+        lastGrid.barQuarters = sig && sig->numerator > 0 && sig->denominator > 0 ? juce::jlimit (0.25, 64.0, 4.0 * sig->numerator / sig->denominator) : 4.0;
+        const auto bar = blockPosition->getPpqPositionOfLastBarStart();
+        lastGrid.barStart = bar && *bar <= lastGrid.ppq ? *bar : -1.0;
+    }
+    else if (blockPosition)
+        lastGrid.known = false;   // stopped: nothing to carry
     if (const int take = takeState.load(); (take == takeWithHost || take == takeFree) && ! playedHere.isEmpty() && ! bypassedBlock)
     {
         const double sr = juce::jmax (1.0, getSampleRate());
@@ -1682,6 +1697,13 @@ void SF2PlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
                 ppq = blockPosition->getPpqPosition();
                 if (const auto bar = blockPosition->getPpqPositionOfLastBarStart(); bar && ppq && *bar <= *ppq) barStart = *bar;
             }
+        }
+        if (! ppq && take == takeWithHost && lastGrid.known && ! blockPosition)   // a gap mid-song: carried from the last block's timeline
+        {
+            bpm = lastGrid.bpm;
+            barQuarters = lastGrid.barQuarters;
+            ppq = lastGrid.ppq + (takeSeconds - lastGrid.seconds) * bpm / 60.0;
+            barStart = lastGrid.barStart;
         }
         takeBpm.store (bpm, std::memory_order_relaxed);
         takeBarQuarters.store (barQuarters, std::memory_order_relaxed);

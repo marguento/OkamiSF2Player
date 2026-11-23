@@ -142,9 +142,10 @@ namespace DrumKit
         {
             // Focus moving to another control of the same window: the window still forwards the keys,
             // so what's held stays held. Leaving the window lets go (here, or in tick() if missed).
+            // The editor forwards the keys (the standalone's own window has buttons outside it that don't).
             auto* now = juce::Component::getCurrentlyFocusedComponent();
-            auto* window = getTopLevelComponent();
-            if (now == nullptr || window == nullptr || ! window->isParentOf (now))
+            auto* editor = findParentComponentOfClass<juce::AudioProcessorEditor>();
+            if (now == nullptr || editor == nullptr || ! editor->isParentOf (now))
                 releaseAll();
             repaint();
         }
