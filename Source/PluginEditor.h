@@ -299,6 +299,9 @@ private:
     static constexpr int humanizeWidth = 150;
     juce::Rectangle<int> humanizeArea;   // its frame and title, painted
     void showDrumView (bool kit);
+    void fitShownWindow();
+    void parentHierarchyChanged() override;
+    bool fittedOnScreen = false;   // the window's height was fitted to the screen it first showed on
     static bool isDetectedKit (const SF2PlayerProcessor::State&);
     juce::String listValue (const char* list, const juce::String& key) const;
     void setListValue (const char* list, const juce::String& key, const juce::String& value);

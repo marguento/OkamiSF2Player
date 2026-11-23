@@ -817,12 +817,23 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     // Once the window shows on its screen (which may not be the main one): the kit's height for
     // that screen, then fold what doesn't fit.
     juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<SF2PlayerEditor> (this)]
-                                     {
-                                         if (safe == nullptr) return;
-                                         safe->applyHeight();
-                                         safe->resized();
-                                         safe->fitToScreen();
-                                     });
+                                     { if (safe != nullptr) safe->fitShownWindow(); });
+}
+
+// The first time the window is on a screen (here, or when a host shows its view later): the kit's
+// height for that screen, then fold what doesn't fit.
+void SF2PlayerEditor::fitShownWindow()
+{
+    if (fittedOnScreen || ! isShowing()) return;
+    fittedOnScreen = true;
+    applyHeight();
+    resized();
+    fitToScreen();
+}
+
+void SF2PlayerEditor::parentHierarchyChanged()
+{
+    fitShownWindow();
 }
 
 SF2PlayerEditor::~SF2PlayerEditor()
@@ -2764,7 +2775,8 @@ void SF2PlayerEditor::refreshDrumPads (const SF2PlayerProcessor::State& st)
     const int rowsBefore = drumPads.rows();
     // A new kit, or the same one whose keys changed (its file saved again and reloaded under the same name).
     const bool layoutChanged = show && (st.presets[(size_t) st.preset].keys != drumPads.keys
-                                        || juce::jlimit (24, 95, st.presets[(size_t) st.preset].lowKey) != drumPads.lowKey);
+                                        || juce::jlimit (24, 95, st.presets[(size_t) st.preset].lowKey) != drumPads.lowKey
+                                        || juce::jlimit (drumPads.lowKey, 95, st.presets[(size_t) st.preset].highKey) != drumPads.highKey);
     if (show && (key != drumKey || layoutChanged))
     {
         const auto& preset = st.presets[(size_t) st.preset];

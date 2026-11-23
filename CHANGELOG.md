@@ -26,6 +26,8 @@ release bumps it and adds an entry here: one line per change a player would noti
   "Rock Drums", "Latin Percussion"), or one laid out like a kit (one sound per key), so a name
   cut short still counts. The panel button says **Drums**; its menu turns the pads off for a kit
   or on for any instrument, remembered, and saved with the project.
+- **Fits the screen:** the kit takes at most about half of it, and on a small screen the other
+  panels fold when a kit shows.
 - **Rename any pad** with a double-click, for kits that don't follow General MIDI; names are kept
   for each kit of each SoundFont. The keyboard's tooltip names the drum on each key.
 
@@ -38,6 +40,8 @@ release bumps it and adds an entry here: one line per change a player would noti
   stopping the song ends the take; the clip lands on the song's bars (the host's own bars, even
   after a change of time signature). The window takes the computer's keys back when the song
   starts, and playing without the song records at once.
+- **Takes are kept a week** in the plugin's Application Support folder (the system's temporary
+  one is cleared after a few days); the chip says so if a take is gone.
 - **MIDI out:** what's played in the window is also sent to the host, for hosts that record a
   plugin's output on another track. Notes from clips aren't sent back; while the plugin is
   bypassed only the window's key-ups go out, so a note sent before still ends. Closing the window mid-take keeps the take.
