@@ -2528,8 +2528,8 @@ void SF2PlayerEditor::openGuide (Guide::Page page)
         guide = std::make_unique<Guide> (Guide::Colours { SF2Look::background, SF2Look::panel, SF2Look::line, SF2Look::text,
                                                           SF2Look::dim, SF2Look::accent },
                                          juce::String (JucePlugin_VersionString));
-        guide->onClose = [this] { juce::MessageManager::callAsync ([safe = juce::Component::SafePointer (this)]
-                                                                   { if (safe != nullptr) safe->guide.reset(); }); };
+        guide->onClose = [this] { juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<SF2PlayerEditor> (this)]
+                                                                   { if (auto* editor = safe.getComponent()) editor->guide.reset(); }); };
         addAndMakeVisible (*guide);
         guide->setBounds (getLocalBounds());
     }

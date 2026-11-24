@@ -72,7 +72,7 @@ private:
             if (in.getPosition() + size > end)
                 break;
             juce::MemoryBlock data;
-            in.readIntoMemoryBlock (data, (ssize_t) size);
+            in.readIntoMemoryBlock (data, (juce::pointer_sized_int) size);
             if (size & 1)
                 in.skipNextBytes (1);
             chunks.emplace_back (juce::String (id), std::move (data));

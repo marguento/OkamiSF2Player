@@ -752,7 +752,7 @@ public:
         int bestCost = std::numeric_limits<int>::max();
         for (int mask = 0; mask < (1 << 6); ++mask)
         {
-            if (__builtin_popcount ((unsigned) mask) != count) continue;
+            if (juce::countNumberOfBits ((juce::uint32) mask) != count) continue;
             std::array<int, 6> frets;
             frets.fill (-1);
             int cost = 0, n = 0;
