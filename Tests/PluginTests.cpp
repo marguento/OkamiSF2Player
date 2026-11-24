@@ -1937,23 +1937,7 @@ int main()
             const auto after = kit.render (4.0, [] (int, juce::MidiBuffer&) {});   // a hundred released voices take a while to fade
             if (tail (after, 3.5) > 1.0e-3) { regrouped = false; detail = "a note kept sounding after Transpose moved a waiting key to another group (seed " + juce::String (seed) + ")"; }
         }
-        // A key struck again while it still sounds, after Transpose moved: its first sound ends
-        // too (the key's one note-off can only find one of them). No Humanize needed.
-        bool restruck = sustained >= 0;
-        if (restruck)
-        {
-            Player held (testFont, sustained);
-            held.render (1.0, [&] (int b, juce::MidiBuffer& m)
-            {
-                if (b == 0) m.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
-                if (b == 10) { held.set ("transpose", 1.0f); m.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0); }
-                if (b == 20) m.addEvent (juce::MidiMessage::noteOff (1, 60), 0);
-            });
-            const auto after = held.render (4.0, [] (int, juce::MidiBuffer&) {});
-            // The first sound left on fades slowly (7e-4 here), never to 0.
-            if (tail (after, 3.5) > 1.0e-5) { restruck = false; detail = "a key struck again after Transpose moved left its first sound on"; }
-        }
-        expect (allEnd && silenced && restarted && flooded && regrouped && restruck && shifted && layerPlain, "Drum Humanize: a note-off, a hit again or a switch next to a late hit never leaves a note on; an all-notes-off on or before its sample silences it; an audio restart keeps the note-off; a flood (one key past the list, another waiting) ends every note; Transpose moving a waiting key to another group; a hit keeps its length; none in Layer", detail);
+        expect (allEnd && silenced && restarted && flooded && regrouped && shifted && layerPlain, "Drum Humanize: a note-off, a hit again or a switch next to a late hit never leaves a note on; an all-notes-off on or before its sample silences it; an audio restart keeps the note-off; a flood (one key past the list, another waiting) ends every note; Transpose moving a waiting key to another group; a hit keeps its length; none in Layer", detail);
     }
 
     {

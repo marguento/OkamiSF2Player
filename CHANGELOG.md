@@ -12,10 +12,6 @@ release bumps it and adds an entry here: one line per change a player would noti
 - A swinging cymbal or a hit drum no longer leaves a faint edge on the kit: each frame is drawn
   exactly as the whole kit would be.
 
-**Playing**
-- A key struck again while it still sounds, after Transpose changed, no longer leaves its first
-  note ringing.
-
 ## 1.4.0 — Nov 23, 2026
 
 **Drums**

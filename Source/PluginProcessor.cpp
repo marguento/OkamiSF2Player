@@ -909,13 +909,7 @@ void SF2PlayerProcessor::handleMidi (const juce::MidiMessage& m)
         const int note = transposeFor (m.getNoteNumber());
         if (! juce::isPositiveAndBelow (note, 128))
             return;   // transposed off the keyboard
-        auto& played = playedNote[(size_t) channel][(size_t) m.getNoteNumber()];
-        if (played >= 0 && played != note)   // struck again after Transpose moved: its one note-off can end only one sound
-        {
-            fluid_synth_noteoff (synth, channel, played);
-            fluid_synth_noteoff (synth, layer, played);
-        }
-        played = (juce::int16) note;
+        playedNote[(size_t) channel][(size_t) m.getNoteNumber()] = (juce::int16) note;
         const int velocity = curvedVelocity (m.getVelocity());
         // Split: the key as played (not transposed) picks the side.
         const bool lower = layerMode == 2 && m.getNoteNumber() < juce::roundToInt (parameters.getRawParameterValue ("splitKey")->load());
