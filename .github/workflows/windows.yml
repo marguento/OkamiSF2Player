@@ -24,6 +24,8 @@ env:
   PLUGINVAL_TAG: "v1.0.4"
   # Every library with the C++ runtime linked in (/MT), like the plugin (CMakeLists.txt).
   RUNTIME: "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DCMAKE_POLICY_DEFAULT_CMP0091=NEW"
+  # Git Bash would turn MSVC's and Inno Setup's /flags into C:\Program Files\Git\... paths.
+  MSYS_NO_PATHCONV: "1"
 
 jobs:
   build:
@@ -60,8 +62,8 @@ jobs:
           F=$(cygpath -m "$PWD/ThirdParty/fluidsynth-install")
           cd ThirdParty/fluidsynth && git apply ../../fluidsynth-fx-bypass.patch
           cmake -B build -A x64 $RUNTIME -Denable-floats=ON -DBUILD_SHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX="$F" \
-            -DCMAKE_C_FLAGS="/DWIN32 /D_WINDOWS /DSF2PLAYER_VORBISFILE=1 /I$I/include" \
-            -DCMAKE_CXX_FLAGS="/DWIN32 /D_WINDOWS /EHsc /DSF2PLAYER_VORBISFILE=1 /I$I/include" \
+            -DCMAKE_C_FLAGS="-DWIN32 -D_WINDOWS -DSF2PLAYER_VORBISFILE=1 -I$I/include" \
+            -DCMAKE_CXX_FLAGS="-DWIN32 -D_WINDOWS -EHsc -DSF2PLAYER_VORBISFILE=1 -I$I/include" \
             -DCMAKE_EXE_LINKER_FLAGS="$I/lib/vorbisfile.lib $I/lib/vorbis.lib $I/lib/ogg.lib" \
             -Denable-aufile=OFF -Denable-dbus=OFF -Denable-ipv6=OFF -Denable-jack=OFF -Denable-ladspa=OFF \
             -Denable-libsndfile=OFF -Denable-midishare=OFF -Denable-network=OFF -Denable-oss=OFF -Denable-sdl3=OFF \
