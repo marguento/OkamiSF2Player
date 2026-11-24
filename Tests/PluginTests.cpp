@@ -184,7 +184,12 @@ void fidelityTests (const juce::File& sf2, int preset, int key, const juce::Stri
 
 int main()
 {
-    setenv ("SF2PLAYER_SETTINGS_FOLDER", "SF2 Player (tests)", 1);   // never the user's recent files or favorites
+    // A settings folder of their own: never the user's recent files or favorites.
+   #if defined (_WIN32)
+    _putenv_s ("SF2PLAYER_SETTINGS_FOLDER", "SF2 Player (tests)");
+   #else
+    setenv ("SF2PLAYER_SETTINGS_FOLDER", "SF2 Player (tests)", 1);
+   #endif
 
     juce::ScopedJuceInitialiser_GUI gui;
     // Vintage Dreams Waves (Ian Wilson, freeware, redistributed unaltered: Tests/fonts), the font

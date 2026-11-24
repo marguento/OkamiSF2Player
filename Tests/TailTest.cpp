@@ -65,7 +65,12 @@ struct EditorTestAccess
 
 int main (int argc, char** argv)
 {
-    setenv ("SF2PLAYER_SETTINGS_FOLDER", "SF2 Player (tests)", 1);   // never the user's recent files or favorites
+    // A settings folder of their own: never the user's recent files or favorites.
+   #if defined (_WIN32)
+    _putenv_s ("SF2PLAYER_SETTINGS_FOLDER", "SF2 Player (tests)");
+   #else
+    setenv ("SF2PLAYER_SETTINGS_FOLDER", "SF2 Player (tests)", 1);
+   #endif
 
     juce::ScopedJuceInitialiser_GUI gui;
     const juce::File sf2 (argv[1]);
