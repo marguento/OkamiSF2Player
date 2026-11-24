@@ -81,6 +81,17 @@ jobs:
       - name: Test suite
         run: build/PluginTests_artefacts/Release/PluginTests.exe
 
+      - name: What the binaries load (on failure)
+        if: failure()
+        shell: pwsh
+        run: |
+          $dumpbin = Get-ChildItem "C:\Program Files\Microsoft Visual Studio" -Recurse -Filter dumpbin.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match "Hostx64\\x64" } | Select-Object -First 1
+          & $dumpbin.FullName /dependents build\PluginTests_artefacts\Release\PluginTests.exe
+          & $dumpbin.FullName /dependents "build\SF2Player_artefacts\Release\VST3\Okami SF2 Player.vst3\Contents\x86_64-win\Okami SF2 Player.vst3"
+          & build\PluginTests_artefacts\Release\PluginTests.exe
+          "exit code: 0x{0:X8}" -f $LASTEXITCODE
+
       - name: pluginval
         run: |
           curl -sSfL -o pluginval.zip "https://github.com/Tracktion/pluginval/releases/download/$PLUGINVAL_TAG/pluginval_Windows.zip"
