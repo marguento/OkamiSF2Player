@@ -1577,6 +1577,7 @@ void SF2PlayerEditor::timerCallback()
         if (hostKeys != hostKeysShown) { hostKeysShown = hostKeys; keyboard.repaint(); }
     }
     drumPads.transpose = juce::roundToInt (player.parameters.getRawParameterValue ("transpose")->load());   // the pads play and light by the sound
+    drumPads.splitKey = keyboard.splitKey;
     showHint();
     refreshGuitarPanel();
     refreshDrumPads (*player.state());   // a guitar shown or gone changes whether the pads show

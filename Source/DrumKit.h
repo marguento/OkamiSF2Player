@@ -163,6 +163,7 @@ namespace DrumKit
         // kit's sounds, so each plays the key that sounds as it (its Kick plays the kick) and a key
         // played lights the sound it makes.
         int transpose = 0;
+        int splitKey = -1;   // Split: keys below it play the second instrument, so no pad sends one
         juce::String kitId;   // which kit these pads are (set by the window): a rename is saved for the kit it was opened on
 
         static constexpr int rowHeight = 30, gap = 4, hintHeight = 16;
@@ -828,7 +829,9 @@ namespace DrumKit
             if (holders[(size_t) note] == 0)
             {
                 const int key = note - transpose;
-                if (! juce::isPositiveAndBelow (key, 128)) return;   // no key sounds as it
+                if (! juce::isPositiveAndBelow (key, 128) || key < splitKey) return;   // no key of the kit's sounds as it
+                for (int other = 0; other < 128; ++other)
+                    if (holders[(size_t) other] > 0 && heldKey[(size_t) other] == key) return;   // held for another sound (Transpose moved meanwhile)
                 heldKey[(size_t) note] = key;
                 state.noteOn (1, key, velocity);
             }

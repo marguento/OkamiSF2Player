@@ -295,6 +295,17 @@ private:
     std::array<GuitarItem, 2048> guitarItems;
     juce::MidiBuffer playedHere;   // this block's notes played in the window (reserved in prepareToPlay)
 public:
+    // A played key's waiting slot under Transpose (shift): the keys that cut each other off are
+    // grouped by what they sound as (Transpose +2: keys 40, 42 and 44 are the hi-hat), the split
+    // by the key played. Returns a played key.
+    static int slotFor (int played, int splitBelow, int shift)
+    {
+        if (played < splitBelow) return played;
+        const int sound = played + shift;
+        if (! juce::isPositiveAndBelow (sound, 128)) return played;
+        const int slot = slotOf (sound, splitBelow + shift) - shift;
+        return juce::isPositiveAndBelow (slot, 128) ? slot : played;
+    }
     // A note-on in raw bytes (velocity 0 is a note-off): the processor and REC count notes alike.
     static bool isNoteOnBytes (const juce::uint8* data, int size) { return size == 3 && (data[0] & 0xf0) == 0x90 && data[2] > 0; }
     // REC: while on, what's played in the window goes to the editor (a FIFO, no locks), which
@@ -340,7 +351,7 @@ private:
         }
     }
     // A key's slot: coupled only on the kit's side of a Split (a lower instrument's key waits alone).
-    // By the key played (a Transpose changed mid-hit can't move a wait to another slot). On the kit's
+    // By the key (slotFor turns a played key into the sound it makes, and back). On the kit's
     // side of a Split only: a group cut by the split key waits as its lowest member above it (the
     // pedal and open hats together when the closed one plays the lower instrument).
     static int slotOf (int key, int splitBelow)
@@ -366,6 +377,7 @@ private:
     // where messages leave the list early (playLateNotesNow, an all-notes-off, playKeyNow) and in
     // prepareToPlay, whose kept note-offs wait at time 0, ahead of anything new.
     std::array<std::array<juce::int64, 128>, 16> keyDue {};
+    std::array<std::array<juce::int16, 128>, 16> keySlot {};   // 1 + the slot each played key's last hit waited in (its note-off follows it there); 0: no hit yet
     std::array<std::array<juce::int32, 128>, 16> keyDelay {};   // the Humanize delay of each key's last hit (its note-off waits as long)
     std::array<LateNote, 512> lateNotes {};
     int lateCount = 0;

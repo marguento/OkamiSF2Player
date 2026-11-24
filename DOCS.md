@@ -307,8 +307,8 @@ comes. They apply to whatever plays the kit: clips, a MIDI keyboard, clicks, the
 A few percent of each is usually enough for a programmed beat to stop sounding like a machine.
 A late hit keeps the length it was played with (its note-off waits as long), never cuts the one
 before it on its key short, and nothing is left ringing; controllers and program changes play as
-they come. Keys that cut each other off (the hi-hat's closed, pedal and open) wait together on General MIDI's
-keys as played, before Transpose. Humanize is on only while the pads show, and only on the kit's own notes: not a
+they come. Keys that cut each other off (the hi-hat's closed, pedal and open) wait together, by
+the General MIDI key each sounds as (after Transpose). Humanize is on only while the pads show, and only on the kit's own notes: not a
 Split's lower instrument, not in Layer (both instruments play the same notes), not on a channel a
 clip switched to another instrument.
 
@@ -331,7 +331,9 @@ the search field).
 - The keyboard's tooltip names the drum on each key too.
 - With **Transpose**, the pieces and pads keep their own sounds: the Kick plays the kick (from
   the key that sounds as it), each lights by the sound a key makes, and the keyboard's tooltip
-  names what each key sounds as.
+  names what each key sounds as. What the pads send (to REC and MIDI out) is the key played,
+  as from the PIANO keyboard: with Transpose +2 the Kick sends 34, which plays the kick again
+  through the plugin. Under a Split, a pad whose key would fall below the split key is silent.
 
 ## Recording what you play in the window
 

@@ -1079,8 +1079,16 @@ void SF2PlayerProcessor::playOrWait (juce::MidiMessage message, juce::int64 now,
     juce::int64 lateAt = -1;
     const bool keyMessage = onChannel && message.getRawDataSize() == 3 && (message.isNoteOnOrOff() || message.isAftertouch());
     // Keys that cut each other off (a kit's hi-hat: closed, pedal, open) wait as one, so a later
-    // closed hat never sounds before the open one it must stop.
-    const int key = keyMessage ? slotOf (message.getNoteNumber() & 0x7f, human.splitBelow) : 0;
+    // closed hat never sounds before the open one it must stop. Grouped by the sound at the hit;
+    // its note-off and pressure follow the hit's slot whatever Transpose does meanwhile.
+    int key = 0;
+    if (keyMessage)
+    {
+        const int played = message.getNoteNumber() & 0x7f;
+        auto& slot = keySlot[(size_t) channel][(size_t) played];
+        if (message.isNoteOn() || slot == 0) slot = (juce::int16) (1 + slotFor (played, human.splitBelow, transposeFor (0)));
+        key = slot - 1;
+    }
     if (keyMessage)
     {
         // A quarter of the list stays for what must follow a waiting hit (its note-off,
