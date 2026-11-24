@@ -909,7 +909,13 @@ void SF2PlayerProcessor::handleMidi (const juce::MidiMessage& m)
         const int note = transposeFor (m.getNoteNumber());
         if (! juce::isPositiveAndBelow (note, 128))
             return;   // transposed off the keyboard
-        playedNote[(size_t) channel][(size_t) m.getNoteNumber()] = (juce::int16) note;
+        auto& played = playedNote[(size_t) channel][(size_t) m.getNoteNumber()];
+        if (played >= 0 && played != note)   // struck again after Transpose moved: its one note-off can end only one sound
+        {
+            fluid_synth_noteoff (synth, channel, played);
+            fluid_synth_noteoff (synth, layer, played);
+        }
+        played = (juce::int16) note;
         const int velocity = curvedVelocity (m.getVelocity());
         // Split: the key as played (not transposed) picks the side.
         const bool lower = layerMode == 2 && m.getNoteNumber() < juce::roundToInt (parameters.getRawParameterValue ("splitKey")->load());
@@ -1081,10 +1087,10 @@ void SF2PlayerProcessor::playOrWait (juce::MidiMessage message, juce::int64 now,
     // Keys that cut each other off (a kit's hi-hat: closed, pedal, open) wait as one, so a later
     // closed hat never sounds before the open one it must stop. Grouped by the sound at the hit;
     // its note-off and pressure follow the hit's slot whatever Transpose does meanwhile.
-    // A hit goes to its group as things are now; if Transpose or the Split moved it to another,
-    // it also waits behind the old one (oldKey), so it never jumps ahead of its key's last hit
-    // or that hit's note-off.
-    int key = 0, oldKey = -1;
+    // A hit goes to its group as things are now. If Transpose or the Split moved its key to
+    // another, what waits in the old one plays now, in order: a key's messages are never split
+    // between two groups, so nothing of its last hit can come after this one.
+    int key = 0;
     if (keyMessage)
     {
         const int played = message.getNoteNumber() & 0x7f;
@@ -1092,7 +1098,7 @@ void SF2PlayerProcessor::playOrWait (juce::MidiMessage message, juce::int64 now,
         if (slot == 0 || message.isNoteOn())
         {
             const auto fresh = (juce::int16) (1 + slotFor (played, human.splitBelow, transposeFor (0)));
-            if (slot != 0 && slot != fresh) oldKey = slot - 1;
+            if (slot != 0 && slot != fresh) playKeyNow (channel, slot - 1);
             slot = fresh;
         }
         key = slot - 1;
@@ -1102,8 +1108,7 @@ void SF2PlayerProcessor::playOrWait (juce::MidiMessage message, juce::int64 now,
         // A quarter of the list stays for what must follow a waiting hit (its note-off,
         // a hit again): Humanize's own delay and a key's pressure wait only above it.
         const bool spare = lateCount < (int) lateNotes.size() * 3 / 4;
-        auto waits = keyDue[(size_t) channel][(size_t) key];
-        if (oldKey >= 0) waits = juce::jmax (waits, keyDue[(size_t) channel][(size_t) oldKey]);
+        const auto waits = keyDue[(size_t) channel][(size_t) key];
         if (message.isAftertouch() && waits > now && ! spare)
             return;   // pressure behind a waiting message of its key, with no room to spare: dropped
         auto& delay = keyDelay[(size_t) channel][(size_t) (message.getNoteNumber() & 0x7f)];   // the key's last hit's Humanize delay
@@ -1120,7 +1125,6 @@ void SF2PlayerProcessor::playOrWait (juce::MidiMessage message, juce::int64 now,
         {
             // No room to wait: the key's waiting messages play now, in order, then this
             // one, so its order holds whatever the list holds (a rare flood).
-            if (oldKey >= 0) playKeyNow (channel, oldKey);
             playKeyNow (channel, key);
             lateAt = -1;
             if (message.isNoteOn()) delay = 0;   // it plays now, so its note-off needn't wait

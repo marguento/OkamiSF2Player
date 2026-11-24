@@ -1535,7 +1535,7 @@ int main()
                             if (sum > 6) ++off;
                         }
                     }
-                    if (off > 0) ++frameDiffs;   // even a pixel (a spur's foot left behind)
+                    if (off > 0) ++frameDiffs;   // even one pixel visibly off (a spur's foot left behind)
                 }
             }
         }
@@ -1910,7 +1910,50 @@ int main()
             const auto after = kit.render (1.0, [] (int, juce::MidiBuffer&) {});
             if (tail (after, 0.5) > 1.0e-3) { flooded = false; detail = "a note kept sounding after a flood filled the list"; }
         }
-        expect (allEnd && silenced && restarted && flooded && shifted && layerPlain, "Drum Humanize: a note-off, a hit again or a switch next to a late hit never leaves a note on; an all-notes-off on or before its sample silences it; an audio restart keeps the note-off; a flood (one key past the list, another waiting) ends every note; a hit keeps its length; none in Layer", detail);
+        // Transpose moved while a key's hit and note-off wait: hit again, the key joins another group
+        // (43 sounds as 44, the hi-hat's) while a flood on that group fills the list. Every note ends.
+        bool regrouped = sustained >= 0;
+        for (int seed = 1; regrouped && seed <= 40; ++seed)
+        {
+            Player kit (testFont, sustained);
+            makeKit (kit, seed);
+            kit.render (2.0, [&] (int b, juce::MidiBuffer& m)
+            {
+                if (b == 0)
+                {
+                    m.addEvent (juce::MidiMessage::noteOn (1, 43, (juce::uint8) 100), 0);
+                    m.addEvent (juce::MidiMessage::noteOff (1, 43), 2);
+                }
+                if (b == 1)
+                {
+                    kit.set ("transpose", 1.0f);
+                    m.addEvent (juce::MidiMessage::noteOn (1, 43, (juce::uint8) 100), 0);
+                    for (int i = 0; i < 600; ++i)
+                        m.addEvent (juce::MidiMessage::noteOn (1, 45, (juce::uint8) 100), 1 + i % (block - 3));
+                    m.addEvent (juce::MidiMessage::noteOff (1, 45), block - 2);
+                    m.addEvent (juce::MidiMessage::noteOff (1, 43), block - 1);
+                }
+            });
+            const auto after = kit.render (4.0, [] (int, juce::MidiBuffer&) {});   // a hundred released voices take a while to fade
+            if (tail (after, 3.5) > 1.0e-3) { regrouped = false; detail = "a note kept sounding after Transpose moved a waiting key to another group (seed " + juce::String (seed) + ")"; }
+        }
+        // A key struck again while it still sounds, after Transpose moved: its first sound ends
+        // too (the key's one note-off can only find one of them). No Humanize needed.
+        bool restruck = sustained >= 0;
+        if (restruck)
+        {
+            Player held (testFont, sustained);
+            held.render (1.0, [&] (int b, juce::MidiBuffer& m)
+            {
+                if (b == 0) m.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
+                if (b == 10) { held.set ("transpose", 1.0f); m.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0); }
+                if (b == 20) m.addEvent (juce::MidiMessage::noteOff (1, 60), 0);
+            });
+            const auto after = held.render (4.0, [] (int, juce::MidiBuffer&) {});
+            // The first sound left on fades slowly (7e-4 here), never to 0.
+            if (tail (after, 3.5) > 1.0e-5) { restruck = false; detail = "a key struck again after Transpose moved left its first sound on"; }
+        }
+        expect (allEnd && silenced && restarted && flooded && regrouped && restruck && shifted && layerPlain, "Drum Humanize: a note-off, a hit again or a switch next to a late hit never leaves a note on; an all-notes-off on or before its sample silences it; an audio restart keeps the note-off; a flood (one key past the list, another waiting) ends every note; Transpose moving a waiting key to another group; a hit keeps its length; none in Layer", detail);
     }
 
     {
