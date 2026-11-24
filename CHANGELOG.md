@@ -3,6 +3,15 @@
 The version shows next to the title (`project(... VERSION x.y.z)` in CMakeLists.txt). Each
 release bumps it and adds an entry here: one line per change a player would notice.
 
+## 1.4.1 — unreleased
+
+**Drums**
+- A kit without a closed hi-hat (key 42) now shows its hi-hat, playing its pedal or open hat.
+- With Transpose, the pieces and pads keep their own sounds: the Kick plays the kick, the lights
+  follow the sound each key makes, and the keyboard's tooltip names it.
+- A swinging cymbal or a hit drum no longer leaves a faint edge on the kit: each frame is drawn
+  exactly as the whole kit would be.
+
 ## 1.4.0 — Nov 23, 2026
 
 **Drums**

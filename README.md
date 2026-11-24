@@ -243,7 +243,7 @@ takes are kept a week in `Takes/` beside it.
 
 ## Tests
 
-`ctest` runs `PluginTests` (80 checks). Each renders through the real processor and fails on a
+`ctest` runs `PluginTests` (81 checks). Each renders through the real processor and fails on a
 wrong result:
 
 - **Fidelity:** bit-identical output to FluidSynth at the defaults.
@@ -261,7 +261,9 @@ wrong result:
   computer's keys; pieces only on keys the kit has; Humanize varying hits and delaying them up to
   20 ms, only where the pads show (the user's choice, saved and migrated); late hits never leaving
   a note on (a note-off, a hit again or a switch on the hit's own sample, an all-notes-off before
-  or on it, an audio restart, a flood past the list).
+  or on it, an audio restart, a flood past the list); the kit redrawn frame by frame matching
+  it drawn whole (no edge left by a hit); the hi-hat drawn with any of its keys; Transpose not
+  moving the pieces.
 - **REC and MIDI out:** window notes reach the host (piano, guitar, kit) and the take only while
   recording; takes as MIDI files on the host's bars (its own bar lines, a loop timed by the clock);
   a new take never hands over the last one while recording; REC waits for the host's play, ends

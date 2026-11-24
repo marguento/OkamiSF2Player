@@ -278,7 +278,8 @@ or an instrument with "Kit", "Drums" or "Percussion" in its name), the INSTRUMEN
 **DRUM KIT**, with two views (the buttons **Kit** and **Pads** at its top right, remembered):
 
 - **Kit**: a drum set, with the pieces the kit has on General MIDI's keys: kick, snare, hi-hat,
-  high, mid and floor toms, crash, crash 2, ride, splash and china. Click a piece to hear it.
+  high, mid and floor toms, crash, crash 2, ride, splash and china. Click a piece to hear it. A
+  kit without a closed hi-hat still shows its hi-hat, playing its pedal or open hat.
 - **Pads**: a pad for every key the kit plays, a row per octave, C on the left, the lowest octave
   at the bottom. Each pad says what General MIDI puts on that key (C1 Kick, D1 Snare, F#1 Closed
   Hat, A#1 Open Hat, C#2 Crash…) and its note. Lower on a pad plays louder.
@@ -328,6 +329,9 @@ the search field).
   the choice is saved with the project, for the instrument it plays. The pads and the Guitar panel
   never show together: when an instrument brings its Guitar panel back, the pads give way.
 - The keyboard's tooltip names the drum on each key too.
+- With **Transpose**, the pieces and pads keep their own sounds: the Kick plays the kick (from
+  the key that sounds as it), each lights by the sound a key makes, and the keyboard's tooltip
+  names what each key sounds as.
 
 ## Recording what you play in the window
 

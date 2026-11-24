@@ -1576,6 +1576,7 @@ void SF2PlayerEditor::timerCallback()
             hostKeys[(size_t) n] = player.hostNotes.isNoteOnForChannels (0xffff, n) || player.previewNotes.isNoteOnForChannels (0xffff, n);
         if (hostKeys != hostKeysShown) { hostKeysShown = hostKeys; keyboard.repaint(); }
     }
+    drumPads.transpose = juce::roundToInt (player.parameters.getRawParameterValue ("transpose")->load());   // the pads play and light by the sound
     showHint();
     refreshGuitarPanel();
     refreshDrumPads (*player.state());   // a guitar shown or gone changes whether the pads show
@@ -2556,8 +2557,9 @@ juce::String SF2PlayerEditor::keyHint (int note) const
 {
     using E = GuitarEngine;
     const auto name = juce::MidiMessage::getMidiNoteName (note, true, true, 3);
-    if (drumsShown && drumPads.plays (note) && ! (keyboard.splitKey >= 0 && note < keyboard.splitKey))
-        return name + ": " + drumPads.nameOf (note);
+    if (const int sound = note + drumPads.transpose;   // what the key sounds as under Transpose
+        drumsShown && juce::isPositiveAndBelow (sound, 128) && drumPads.plays (sound) && ! (keyboard.splitKey >= 0 && note < keyboard.splitKey))
+        return name + ": " + drumPads.nameOf (sound);
     if (! keyboard.repeatZones)   // no Guitar panel: the instrument itself (and the Split's lower part)
         return name + (keyboard.splitKey >= 0 && note < keyboard.splitKey ? ": plays the second instrument (below the Split)" : ": click to hear it");
     const int mode = guitarModeBox.getSelectedItemIndex();

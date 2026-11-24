@@ -1488,6 +1488,88 @@ int main()
     }
 
     {
+        // The kit is redrawn only where it moves: after every frame of a hit on every piece (the
+        // cymbals swing, the heads give), the screen matches the whole kit drawn afresh. A piece
+        // drawn twice there, or a stand left out, would stay on screen as an edge.
+        juce::MidiKeyboardState state, shown;
+        DrumKit::Pads kit (state, shown);
+        int frameDiffs = 0, frames = 0;
+        for (int width : { 700, 1100 })
+        {
+            const int height = kit.preferredHeight (width);
+            kit.setSize (width, height);
+            juce::Image screen (juce::Image::ARGB, width, height, true), fresh (juce::Image::ARGB, width, height, true);
+            { juce::Graphics g (screen); kit.paint (g); }
+            for (int note : { 49, 51, 52, 55, 57, 42, 46, 36, 38, 43, 47, 50 })   // one piece at a time
+            {
+                state.noteOn (1, note, 1.0f);
+                state.noteOff (1, note, 0.0f);
+                for (int frame = 0; frame < 32; ++frame, ++frames)
+                {
+                    kit.tick();
+                    if (! kit.lastRepaint.isEmpty())
+                    {
+                        screen.clear (kit.lastRepaint);
+                        juce::Graphics g (screen);
+                        g.reduceClipRegion (kit.lastRepaint);
+                        kit.paint (g);
+                    }
+                    fresh.clear (fresh.getBounds());
+                    {
+                        juce::Graphics g (fresh);   // the whole kit, every piece it has
+                        kit.paintBackground (g);
+                        std::array<bool, DrumKit::pieceCount> all {};
+                        for (int piece = 0; piece < DrumKit::pieceCount; ++piece) all[(size_t) piece] = kit.drawnNote (piece) >= 0;
+                        kit.paintKit (g, all);
+                    }
+                    const juce::Image::BitmapData a (screen, juce::Image::BitmapData::readOnly), b (fresh, juce::Image::BitmapData::readOnly);
+                    int off = 0;
+                    for (int y = 0; y < height; ++y)
+                    {
+                        const auto* rowA = a.getLinePointer (y);
+                        const auto* rowB = b.getLinePointer (y);
+                        for (int i = 0; i < width * a.pixelStride; i += a.pixelStride)
+                        {
+                            int sum = 0;
+                            for (int c = 0; c < 4; ++c) sum += std::abs ((int) rowA[i + c] - (int) rowB[i + c]);
+                            if (sum > 6) ++off;
+                        }
+                    }
+                    if (off > 8) ++frameDiffs;   // a pixel or two: the renderer's rounding at an area's edge
+                }
+            }
+        }
+        // A kit without a closed hi-hat (42) still draws its hi-hat, playing the pedal (or open) hat.
+        DrumKit::Pads noClosed (state, shown), openOnly (state, shown);
+        noClosed.keys.reset (42);
+        openOnly.keys.reset (42); openOnly.keys.reset (44);
+        noClosed.setSize (1000, noClosed.preferredHeight (1000));
+        openOnly.setSize (1000, openOnly.preferredHeight (1000));
+        const auto hatAt = [] (DrumKit::Pads& pads) { return pads.noteAt (DrumKit::Pads::placeOf (DrumKit::hatClosed).getCentre().transformedBy (pads.stage())); };
+        const bool hats = hatAt (noClosed) == 44 && hatAt (openOnly) == 46 && noClosed.noteForKey ('a') == -1 && noClosed.noteForKey ('d') == 44;
+        // Under Transpose each pad still plays its own sound (the key that sounds as it), ends that
+        // key even if Transpose moves meanwhile, and a key played lights the sound it makes.
+        juce::MidiKeyboardState played, host;
+        DrumKit::Pads moved (played, host);
+        moved.transpose = 2;
+        moved.keyPressed (juce::KeyPress ('z', 0, 'z'));   // the kick (36): key 34 sounds as it
+        const bool pressedBelow = played.isNoteOn (1, 34) && ! played.isNoteOn (1, 36);
+        moved.transpose = 0;
+        moved.releaseAll();
+        const bool ended = ! played.isNoteOn (1, 34) && ! played.isNoteOn (1, 36);
+        DrumKit::Pads lit (played, host);
+        lit.transpose = 2;
+        host.noteOn (1, 36, 1.0f);   // sounds as 38, the snare
+        lit.tick();
+        const bool lights = lit.lightOf (DrumKit::snare) > 0.0f && juce::exactlyEqual (lit.lightOf (DrumKit::kick), 0.0f);
+        host.noteOff (1, 36, 0.0f);
+        expect (frameDiffs == 0 && hats && pressedBelow && ended && lights,
+                "Drum kit: redrawn only where it moves without leaving edges; the hi-hat with any of its keys; Transpose doesn't move the pieces",
+                juce::String (frameDiffs) + " of " + juce::String (frames) + " frames off; hats " + juce::String ((int) hats)
+                    + ", transpose " + juce::String ((int) pressedBelow) + juce::String ((int) ended) + juce::String ((int) lights));
+    }
+
+    {
         // Drum Humanize: off, every hit of a snare is the same; Velocity varies their level, Timing
         // starts them late (up to 20 ms, never early), and a note-off never comes before its late hit.
         int kitIndex = 0;

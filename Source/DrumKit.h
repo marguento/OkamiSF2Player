@@ -159,6 +159,10 @@ namespace DrumKit
         bool kitView = true;   // the drum set; false: the pads
         std::map<int, juce::String> customNames;   // the user's names for this kit, by key
         std::function<void (const juce::String& kit, int note, const juce::String& name)> onRename;   // an empty name: back to General MIDI's
+        // The window's Transpose: a key played sounds this many keys up. The pads stand for the
+        // kit's sounds, so each plays the key that sounds as it (its Kick plays the kick) and a key
+        // played lights the sound it makes.
+        int transpose = 0;
         juce::String kitId;   // which kit these pads are (set by the window): a rename is saved for the kit it was opened on
 
         static constexpr int rowHeight = 30, gap = 4, hintHeight = 16;
@@ -183,6 +187,16 @@ namespace DrumKit
                 if (note >= 0 && plays (note)) return note;
             return -1;
         }
+        // The piece a drawn piece plays as: the hi-hat is drawn for any of its keys, so a kit
+        // without a closed hat (42) plays its pedal or open hat there instead.
+        int drawnAs (int piece) const
+        {
+            if (piece != hatClosed || noteOf (hatClosed) >= 0) return piece;
+            for (int other : { hatPedal, hatOpen })
+                if (noteOf (other) >= 0) return other;
+            return piece;
+        }
+        int drawnNote (int piece) const { return noteOf (drawnAs (piece)); }
         // The key a computer key plays (-1: none).
         int noteForKey (juce::juce_wchar c) const
         {
@@ -242,7 +256,7 @@ namespace DrumKit
                 auto r = placeOf (piece);
                 if (hasShell (piece))
                     r = r.withHeight (r.getHeight() + shellDepth (piece));   // a drum: its shell too
-                if (noteOf (piece) >= 0 && r.expanded (6.0f).contains (at)) return piece;
+                if (drawnNote (piece) >= 0 && r.expanded (6.0f).contains (at)) return piece;
             }
             return -1;
         }
@@ -274,15 +288,20 @@ namespace DrumKit
             // Only lights that really change count: a held note resting at its floor doesn't repaint.
             bool changed = false;
             juce::Rectangle<int> padsArea;
-            for (int note = 0; note < 128; ++note)
+            std::bitset<128> hit;   // by the key played (every flag taken, even one transposed off the keys)
+            for (int key = 0; key < 128; ++key)
+                hit[(size_t) key] = struck[(size_t) key].exchange (false, std::memory_order_relaxed);
+            for (int note = 0; note < 128; ++note)   // by the sound
             {
                 auto& level = glow[(size_t) note];
                 const float before = level;
-                if (struck[(size_t) note].exchange (false, std::memory_order_relaxed)) level = 1.0f;
+                const int key = note - transpose;
+                const bool inRange = juce::isPositiveAndBelow (key, 128);
+                if (inRange && hit[(size_t) key]) level = 1.0f;
                 else if (level > 0.0f)
                 {
-                    const bool on = state.isNoteOnForChannels (0xffff, note) || alsoShown.isNoteOnForChannels (0xffff, note)
-                                 || (previewShown != nullptr && previewShown->isNoteOnForChannels (0xffff, note));
+                    const bool on = inRange && (state.isNoteOnForChannels (0xffff, key) || alsoShown.isNoteOnForChannels (0xffff, key)
+                                                || (previewShown != nullptr && previewShown->isNoteOnForChannels (0xffff, key)));
                     level = on ? juce::jmax (level - 0.015f, 0.45f) : juce::jmax (0.0f, level - 0.035f);
                 }
                 if (! juce::exactlyEqual (level, before))
@@ -291,17 +310,19 @@ namespace DrumKit
                     if (! kitView && plays (note)) padsArea = padsArea.getUnion (padBounds (note).getSmallestIntegerContainer().expanded (2));
                 }
             }
+            lastRepaint = {};
             if (! changed) return;
-            if (! kitView) { if (! padsArea.isEmpty()) repaint (padsArea); return; }
+            if (! kitView) { if (! padsArea.isEmpty()) repaint (lastRepaint = padsArea); return; }
             // Only where something moves (and where it moved last frame, to clear it).
             juce::Rectangle<float> area;
             for (int piece : drawOrder)
-                if (noteOf (piece) >= 0 && lightOf (piece) > 0.0f)
+                if (drawnNote (piece) >= 0 && lightOf (piece) > 0.0f)
                     area = area.isEmpty() ? areaOf (piece) : area.getUnion (areaOf (piece));
             const auto both = lastMoving.isEmpty() ? area : area.isEmpty() ? lastMoving : area.getUnion (lastMoving);
             lastMoving = area;
-            if (! both.isEmpty()) repaint (both.getSmallestIntegerContainer());
+            if (! both.isEmpty()) repaint (lastRepaint = both.getSmallestIntegerContainer());
         }
+        juce::Rectangle<int> lastRepaint;   // what the last tick repainted (the tests check it covers every change)
 
         void paint (juce::Graphics& g) override
         {
@@ -348,44 +369,55 @@ namespace DrumKit
 
         bool isHovered (int piece) const { return ! drawingRest && hovered == piece; }
 
-        // The kit at rest is drawn once into a picture (again when the size or the kit's keys
-        // change); each frame paints it, then only what moves: the pieces lit or under the mouse,
-        // and any piece drawn after one of them that overlaps it (so the front stays in front).
-        // About 1.8 ms a frame drawn in full; the picture and a piece or two cost a fraction.
+        // Two pictures, drawn again when the size or the kit's keys change: what never moves (the
+        // floor's shadows, the keys' line under the stage), and the whole kit at rest. At rest a
+        // paint is the second picture. While something moves it is the first, then every piece
+        // reaching into the area painted, back to front: exactly the kit drawn in full there, so
+        // a piece is never drawn twice over itself (its translucent parts would show the area's
+        // edge) and one moving never shows its resting place under it. The timer repaints only
+        // where something moves. 2x: about 0.5-1.7 ms a hit's frame, 0.9 ms the whole kit at rest.
         void paintKitCached (juce::Graphics& g)
         {
             const float pixels = g.getInternalContext().getPhysicalPixelScaleFactor();
             const RestKey key { getWidth(), getHeight(), lowKey, highKey, pixels, keys };   // no strings each frame
+            std::array<bool, pieceCount> shown {};
+            bool moving = false;
+            for (int piece : drawOrder)
+            {
+                shown[(size_t) piece] = drawnNote (piece) >= 0;
+                moving = moving || (shown[(size_t) piece] && (lightOf (piece) > 0.0f || isHovered (piece)));
+            }
             if (! (key == restKey) || ! restImage.isValid())
             {
                 restKey = key;
-                restImage = juce::Image (juce::Image::ARGB, juce::jmax (1, juce::roundToInt ((float) getWidth() * pixels)),
-                                         juce::jmax (1, juce::roundToInt ((float) getHeight() * pixels)), true);
-                juce::Graphics picture (restImage);
-                picture.addTransform (juce::AffineTransform::scale (pixels));
-                drawingRest = true;
-                paintKit (picture, nullptr);
-                drawingRest = false;
-            }
-            g.drawImage (restImage, getLocalBounds().toFloat());
-            std::array<bool, pieceCount> moving {};
-            bool any = false;
-            juce::Rectangle<float> dirty;
-            for (int piece : drawOrder)
-            {
-                const auto area = areaOf (piece);
-                const bool active = noteOf (piece) >= 0 && (lightOf (piece) > 0.0f || isHovered (piece));
-                if (active || (! dirty.isEmpty() && dirty.intersects (area)))
+                auto picture = [&] (bool pieces)
                 {
-                    moving[(size_t) piece] = true;
-                    dirty = dirty.isEmpty() ? area : dirty.getUnion (area);
-                    any = true;
-                }
+                    juce::Image image (juce::Image::ARGB, juce::jmax (1, juce::roundToInt ((float) getWidth() * pixels)),
+                                       juce::jmax (1, juce::roundToInt ((float) getHeight() * pixels)), true);
+                    juce::Graphics into (image);
+                    into.addTransform (juce::AffineTransform::scale (pixels));
+                    paintBackground (into);
+                    if (pieces)
+                    {
+                        drawingRest = true;
+                        paintKit (into, shown);
+                        drawingRest = false;
+                    }
+                    return image;
+                };
+                backgroundImage = picture (false);
+                restImage = picture (true);
             }
-            if (any) paintKit (g, &moving);
+            if (! moving) { g.drawImage (restImage, getLocalBounds().toFloat()); return; }
+            g.drawImage (backgroundImage, getLocalBounds().toFloat());
+            const auto clip = g.getClipBounds().toFloat();
+            for (int piece : drawOrder)
+                shown[(size_t) piece] = shown[(size_t) piece] && reachOf (piece).intersects (clip);
+            paintKit (g, shown);
         }
         static constexpr std::array<int, 11> drawOrder { china, crash2, splash, crash, ride, kick, tomHigh, tomMid, tomFloor, snare, hatClosed };
-        // Everything a piece draws (its body, stand, motion and label), in the component.
+        // Where a piece moves or lights (its body, motion and label), in the component: the timer
+        // repaints there.
         juce::Rectangle<float> areaOf (int piece) const
         {
             auto r = placeOf (piece);
@@ -393,14 +425,50 @@ namespace DrumKit
                 r = r.withHeight (r.getHeight() + shellDepth (piece));
             return r.transformedBy (stage()).expanded (14.0f).withTrimmedTop (-18.0f);
         }
-
-        void paintKit (juce::Graphics& g, const std::array<bool, pieceCount>* only)
+        // Everything a piece draws, its stand, legs or spurs too, down to the floor: paint draws
+        // a piece wherever this reaches the area painted.
+        juce::Rectangle<float> reachOf (int piece) const
         {
-            auto wanted = [only] (int piece) { return only == nullptr || (*only)[(size_t) piece]; };
+            const auto area = areaOf (piece);
+            return area.withBottom (juce::jmax (area.getBottom(), floorLine() + 8.0f * stage().mat00 + 2.0f));
+        }
+        float floorLine() const { return (float) getHeight() - hintHeight - 8.0f; }
+
+        // The floor's shadows and the line under the stage (the picture under the pieces).
+        void paintBackground (juce::Graphics& g)
+        {
+            const float scale = stage().mat00;
+            g.setColour (juce::Colours::black.withAlpha (0.28f));
+            auto shadow = [&] (float x, float width) { g.fillEllipse (x - width / 2.0f, floorLine() - 4.0f * scale, width, 12.0f * scale); };
+            auto place = [&] (int piece) { return placeOf (piece).transformedBy (stage()); };
+            for (int piece : { china, crash2, splash, crash, ride, snare, hatClosed })
+                if (drawnNote (piece) >= 0) shadow (place (piece).getCentreX(), 70.0f * scale);   // a stand's
+            if (noteOf (kick) >= 0) shadow (place (kick).getCentreX(), place (kick).getWidth() * 1.15f);
+            if (noteOf (tomFloor) >= 0) shadow (place (tomFloor).getCentreX(), place (tomFloor).getWidth() * 1.1f);
+            // The hi-hat's other keys, the snare's and the ride's, under the stage.
+            auto keyText = [] (int piece)
+            {
+                return juce::String::charToString ((juce::juce_wchar) juce::CharacterFunctions::toUpperCase ((juce::juce_wchar) pieces()[(size_t) piece].key));
+            };
+            juce::StringArray more;
+            for (int piece : { hatOpen, hatPedal, sideStick, clap, rideBell })
+                if (noteOf (piece) >= 0 && piece != drawnAs (hatClosed))   // not the one the hi-hat already shows
+                    more.add (keyText (piece) + " " + pieces()[(size_t) piece].name);
+            g.setColour (juce::Colour (0xfff1e6c8).withAlpha (0.45f));
+            g.setFont (juce::FontOptions (10.0f));
+            g.drawFittedText (juce::String ("Also: ") + more.joinIntoString (juce::String::fromUTF8 ("  \xc2\xb7  "))
+                                  + juce::String::fromUTF8 ("  \xc2\xb7  Shift: accent"),
+                              getLocalBounds().removeFromBottom (hintHeight).reduced (6, 0), juce::Justification::centredLeft, 1, 0.8f);
+        }
+
+        // The pieces chosen, back to front (their shadows are in the background).
+        void paintKit (juce::Graphics& g, const std::array<bool, pieceCount>& only)
+        {
+            auto wanted = [&only] (int piece) { return only[(size_t) piece]; };
             const auto t = stage();
             const float scale = t.mat00;
             const juce::Colour accent (0xffe0a64b), ink (0xfff1e6c8), chrome (0xffb9bfcc), chromeDark (0xff5d6270);
-            const float floorY = (float) getHeight() - hintHeight - 8.0f;
+            const float floorY = floorLine();
             auto place = [&] (int piece) { return placeOf (piece).transformedBy (t); };
             auto keyText = [] (int piece)
             {
@@ -409,15 +477,8 @@ namespace DrumKit
             // A hit's motion: a decaying swing, from the light's level (1 at the hit, fading out).
             auto swing = [] (float level, float speed) { return level * std::sin ((1.0f - level) * speed); };
 
-            auto floorShadow = [&] (float x, float width)
-            {
-                if (only != nullptr) return;   // already in the picture (twice would darken it)
-                g.setColour (juce::Colours::black.withAlpha (0.28f));
-                g.fillEllipse (x - width / 2.0f, floorY - 4.0f * scale, width, 12.0f * scale);
-            };
             auto stand = [&] (float x, float top)
             {
-                floorShadow (x, 70.0f * scale);
                 g.setGradientFill (juce::ColourGradient::horizontal (chromeDark, x - 2.0f, chrome, x + 2.0f));
                 g.fillRect (x - 1.6f * scale - 0.5f, top, 3.2f * scale + 1.0f, floorY - top);
                 g.setColour (chrome.withAlpha (0.8f));
@@ -427,7 +488,7 @@ namespace DrumKit
             };
             auto label = [&] (int piece, juce::Rectangle<float> r, bool below)
             {
-                const auto text = juce::String (pieces()[(size_t) piece].name) + "  ";
+                const auto text = juce::String (pieces()[(size_t) drawnAs (piece)].name) + "  ";
                 auto area = below ? juce::Rectangle<float> (r.getCentreX() - 60.0f, r.getBottom() + 2.0f, 120.0f, 13.0f)
                                   : juce::Rectangle<float> (r.getCentreX() - 60.0f, r.getY() - 15.0f, 120.0f, 13.0f);
                 g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
@@ -442,7 +503,7 @@ namespace DrumKit
                 g.fillRoundedRectangle (badge, 3.0f);
                 g.setColour (juce::Colour (0xff1a1410));
                 g.setFont (juce::FontOptions (9.0f, juce::Font::bold));
-                g.drawText (keyText (piece), badge, juce::Justification::centred);
+                g.drawText (keyText (drawnAs (piece)), badge, juce::Justification::centred);
             };
 
             auto cymbalShape = [&] (juce::Rectangle<float> r, float level, float tilt, bool hovered)
@@ -513,7 +574,6 @@ namespace DrumKit
                     for (float k : { 0.12f, 0.88f })
                         g.drawLine (head.getX() + head.getWidth() * k, head.getCentreY() + depth * 0.5f,
                                     head.getX() + head.getWidth() * (k < 0.5f ? 0.02f : 0.98f), floorY, 2.0f);
-                    floorShadow (head.getCentreX(), head.getWidth() * 1.1f);
                 }
                 if (piece == snare)
                     stand (head.getCentreX(), head.getCentreY() + depth);
@@ -567,7 +627,6 @@ namespace DrumKit
                 const float pulse = 1.0f + 0.03f * swing (level, 16.0f);
                 const auto base = place (kick);
                 const auto r = base.withSizeKeepingCentre (base.getWidth() * pulse, base.getHeight() * pulse);
-                floorShadow (r.getCentreX(), r.getWidth() * 1.15f);
                 // The spurs, and the tom holder rising from the shell.
                 g.setColour (chrome.withAlpha (0.85f));
                 g.drawLine (r.getX() + r.getWidth() * 0.12f, r.getCentreY() + r.getHeight() * 0.3f, r.getX() - 12.0f * scale, floorY, 2.0f);
@@ -610,29 +669,17 @@ namespace DrumKit
             }
             for (int piece : { tomHigh, tomMid, tomFloor, snare })
                 drum (piece);
-            if (noteOf (hatClosed) >= 0 && wanted (hatClosed))
+            if (drawnNote (hatClosed) >= 0 && wanted (hatClosed))
             {
                 const auto r = place (hatClosed);
                 const float level = lightOf (hatClosed);
                 stand (r.getCentreX(), r.getCentreY());
-                // An open hat rings and sways wider than a closed one (it stays in place: the
-                // picture at rest is under it).
+                // An open hat rings and sways wider than a closed one.
                 const float open = ! drawingRest && plays (46) ? glow[46] : 0.0f;
                 cymbalShape (r.translated (0.0f, 8.0f * scale), level * 0.5f, swing (open, 16.0f) * 0.04f, false);
                 cymbalShape (r, level, swing (level, 20.0f) * (0.05f + 0.07f * open), isHovered (hatClosed));
                 label (hatClosed, r, false);
             }
-            if (only != nullptr) return;   // the line under the stage is in the picture
-            // The hi-hat's other keys, the snare's and the ride's, under the stage.
-            juce::StringArray more;
-            for (int piece : { hatOpen, hatPedal, sideStick, clap, rideBell })
-                if (noteOf (piece) >= 0)
-                    more.add (keyText (piece) + " " + pieces()[(size_t) piece].name);
-            g.setColour (ink.withAlpha (0.45f));
-            g.setFont (juce::FontOptions (10.0f));
-            g.drawFittedText (juce::String ("Also: ") + more.joinIntoString (juce::String::fromUTF8 ("  \xc2\xb7  "))
-                                  + juce::String::fromUTF8 ("  \xc2\xb7  Shift: accent"),
-                              getLocalBounds().removeFromBottom (hintHeight).reduced (6, 0), juce::Justification::centredLeft, 1, 0.8f);
         }
 
         juce::String getTooltip() override
@@ -641,9 +688,9 @@ namespace DrumKit
             {
                 const int piece = pieceAt (getMouseXYRelative().toFloat());
                 if (piece < 0) return {};
-                const int note = noteOf (piece);
+                const int note = drawnNote (piece);
                 return nameOf (note) + " (" + juce::MidiMessage::getMidiNoteName (note, true, true, 3) + ", key "
-                     + juce::String::charToString ((juce::juce_wchar) juce::CharacterFunctions::toUpperCase ((juce::juce_wchar) pieces()[(size_t) piece].key)) + ")";
+                     + juce::String::charToString ((juce::juce_wchar) juce::CharacterFunctions::toUpperCase ((juce::juce_wchar) pieces()[(size_t) drawnAs (piece)].key)) + ")";
             }
             const int note = noteAt (getMouseXYRelative().toFloat());
             if (note < 0) return {};
@@ -656,7 +703,7 @@ namespace DrumKit
             if (kitView)
             {
                 const int piece = pieceAt (p);
-                return piece >= 0 ? noteOf (piece) : -1;
+                return piece >= 0 ? drawnNote (piece) : -1;
             }
             for (int note = firstOctave() * 12; note < (firstOctave() + rows()) * 12; ++note)
                 if (padBounds (note).contains (p)) return plays (note) ? note : -1;
@@ -752,9 +799,9 @@ namespace DrumKit
         }
         void handleNoteOff (juce::MidiKeyboardState*, int, int, float) override {}
         int hovered = -1, mouseNote = -1;
-        bool drawingRest = false;   // drawing the resting picture: no lights, no hover
         juce::Rectangle<float> lastMoving;   // where the kit moved last frame
-        juce::Image restImage;
+        juce::Image restImage, backgroundImage;
+        bool drawingRest = false;   // drawing the kit at rest: no lights, no hover
         struct RestKey   // what the picture was drawn for
         {
             int width = 0, height = 0, low = 0, high = 0; float pixels = 0; std::bitset<128> keys;   // focus is drawn on top, not in it
@@ -772,17 +819,34 @@ namespace DrumKit
         // The mouse and the computer's keys can hold the same piece: it sounds with the first and
         // ends with the last (a click on a held piece neither restarts nor cuts it). The PIANO
         // keyboard's own clicks aren't counted here (as in 1.3, a click there plays the key as is).
-        std::array<int, 128> holders {};
+        // By the sound; each plays the key that sounds as it under Transpose, and ends that same key
+        // whatever Transpose does meanwhile.
+        std::array<int, 128> holders {}, heldKey {};
         void press (int note, float velocity)
         {
             if (! juce::isPositiveAndBelow (note, 128)) return;
-            if (holders[(size_t) note]++ == 0) state.noteOn (1, note, velocity);
+            if (holders[(size_t) note] == 0)
+            {
+                const int key = note - transpose;
+                if (! juce::isPositiveAndBelow (key, 128)) return;   // no key sounds as it
+                heldKey[(size_t) note] = key;
+                state.noteOn (1, key, velocity);
+            }
+            ++holders[(size_t) note];
         }
         void lift (int note)
         {
             if (! juce::isPositiveAndBelow (note, 128) || holders[(size_t) note] == 0) return;
-            if (--holders[(size_t) note] == 0) state.noteOff (1, note, 0.0f);
+            if (--holders[(size_t) note] == 0) state.noteOff (1, heldKey[(size_t) note], 0.0f);
         }
-        void setHovered (int value) { if (value != hovered) { hovered = value; repaint(); } }
+        void setHovered (int value)
+        {
+            if (value == hovered) return;
+            if (kitView)   // only the two pieces (and what they reach into)
+                for (int piece : { hovered, value })
+                    if (piece >= 0) repaint (areaOf (piece).getSmallestIntegerContainer());
+            hovered = value;
+            if (! kitView) repaint();
+        }
     };
 }
