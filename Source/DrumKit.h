@@ -725,8 +725,7 @@ namespace DrumKit
                 velocity = juce::jlimit (0.2f, 1.0f, 0.35f + 0.65f * (e.position.y - r.getY()) / r.getHeight());
             }
             releaseMouse();
-            press (note, velocity);
-            mouseNote = note;
+            if (press (note, velocity)) mouseNote = note;   // a refused press isn't held (its lift would end another's)
         }
         void mouseUp (const juce::MouseEvent&) override { releaseMouse(); }
         void mouseDoubleClick (const juce::MouseEvent& e) override
@@ -761,8 +760,8 @@ namespace DrumKit
             const int code = key.getKeyCode();
             for (const auto& [heldCode, heldNote] : keysDown)
                 if (heldCode == code) return true;   // auto-repeat
-            keysDown.push_back ({ code, note });
-            press (note, key.getModifiers().isShiftDown() ? 1.0f : 0.8f);
+            const bool held = press (note, key.getModifiers().isShiftDown() ? 1.0f : 0.8f);
+            keysDown.push_back ({ code, held ? note : -1 });   // kept for auto-repeat; a refused press lifts nothing
             return true;
         }
         bool keyStateChanged (bool isKeyDown) override
@@ -823,19 +822,20 @@ namespace DrumKit
         // By the sound; each plays the key that sounds as it under Transpose, and ends that same key
         // whatever Transpose does meanwhile.
         std::array<int, 128> holders {}, heldKey {};
-        void press (int note, float velocity)
+        bool press (int note, float velocity)   // false: refused, nothing sent nor held
         {
-            if (! juce::isPositiveAndBelow (note, 128)) return;
+            if (! juce::isPositiveAndBelow (note, 128)) return false;
             if (holders[(size_t) note] == 0)
             {
                 const int key = note - transpose;
-                if (! juce::isPositiveAndBelow (key, 128) || key < splitKey) return;   // no key of the kit's sounds as it
+                if (! juce::isPositiveAndBelow (key, 128) || key < splitKey) return false;   // no key of the kit's sounds as it
                 for (int other = 0; other < 128; ++other)
-                    if (holders[(size_t) other] > 0 && heldKey[(size_t) other] == key) return;   // held for another sound (Transpose moved meanwhile)
+                    if (holders[(size_t) other] > 0 && heldKey[(size_t) other] == key) return false;   // held for another sound (Transpose moved meanwhile)
                 heldKey[(size_t) note] = key;
                 state.noteOn (1, key, velocity);
             }
             ++holders[(size_t) note];
+            return true;
         }
         void lift (int note)
         {

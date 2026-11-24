@@ -1086,7 +1086,10 @@ void SF2PlayerProcessor::playOrWait (juce::MidiMessage message, juce::int64 now,
     {
         const int played = message.getNoteNumber() & 0x7f;
         auto& slot = keySlot[(size_t) channel][(size_t) played];
-        if (message.isNoteOn() || slot == 0) slot = (juce::int16) (1 + slotFor (played, human.splitBelow, transposeFor (0)));
+        // A hit again stays in its key's slot while something still waits there (Transpose or the
+        // Split moved meanwhile), so it never jumps ahead of the last hit or its note-off.
+        if (slot == 0 || (message.isNoteOn() && keyDue[(size_t) channel][(size_t) (slot - 1)] <= now))
+            slot = (juce::int16) (1 + slotFor (played, human.splitBelow, transposeFor (0)));
         key = slot - 1;
     }
     if (keyMessage)

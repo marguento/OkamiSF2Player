@@ -1583,16 +1583,36 @@ int main()
         for (const auto meta : sent) onsOf38 += meta.getMessage().isNoteOn() && meta.getMessage().getNoteNumber() == 38 ? 1 : 0;
         const bool notShared = onsOf38 == 1;
         sharing.releaseAll();
+        // A press refused (its key held for another sound) isn't held: letting it go later doesn't
+        // end the same sound pressed again once its key is free.
+        juce::MidiKeyboardState refusedState;
+        DrumKit::Pads refused (refusedState, unused);
+        refused.setSize (1000, refused.preferredHeight (1000));
+        auto click = [&] (int piece, bool down)
+        {
+            const auto at = DrumKit::Pads::placeOf (piece).getCentre().transformedBy (refused.stage());
+            const juce::MouseEvent e (juce::Desktop::getInstance().getMainMouseSource(), at, {}, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                                      &refused, &refused, juce::Time::getCurrentTime(), at, juce::Time::getCurrentTime(), 1, false);
+            if (down) refused.mouseDown (e); else refused.mouseUp (e);
+        };
+        click (DrumKit::snare, true);                        // the mouse holds the snare: key 38
+        refused.transpose = -2;
+        refused.keyPressed (juce::KeyPress ('z', 0, 'z'));  // the kick would send 38: refused
+        click (DrumKit::snare, false);                       // 38 ends, free again
+        click (DrumKit::kick, true);                         // the kick by the mouse: 38
+        refused.keyStateChanged (false);                     // 'z' let go: must not end it
+        const bool refusedNotHeld = refusedState.isNoteOn (1, 38);
+        refused.releaseAll();
         // Humanize groups the hi-hat by its sound: Transpose +2 plays it from keys 40, 42 and 44.
         using P = SF2PlayerProcessor;
         const bool slots = P::slotFor (44, 0, 0) == 42 && P::slotFor (46, 0, 0) == 42 && P::slotFor (40, 0, 2) == 40
                            && P::slotFor (44, 0, 2) == 40 && P::slotFor (42, 0, 2) == 40 && P::slotFor (46, 0, 2) == 46
                            && P::slotFor (44, 42, 2) == 42 && P::slotFor (40, 42, 2) == 40 && P::slotFor (5, 0, -24) == 5;
-        expect (frameDiffs == 0 && hats && pressedBelow && ended && lights && splitSilent && notShared && slots,
+        expect (frameDiffs == 0 && hats && pressedBelow && ended && lights && splitSilent && notShared && refusedNotHeld && slots,
                 "Drum kit: redrawn only where it moves without leaving edges; the hi-hat with any of its keys; Transpose doesn't move the pieces",
                 juce::String (frameDiffs) + " of " + juce::String (frames) + " frames off; hats " + juce::String ((int) hats)
                     + ", transpose " + juce::String ((int) pressedBelow) + juce::String ((int) ended) + juce::String ((int) lights)
-                    + ", split " + juce::String ((int) splitSilent) + juce::String ((int) notShared) + ", slots " + juce::String ((int) slots));
+                    + ", split " + juce::String ((int) splitSilent) + juce::String ((int) notShared) + juce::String ((int) refusedNotHeld) + ", slots " + juce::String ((int) slots));
     }
 
     {
