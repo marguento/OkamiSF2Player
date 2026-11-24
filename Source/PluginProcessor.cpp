@@ -1081,15 +1081,20 @@ void SF2PlayerProcessor::playOrWait (juce::MidiMessage message, juce::int64 now,
     // Keys that cut each other off (a kit's hi-hat: closed, pedal, open) wait as one, so a later
     // closed hat never sounds before the open one it must stop. Grouped by the sound at the hit;
     // its note-off and pressure follow the hit's slot whatever Transpose does meanwhile.
-    int key = 0;
+    // A hit goes to its group as things are now; if Transpose or the Split moved it to another,
+    // it also waits behind the old one (oldKey), so it never jumps ahead of its key's last hit
+    // or that hit's note-off.
+    int key = 0, oldKey = -1;
     if (keyMessage)
     {
         const int played = message.getNoteNumber() & 0x7f;
         auto& slot = keySlot[(size_t) channel][(size_t) played];
-        // A hit again stays in its key's slot while something still waits there (Transpose or the
-        // Split moved meanwhile), so it never jumps ahead of the last hit or its note-off.
-        if (slot == 0 || (message.isNoteOn() && keyDue[(size_t) channel][(size_t) (slot - 1)] <= now))
-            slot = (juce::int16) (1 + slotFor (played, human.splitBelow, transposeFor (0)));
+        if (slot == 0 || message.isNoteOn())
+        {
+            const auto fresh = (juce::int16) (1 + slotFor (played, human.splitBelow, transposeFor (0)));
+            if (slot != 0 && slot != fresh) oldKey = slot - 1;
+            slot = fresh;
+        }
         key = slot - 1;
     }
     if (keyMessage)
@@ -1097,7 +1102,8 @@ void SF2PlayerProcessor::playOrWait (juce::MidiMessage message, juce::int64 now,
         // A quarter of the list stays for what must follow a waiting hit (its note-off,
         // a hit again): Humanize's own delay and a key's pressure wait only above it.
         const bool spare = lateCount < (int) lateNotes.size() * 3 / 4;
-        const auto waits = keyDue[(size_t) channel][(size_t) key];
+        auto waits = keyDue[(size_t) channel][(size_t) key];
+        if (oldKey >= 0) waits = juce::jmax (waits, keyDue[(size_t) channel][(size_t) oldKey]);
         if (message.isAftertouch() && waits > now && ! spare)
             return;   // pressure behind a waiting message of its key, with no room to spare: dropped
         auto& delay = keyDelay[(size_t) channel][(size_t) (message.getNoteNumber() & 0x7f)];   // the key's last hit's Humanize delay
@@ -1114,6 +1120,7 @@ void SF2PlayerProcessor::playOrWait (juce::MidiMessage message, juce::int64 now,
         {
             // No room to wait: the key's waiting messages play now, in order, then this
             // one, so its order holds whatever the list holds (a rare flood).
+            if (oldKey >= 0) playKeyNow (channel, oldKey);
             playKeyNow (channel, key);
             lateAt = -1;
             if (message.isNoteOn()) delay = 0;   // it plays now, so its note-off needn't wait

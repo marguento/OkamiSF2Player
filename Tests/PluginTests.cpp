@@ -1494,7 +1494,7 @@ int main()
         juce::MidiKeyboardState state, shown;
         DrumKit::Pads kit (state, shown);
         int frameDiffs = 0, frames = 0;
-        for (int width : { 700, 1100 })
+        for (int width : { 700, 1100, 2400 })   // the largest scale the layout allows, too
         {
             const int height = kit.preferredHeight (width);
             kit.setSize (width, height);
@@ -1535,7 +1535,7 @@ int main()
                             if (sum > 6) ++off;
                         }
                     }
-                    if (off > 8) ++frameDiffs;   // a pixel or two: the renderer's rounding at an area's edge
+                    if (off > 0) ++frameDiffs;   // even a pixel (a spur's foot left behind)
                 }
             }
         }

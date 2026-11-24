@@ -424,6 +424,7 @@ namespace DrumKit
             auto r = placeOf (piece);
             if (hasShell (piece))
                 r = r.withHeight (r.getHeight() + shellDepth (piece));
+            if (piece == kick) r = r.expanded (18.0f, 0.0f);   // its spurs, 12 out from the head, as it gives (+3)
             return r.transformedBy (stage()).expanded (14.0f).withTrimmedTop (-18.0f);
         }
         // Everything a piece draws, its stand, legs or spurs too, down to the floor: paint draws
