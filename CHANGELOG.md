@@ -3,7 +3,7 @@
 The version shows next to the title (`project(... VERSION x.y.z)` in CMakeLists.txt). Each
 release bumps it and adds an entry here: one line per change a player would notice.
 
-## 1.4.1 — unreleased
+## 1.4.1 — Nov 24, 2026
 
 **Drums**
 - A kit without a closed hi-hat (key 42) now shows its hi-hat, playing its pedal or open hat.
