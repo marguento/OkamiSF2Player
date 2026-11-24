@@ -1,0 +1,112 @@
+# The Windows build (beta): the dependencies at the README's exact versions, the VST3, the test
+# suite, pluginval, and the installer, uploaded as this run's artifact. Built on GitHub's
+# Windows machines; no Windows PC needed.
+name: Windows
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JUCE_TAG: "8.0.15"
+  FLUIDSYNTH_TAG: "v2.6.2"
+  OGG_TAG: "v1.3.5"
+  VORBIS_TAG: "v1.3.7"
+  PLUGINVAL_TAG: "v1.0.4"
+  # Every library with the C++ runtime linked in (/MT), like the plugin (CMakeLists.txt).
+  RUNTIME: "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DCMAKE_POLICY_DEFAULT_CMP0091=NEW"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Dependencies (exact versions)
+        run: |
+          git clone -q --depth 1 --branch "$JUCE_TAG" https://github.com/juce-framework/JUCE.git ThirdParty/JUCE
+          git clone -q --depth 1 --branch "$FLUIDSYNTH_TAG" https://github.com/FluidSynth/fluidsynth.git ThirdParty/fluidsynth
+          git clone -q --depth 1 --branch "$OGG_TAG" https://github.com/xiph/ogg.git ThirdParty/ogg
+          git clone -q --depth 1 --branch "$VORBIS_TAG" https://github.com/xiph/vorbis.git ThirdParty/vorbis
+
+      - name: libogg and libvorbis (static)
+        run: |
+          I=$(cygpath -m "$PWD/ThirdParty/xiph-install")
+          for lib in ogg vorbis; do
+            (cd ThirdParty/$lib && cmake -B build -A x64 $RUNTIME -DBUILD_SHARED_LIBS=OFF \
+              -DCMAKE_PREFIX_PATH="$I" -DCMAKE_INSTALL_PREFIX="$I" -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+              && cmake --build build --config Release -j 4 && cmake --install build --config Release)
+          done
+          ls "$I/lib"
+
+      - name: FluidSynth (static, float, no audio drivers, the patch applied)
+        run: |
+          I=$(cygpath -m "$PWD/ThirdParty/xiph-install")
+          F=$(cygpath -m "$PWD/ThirdParty/fluidsynth-install")
+          cd ThirdParty/fluidsynth && git apply ../../fluidsynth-fx-bypass.patch
+          cmake -B build -A x64 $RUNTIME -Denable-floats=ON -DBUILD_SHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX="$F" \
+            -DCMAKE_C_FLAGS="/DWIN32 /D_WINDOWS /DSF2PLAYER_VORBISFILE=1 /I$I/include" \
+            -DCMAKE_CXX_FLAGS="/DWIN32 /D_WINDOWS /EHsc /DSF2PLAYER_VORBISFILE=1 /I$I/include" \
+            -DCMAKE_EXE_LINKER_FLAGS="$I/lib/vorbisfile.lib $I/lib/vorbis.lib $I/lib/ogg.lib" \
+            -Denable-aufile=OFF -Denable-dbus=OFF -Denable-ipv6=OFF -Denable-jack=OFF -Denable-ladspa=OFF \
+            -Denable-libsndfile=OFF -Denable-midishare=OFF -Denable-network=OFF -Denable-oss=OFF -Denable-sdl3=OFF \
+            -Denable-pulseaudio=OFF -Denable-pipewire=OFF -Denable-readline=OFF -Denable-openmp=OFF \
+            -Denable-native-dls=OFF -Denable-signalsmith=OFF -Denable-alsa=OFF -Denable-systemd=OFF \
+            -Denable-portaudio=OFF -Denable-dsound=OFF -Denable-wasapi=OFF -Denable-waveout=OFF -Denable-winmidi=OFF
+          cmake --build build --config Release -j 4 && cmake --install build --config Release
+          ls "$F/lib"
+
+      - name: Plugin and tests
+        run: |
+          cmake -B build -A x64
+          cmake --build build --config Release -j 4 --target SF2Player_VST3 PluginTests
+
+      - name: Test suite
+        run: build/PluginTests_artefacts/Release/PluginTests.exe
+
+      - name: pluginval
+        run: |
+          curl -sSfL -o pluginval.zip "https://github.com/Tracktion/pluginval/releases/download/$PLUGINVAL_TAG/pluginval_Windows.zip"
+          sha256sum pluginval.zip
+          unzip -q pluginval.zip -d pluginval
+          ./pluginval/pluginval.exe --strictness-level 10 --output-dir pluginval-logs \
+            --validate "build/SF2Player_artefacts/Release/VST3/Okami SF2 Player.vst3"
+
+      - name: Installer
+        run: |
+          VERSION=$(sed -n 's/^project(SF2Player VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          ISCC="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
+          [ -x "$ISCC" ] || choco install innosetup -y --no-progress
+          mkdir -p dist
+          "$ISCC" -Q "/DVersion=$VERSION" "/DPluginDir=$(cygpath -w "$PWD/build/SF2Player_artefacts/Release/VST3/Okami SF2 Player.vst3")" \
+            "/DOutDir=$(cygpath -w "$PWD/dist")" installer/windows.iss
+          (cd build/SF2Player_artefacts/Release/VST3 && 7z a -bso0 "../../../../dist/Okami-SF2-Player-$VERSION-Windows-VST3.zip" "Okami SF2 Player.vst3")
+          cd dist && for f in *.exe *.zip; do sha256sum "$f" > "$f.sha256"; done && ls -l
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows
+          path: dist/
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: pluginval-logs
+          path: pluginval-logs/
+          if-no-files-found: ignore

@@ -19,7 +19,9 @@
 #include <functional>
 #include <map>
 #include <thread>
-#include <sys/sysctl.h>
+#if defined (__APPLE__)
+ #include <sys/sysctl.h>
+#endif
 
 struct PluginTestsAccess
 {
@@ -805,8 +807,11 @@ int main()
         // Under Rosetta (the Intel half run on Apple silicon) the time is the translation's,
         // not a real Intel Mac's: reported, not judged.
         int translated = 0;
+       #if defined (__APPLE__)
         size_t size = sizeof (translated);
-        if (sysctlbyname ("sysctl.proc_translated", &translated, &size, nullptr, 0) == 0 && translated == 1)
+        if (sysctlbyname ("sysctl.proc_translated", &translated, &size, nullptr, 0) != 0) translated = 0;
+       #endif
+        if (translated == 1)
             std::printf ("info  CPU under Rosetta: 64 string notes take %.1f %% of the time available (not judged)\n", share * 100);
         else
             expect (share < 0.3, "CPU: 64 string notes take under 30 % of the time available", juce::String (share * 100, 1) + " %");

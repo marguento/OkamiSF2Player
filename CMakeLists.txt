@@ -7,6 +7,24 @@ set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0" CACHE STRING "Minimum macOS")
 project(SF2Player VERSION 1.4.1 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 
+if(MSVC)
+    # Windows: the C++ runtime linked in, so the plugin needs no Visual C++ redistributable
+    # (the dependencies are built the same way: .github/workflows/windows.yml); the sources are
+    # UTF-8; the .pdb is named without the build machine's folders.
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    add_compile_options(/utf-8)
+    add_link_options(/PDBALTPATH:%_PDB%)
+endif()
+
+# AU is macOS only; the Windows build is the VST3 (and the Standalone used by the tests' tools).
+if(APPLE)
+    set(SF2PLAYER_FORMATS AU VST3 Standalone)
+    set(SF2PLAYER_COPY_AFTER_BUILD TRUE)
+else()
+    set(SF2PLAYER_FORMATS VST3 Standalone)
+    set(SF2PLAYER_COPY_AFTER_BUILD FALSE)   # Program Files needs an administrator: the installer copies it
+endif()
+
 add_subdirectory(ThirdParty/JUCE)
 
 juce_add_plugin(SF2Player
@@ -15,7 +33,7 @@ juce_add_plugin(SF2Player
     BUNDLE_ID "com.marguento.SF2Player"
     PLUGIN_MANUFACTURER_CODE Mrgt
     PLUGIN_CODE Sf2p
-    FORMATS AU VST3 Standalone
+    FORMATS ${SF2PLAYER_FORMATS}
     IS_SYNTH TRUE
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT TRUE
@@ -23,7 +41,7 @@ juce_add_plugin(SF2Player
     EDITOR_WANTS_KEYBOARD_FOCUS TRUE   # the drums play from the computer's keys (VST3 ignores keys without it)
     AU_MAIN_TYPE kAudioUnitType_MusicDevice
     VST3_CATEGORIES Instrument Sampler
-    COPY_PLUGIN_AFTER_BUILD TRUE)
+    COPY_PLUGIN_AFTER_BUILD ${SF2PLAYER_COPY_AFTER_BUILD})
 
 target_sources(SF2Player PRIVATE
     Source/PluginProcessor.cpp
@@ -33,7 +51,15 @@ target_sources(SF2Player PRIVATE
 set(FLUIDSYNTH_DIR ${CMAKE_CURRENT_SOURCE_DIR}/ThirdParty/fluidsynth-install)
 # libvorbisfile, libvorbis and libogg (ThirdParty/xiph-install): FluidSynth decodes SF3 with them.
 set(XIPH_DIR ${CMAKE_CURRENT_SOURCE_DIR}/ThirdParty/xiph-install)
-set(FLUID_LIBS ${FLUIDSYNTH_DIR}/lib/libfluidsynth.a ${XIPH_DIR}/lib/libvorbisfile.a ${XIPH_DIR}/lib/libvorbis.a ${XIPH_DIR}/lib/libogg.a)
+if(MSVC)
+    set(FLUID_LIBS)
+    foreach(lib fluidsynth vorbisfile vorbis ogg)
+        find_library(SF2PLAYER_LIB_${lib} NAMES ${lib} lib${lib} PATHS ${FLUIDSYNTH_DIR}/lib ${XIPH_DIR}/lib NO_DEFAULT_PATH REQUIRED)
+        list(APPEND FLUID_LIBS ${SF2PLAYER_LIB_${lib}})
+    endforeach()
+else()
+    set(FLUID_LIBS ${FLUIDSYNTH_DIR}/lib/libfluidsynth.a ${XIPH_DIR}/lib/libvorbisfile.a ${XIPH_DIR}/lib/libvorbis.a ${XIPH_DIR}/lib/libogg.a)
+endif()
 target_include_directories(SF2Player PRIVATE ${FLUIDSYNTH_DIR}/include)
 target_link_libraries(SF2Player PRIVATE ${FLUID_LIBS})
 
