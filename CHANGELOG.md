@@ -3,7 +3,7 @@
 The version shows next to the title (`project(... VERSION x.y.z)` in CMakeLists.txt). Each
 release bumps it and adds an entry here: one line per change a player would notice.
 
-## 1.4.0 — Nov 19, 2026
+## 1.4.0 — Nov 23, 2026
 
 **Drums**
 - **Drum Kit panel:** with a drum kit loaded, the panel shows it as a **drum set** (kick, snare,
