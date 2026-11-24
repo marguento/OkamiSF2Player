@@ -680,7 +680,7 @@ SF2PlayerEditor::SF2PlayerEditor (SF2PlayerProcessor& p)
     keyboard.alsoShowsPreview = &player.previewNotes;   // and a preview's or a chord audition's
     drumPads.onRename = [this] (const juce::String& kit, int note, const juce::String& name) { renameDrum (kit, note, name); };
     addChildComponent (drumPads);
-    setWantsKeyboardFocus (true);   // keys with no focused child reach keyPressed (the drums)
+    setWantsKeyboardFocus (false);   // taken only while the drums show (refreshDrumPads): keys with no focused child then reach keyPressed
     for (auto* knob : { &drumVelocityHuman, &drumTimingHuman })
     {
         knob->slider.setVisible (false);
@@ -2785,6 +2785,7 @@ void SF2PlayerEditor::refreshDrumPads (const SF2PlayerProcessor::State& st)
         return;   // nothing to lay out again (another kit with as many octaves keeps the height)
     }
     drumsShown = show;
+    setWantsKeyboardFocus (show);   // the window takes the keys only for the drums (otherwise they stay the host's)
     drumPads.setVisible (show);
     for (auto* knob : { &drumVelocityHuman, &drumTimingHuman })
     {
