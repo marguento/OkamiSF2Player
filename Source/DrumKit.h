@@ -811,7 +811,7 @@ namespace DrumKit
                 return width == o.width && height == o.height && low == o.low && high == o.high && pixels == o.pixels && keys == o.keys;
             }
         } restKey;
-        std::vector<std::pair<int, int>> keysDown;   // (key code, note) held on the computer's keyboard
+        std::vector<std::pair<int, int>> keysDown;   // (key code, note) held on the computer's keyboard; note -1: a refused press (kept for auto-repeat)
         void releaseMouse()
         {
             if (mouseNote >= 0) lift (mouseNote);
