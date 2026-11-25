@@ -97,5 +97,13 @@ target_sources(PluginTests PRIVATE Tests/PluginTests.cpp Source/PluginProcessor.
 target_include_directories(PluginTests PRIVATE ${FLUIDSYNTH_DIR}/include)
 target_compile_definitions(PluginTests PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JucePlugin_Name="Okami SF2 Player" JucePlugin_VersionString="${PROJECT_VERSION}")
 target_link_libraries(PluginTests PRIVATE juce::juce_audio_utils juce::juce_dsp juce::juce_recommended_config_flags ${FLUID_LIBS})
+# The test tools put whole processors (about 0.5 MB each) on the stack, two at once in places:
+# Windows' default 1 MB main-thread stack overflows (0xC00000FD), so they get macOS's 8 MB.
+# The plugin itself is created on the heap by its host.
+if(MSVC)
+    foreach(tool RenderTest TailTest PluginTests)
+        target_link_options(${tool} PRIVATE /STACK:8388608)
+    endforeach()
+endif()
 enable_testing()
 add_test(NAME PluginTests COMMAND PluginTests)
