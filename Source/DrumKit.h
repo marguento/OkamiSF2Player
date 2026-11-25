@@ -321,7 +321,14 @@ namespace DrumKit
                     area = area.isEmpty() ? areaOf (piece) : area.getUnion (areaOf (piece));
             const auto both = lastMoving.isEmpty() ? area : area.isEmpty() ? lastMoving : area.getUnion (lastMoving);
             lastMoving = area;
+           #if JUCE_WINDOWS
+            // Direct2D antialiases a shape cut by the repainted area's edge differently from the same
+            // shape drawn whole, which left faint edges (24 pixels at most, measured): there the
+            // whole kit is repainted while something moves, cheap on its GPU renderer.
+            if (! both.isEmpty()) repaint (lastRepaint = getLocalBounds());
+           #else
             if (! both.isEmpty()) repaint (lastRepaint = both.getSmallestIntegerContainer());
+           #endif
         }
         juce::Rectangle<int> lastRepaint;   // what the last tick repainted (the tests check it covers every change)
 
