@@ -3,7 +3,7 @@
 The version shows next to the title (`project(... VERSION x.y.z)` in CMakeLists.txt). Each
 release bumps it and adds an entry here: one line per change a player would notice.
 
-## 1.4.1 for Windows (beta) — unreleased
+## 1.4.1 for Windows (beta) — Nov 24, 2026
 
 **Windows**
 - **Okami SF2 Player on Windows**, as a VST3 (64-bit Windows 10 or 11), with an installer. The
