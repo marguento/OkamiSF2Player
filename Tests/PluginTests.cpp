@@ -184,6 +184,7 @@ void fidelityTests (const juce::File& sf2, int preset, int key, const juce::Stri
 
 int main()
 {
+    std::setvbuf (stdout, nullptr, _IONBF, 0);   // every line out at once, so a crash shows where it happened
     // A settings folder of their own: never the user's recent files or favorites.
    #if defined (_WIN32)
     _putenv_s ("SF2PLAYER_SETTINGS_FOLDER", "SF2 Player (tests)");

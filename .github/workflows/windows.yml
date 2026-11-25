@@ -88,6 +88,7 @@ jobs:
           $dumpbin = Get-ChildItem "C:\Program Files\Microsoft Visual Studio" -Recurse -Filter dumpbin.exe -ErrorAction SilentlyContinue |
             Where-Object { $_.FullName -match "Hostx64\\x64" } | Select-Object -First 1
           & $dumpbin.FullName /dependents build\PluginTests_artefacts\Release\PluginTests.exe
+          & $dumpbin.FullName /headers build\PluginTests_artefacts\Release\PluginTests.exe | Select-String "stack"
           & $dumpbin.FullName /dependents "build\SF2Player_artefacts\Release\VST3\Okami SF2 Player.vst3\Contents\x86_64-win\Okami SF2 Player.vst3"
           & build\PluginTests_artefacts\Release\PluginTests.exe
           "exit code: 0x{0:X8}" -f $LASTEXITCODE
