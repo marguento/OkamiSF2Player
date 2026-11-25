@@ -1,7 +1,7 @@
 # Okami SF2 Player
 
-A free AU / VST3 instrument for Ableton Live on the Mac (Apple silicon and Intel) that plays
-SoundFonts (.sf2 and .sf3) through FluidSynth, the reference SoundFont player.
+A free AU / VST3 instrument for Ableton Live on the Mac (Apple silicon and Intel), and in beta
+on Windows (VST3), that plays SoundFonts (.sf2 and .sf3) through FluidSynth, the reference SoundFont player.
 
 **Why it exists.** Many of us composed with **Edirol HQ Orchestral** (also called Edirol
 Orchestral or Roland HQ Orchestral), Roland's orchestral VSTi from the 2000s. It was discontinued and is 32-bit only, so it no longer loads in today's Ableton
@@ -48,6 +48,15 @@ chorus: [docs/HQ-Orchestral-sends.md](docs/HQ-Orchestral-sends.md).
 3. Restart Ableton Live (or rescan plug-ins), add **Okami SF2 Player** to a MIDI track and open
    the SoundFont from its menu.
 
+**Windows (beta).** Download `Okami-SF2-Player-<version>-Windows-Setup.exe` from the Releases
+marked Windows beta and run it: it installs the VST3 into `C:\Program Files\Common Files\VST3`
+(64-bit Windows 10 or 11; nothing else to install) and can be removed from Settings → Apps. It
+isn't code-signed yet, so Windows SmartScreen warns first: **More info → Run anyway**. Or unzip
+`...-Windows-VST3.zip` into that folder yourself. The Windows build is built and checked
+automatically (the same test suite, plus [pluginval](https://github.com/Tracktion/pluginval) at
+its strictest level) but hasn't been tried in a DAW on Windows yet: if something doesn't work,
+please [open an issue](https://github.com/marguento/OkamiSF2Player/issues).
+
 ## Tech stack
 
 | Part | What | Notes |
@@ -55,7 +64,7 @@ chorus: [docs/HQ-Orchestral-sends.md](docs/HQ-Orchestral-sends.md).
 | Plugin framework | JUCE 8.0.15 | AU, VST3, Standalone; CMake + Ninja, no Xcode project |
 | Synth engine | FluidSynth 2.6.2, static, float | patched: `fluidsynth-fx-bypass.patch` |
 | SF3 decoding | libvorbisfile / libvorbis 1.3.7, libogg 1.3.5 | static |
-| Target | macOS 13+, universal (arm64 + x86_64) | built and used on an M4 with macOS 27; the Intel half is tested under Rosetta |
+| Target | macOS 13+, universal (arm64 + x86_64); Windows 10+ x64 (VST3, beta) | built and used on an M4 with macOS 27; the Intel half is tested under Rosetta; Windows is built and tested on GitHub Actions |
 | Identity | manufacturer `Mrgt`, plugin `Sf2p`, AU `aumu` | never change: projects find the plugin by them |
 
 ## Building from source
@@ -95,6 +104,11 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 auval -v aumu Sf2p Mrgt
 ```
+
+On Windows (Visual Studio 2022 or later, x64), `.github/workflows/windows.yml` is the recipe: the
+same dependencies built static with the C++ runtime linked in (`/MT`), FluidSynth without its
+Windows audio and MIDI drivers, then the VST3 and the tests. GitHub Actions runs it on every push
+to `main`.
 
 FluidSynth's build downloads its `gcem` submodule from GitHub the first time if it's missing.
 `DEFAULT_SOUNDFONT` is set because FluidSynth otherwise bakes its install path (your home
@@ -236,7 +250,8 @@ Saved alongside the parameters: `sf2Path`, `preset`, `presetBank`, `presetNumber
 `layerBank`, `layerNumber`, `guitarShape`, `drumChoice` (the drum pads choice for the instrument
 played, as `(bank * 128 + program) * 4 + choice`) (state tag `SF2Player`).
 
-Settings file `~/Library/Application Support/SF2 Player/SF2 Player.settings`: `recentFiles`
+Settings file `~/Library/Application Support/SF2 Player/SF2 Player.settings` (on Windows
+`%APPDATA%\SF2 Player\SF2 Player.settings`): `recentFiles`
 (last 12), `favorites` (`<file name>|<bank>:<program>`, one per line), and per instrument,
 one `<key>=<value>` line each: `panelChoices` (the Guitar panel), `drumNames` (`<key>#<note>=<name>`); `drumView` (`kit` or `pads`). REC's
 takes are kept a week in `Takes/` beside it.
@@ -298,6 +313,11 @@ backup of each, outside any repository: a lost private key means revoking and st
 Notarization uses an App Store Connect API key (`NOTARY_KEY`, `NOTARY_KEY_ID`, `NOTARY_ISSUER`) set in
 `scripts/release.env` (ignored by git). Then attach the .pkg to a GitHub release:
 `gh release create v<version> dist/*.pkg dist/*.sha256 --notes-file <notes>`.
+
+Windows (beta): the `Windows` workflow's artifact holds `Okami-SF2-Player-<version>-Windows-Setup.exe`
+(Inno Setup, `installer/windows.iss`), `...-Windows-VST3.zip` and their SHA-256. Run
+`scripts/privacy-check.sh` on the unzipped bundle, then publish them as a prerelease
+(`v<version>-windows-beta`), so the Mac release stays the latest. Not code-signed yet.
 
 ## License
 

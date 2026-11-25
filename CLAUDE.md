@@ -124,6 +124,24 @@ works (a CSR from `openssl req`, uploaded in the user's Chrome). The API can the
 Application certificate (GET /v1/certificates/<id>) but not the Installer one: download that
 from its web page. Renew both before Dec 2027 the same way.
 
+## Windows (beta, since Nov 24, 2026)
+
+Built only on GitHub Actions (`.github/workflows/windows.yml`, the `Windows` workflow). It builds the dependencies at the
+README's tags, the VST3 and PluginTests, runs both (the 74 checks without the HQ collection) and
+pluginval at strictness 10, and uploads the Inno Setup installer and a zip as the `windows`
+artifact. Nobody has tried it in a DAW: publish it only as a prerelease marked beta, with the
+user's OK. Lessons from making it build (Nov 24):
+- Git Bash turns `/flags` into `C:\Program Files\Git\...` paths: `MSYS_NO_PATHCONV=1`.
+- FluidSynth's static library is `libfluidsynth-3.lib` there; ogg and vorbis are `ogg.lib`...
+- MSVC: no `__builtin_*`, no `ssize_t`, no `setenv` (`_putenv_s`); `this` in a nested lambda's
+  init-capture means the outer lambda (take the SafePointer in the outer one).
+- 0xC00000FD is a stack overflow: the test tools put ~0.5 MB processors on the stack and MSVC
+  reserves every inlined test's locals in main's frame, so they link with `/STACK` 64 MB.
+- Direct2D antialiases a shape cut by a clip edge differently from the shape drawn whole, so a
+  partial repaint left faint edges on the kit: on Windows the kit repaints whole while moving.
+- Pushing a workflow file needs gh's `workflow` scope; git here uses the osxkeychain helper, so
+  push with `git -c credential.helper= -c 'credential.helper=!gh auth git-credential' push`.
+
 ## Plugin identity
 
 Manufacturer `Mrgt`, plugin `Sf2p`, state tag `SF2Player`, settings folder

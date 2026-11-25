@@ -8,6 +8,9 @@ that changes nothing.
 
 1. Open the `Okami-SF2-Player-<version>.pkg` installer. It puts the plugin in
    `/Library/Audio/Plug-Ins` as AU and VST3 (Apple silicon and Intel, macOS 13 or later).
+   On Windows (beta, VST3, 64-bit Windows 10 or 11), run `Okami-SF2-Player-<version>-Windows-Setup.exe`
+   instead: it puts the plugin in `C:\Program Files\Common Files\VST3`. It isn't code-signed
+   yet, so SmartScreen asks first: **More info → Run anyway**.
 2. Get a SoundFont: the plugin was made for the
    [HQ Orchestral SoundFont Collection](https://musical-artifacts.com/artifacts/817), a free
    download of 522 MB with 195 instruments that carries the name of Roland's discontinued

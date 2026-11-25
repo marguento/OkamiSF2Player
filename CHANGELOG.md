@@ -3,6 +3,14 @@
 The version shows next to the title (`project(... VERSION x.y.z)` in CMakeLists.txt). Each
 release bumps it and adds an entry here: one line per change a player would notice.
 
+## 1.4.1 for Windows (beta) — unreleased
+
+**Windows**
+- **Okami SF2 Player on Windows**, as a VST3 (64-bit Windows 10 or 11), with an installer. The
+  same plugin as 1.4.1 on the Mac, built and checked automatically (the whole test suite and
+  pluginval at its strictest level), but not yet tried in a DAW on Windows: a beta. Not
+  code-signed yet, so Windows asks before running the installer (More info → Run anyway).
+
 ## 1.4.1 — Nov 24, 2026
 
 **Drums**

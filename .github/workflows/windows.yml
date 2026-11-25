@@ -22,6 +22,7 @@ env:
   OGG_TAG: "v1.3.5"
   VORBIS_TAG: "v1.3.7"
   PLUGINVAL_TAG: "v1.0.4"
+  PLUGINVAL_SHA256: "c08e61ce3b96db41636f8ec7e76f4c7e2c13ebdac7fa1b5a1f52b4f32ec715ab"   # pluginval_Windows.zip of that tag
   # Every library with the C++ runtime linked in (/MT), like the plugin (CMakeLists.txt).
   RUNTIME: "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded -DCMAKE_POLICY_DEFAULT_CMP0091=NEW"
   # Git Bash would turn MSVC's and Inno Setup's /flags into C:\Program Files\Git\... paths.
@@ -96,7 +97,7 @@ jobs:
       - name: pluginval
         run: |
           curl -sSfL -o pluginval.zip "https://github.com/Tracktion/pluginval/releases/download/$PLUGINVAL_TAG/pluginval_Windows.zip"
-          sha256sum pluginval.zip
+          echo "$PLUGINVAL_SHA256  pluginval.zip" | sha256sum -c
           unzip -q pluginval.zip -d pluginval
           ./pluginval/pluginval.exe --strictness-level 10 --output-dir pluginval-logs \
             --validate "build/SF2Player_artefacts/Release/VST3/Okami SF2 Player.vst3"
