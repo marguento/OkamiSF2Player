@@ -624,14 +624,19 @@ int main()
                 "The project restores the file and the knobs");
 
         auto xml = juce::AudioProcessor::getXmlFromBinary (state.getData(), (int) state.getSize());
-        xml->setAttribute ("sf2Path", "/nowhere/Gone.sf2");
+       #if defined (_WIN32)
+        const juce::String gone ("C:\\nowhere\\Gone.sf2");   // an absolute path on this system
+       #else
+        const juce::String gone ("/nowhere/Gone.sf2");
+       #endif
+        xml->setAttribute ("sf2Path", gone);
         juce::MemoryBlock moved, again;
         juce::AudioProcessor::copyXmlToBinary (*xml, moved);
         SF2PlayerProcessor missing;
         missing.setStateInformation (moved.getData(), (int) moved.getSize());
         missing.getStateInformation (again);
         auto back = juce::AudioProcessor::getXmlFromBinary (again.getData(), (int) again.getSize());
-        expect (missing.missingSoundFont().getFileName() == "Gone.sf2" && back->getStringAttribute ("sf2Path") == "/nowhere/Gone.sf2",
+        expect (missing.missingSoundFont().getFileName() == "Gone.sf2" && back->getStringAttribute ("sf2Path") == gone,
                 "A missing file stays named in the project");
     }
 
@@ -1504,7 +1509,7 @@ int main()
         // drawn twice there, or a stand left out, would stay on screen as an edge.
         juce::MidiKeyboardState state, shown;
         DrumKit::Pads kit (state, shown);
-        int frameDiffs = 0, frames = 0;
+        int frameDiffs = 0, frames = 0, worstPixels = 0, worstSum = 0;
         for (int width : { 700, 1100, 2400 })   // the largest scale the layout allows, too
         {
             const int height = kit.preferredHeight (width);
@@ -1544,8 +1549,10 @@ int main()
                             int sum = 0;
                             for (int c = 0; c < 4; ++c) sum += std::abs ((int) rowA[i + c] - (int) rowB[i + c]);
                             if (sum > 6) ++off;
+                            worstSum = juce::jmax (worstSum, sum);
                         }
                     }
+                    worstPixels = juce::jmax (worstPixels, off);
                     if (off > 0) ++frameDiffs;   // even one pixel visibly off (a spur's foot left behind)
                 }
             }
@@ -1621,7 +1628,8 @@ int main()
                            && P::slotFor (44, 42, 2) == 42 && P::slotFor (40, 42, 2) == 40 && P::slotFor (5, 0, -24) == 5;
         expect (frameDiffs == 0 && hats && pressedBelow && ended && lights && splitSilent && notShared && refusedNotHeld && slots,
                 "Drum kit: redrawn only where it moves without leaving edges; the hi-hat with any of its keys; Transpose doesn't move the pieces",
-                juce::String (frameDiffs) + " of " + juce::String (frames) + " frames off; hats " + juce::String ((int) hats)
+                juce::String (frameDiffs) + " of " + juce::String (frames) + " frames off (at most " + juce::String (worstPixels)
+                    + " pixels, " + juce::String (worstSum) + " of 1020 apart); hats " + juce::String ((int) hats)
                     + ", transpose " + juce::String ((int) pressedBelow) + juce::String ((int) ended) + juce::String ((int) lights)
                     + ", split " + juce::String ((int) splitSilent) + juce::String ((int) notShared) + juce::String ((int) refusedNotHeld) + ", slots " + juce::String ((int) slots));
     }
