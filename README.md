@@ -39,23 +39,47 @@ chorus: [docs/HQ-Orchestral-sends.md](docs/HQ-Orchestral-sends.md).
 
 ## Download and install
 
-1. Download `Okami-SF2-Player-<version>.pkg` from this repository's Releases and open it. It
-   installs the AU and VST3 into `/Library/Audio/Plug-Ins` (signed and notarized by Apple;
-   Apple silicon and Intel, macOS 13 or later).
-2. Get a SoundFont. The plugin was made for the
-   [HQ Orchestral SoundFont Collection](https://musical-artifacts.com/artifacts/817) (522 MB,
-   195 instruments), not included here (see CREDITS.md).
+There is one version per system. Pick yours:
+
+| System | Status | Download | Formats |
+|---|---|---|---|
+| **macOS** 13 or later (Apple silicon and Intel) | stable | [**1.4.1 for macOS**](https://github.com/marguento/OkamiSF2Player/releases/tag/v1.4.1): `Okami-SF2-Player-1.4.1.pkg` | AU and VST3 |
+| **Windows** 10 or 11, 64-bit | **beta** | [**1.4.1 for Windows (beta)**](https://github.com/marguento/OkamiSF2Player/releases/tag/v1.4.1-windows-beta): `Okami-SF2-Player-1.4.1-Windows-Setup.exe` | VST3 |
+
+Both are the same plugin, built from the same code. Every release is on the
+[Releases page](https://github.com/marguento/OkamiSF2Player/releases): macOS releases are tagged `v<version>`, Windows ones
+`v<version>-windows-beta`.
+
+### macOS
+
+1. Download `Okami-SF2-Player-<version>.pkg` from the latest macOS release and open it. It
+   installs the AU and VST3 into `/Library/Audio/Plug-Ins` (signed and notarized by Apple).
+2. Get a SoundFont (see [below](#get-a-soundfont)).
 3. Restart Ableton Live (or rescan plug-ins), add **Okami SF2 Player** to a MIDI track and open
    the SoundFont from its menu.
 
-**Windows (beta).** Download `Okami-SF2-Player-<version>-Windows-Setup.exe` from the Releases
-marked Windows beta and run it: it installs the VST3 into `C:\Program Files\Common Files\VST3`
-(64-bit Windows 10 or 11; nothing else to install) and can be removed from Settings → Apps. It
-isn't code-signed yet, so Windows SmartScreen warns first: **More info → Run anyway**. Or unzip
-`...-Windows-VST3.zip` into that folder yourself. The Windows build is built and checked
-automatically (the same test suite, plus [pluginval](https://github.com/Tracktion/pluginval) at
-its strictest level) but hasn't been tried in a DAW on Windows yet: if something doesn't work,
-please [open an issue](https://github.com/marguento/OkamiSF2Player/issues).
+### Windows (beta)
+
+1. Download `Okami-SF2-Player-<version>-Windows-Setup.exe` from the latest Windows release and
+   run it. It installs the VST3 into `C:\Program Files\Common Files\VST3` (nothing else to
+   install) and can be removed from Settings → Apps. Or unzip `...-Windows-VST3.zip` into that
+   folder yourself.
+2. **It isn't code-signed yet**, so Windows SmartScreen warns first ("Windows protected your
+   PC"): click **More info → Run anyway**.
+3. Get a SoundFont (see [below](#get-a-soundfont)), rescan plug-ins in your host, add
+   **Okami SF2 Player** to a MIDI track and open the SoundFont from its menu.
+
+**Why beta:** the Windows version is built and checked automatically on Windows (the whole test
+suite, plus [pluginval](https://github.com/Tracktion/pluginval) at its strictest level), but it
+hasn't been tried in a DAW on Windows yet. If something doesn't work, please
+[open an issue](https://github.com/marguento/OkamiSF2Player/issues) saying which host and
+Windows version.
+
+### Get a SoundFont
+
+The plugin was made for the
+[HQ Orchestral SoundFont Collection](https://musical-artifacts.com/artifacts/817) (522 MB,
+195 instruments), not included here (see CREDITS.md). Any .sf2 or .sf3 works.
 
 ## Tech stack
 
@@ -314,10 +338,12 @@ Notarization uses an App Store Connect API key (`NOTARY_KEY`, `NOTARY_KEY_ID`, `
 `scripts/release.env` (ignored by git). Then attach the .pkg to a GitHub release:
 `gh release create v<version> dist/*.pkg dist/*.sha256 --notes-file <notes>`.
 
-Windows (beta): the `Windows` workflow's artifact holds `Okami-SF2-Player-<version>-Windows-Setup.exe`
+**Windows (beta):** the `Windows` workflow's artifact holds `Okami-SF2-Player-<version>-Windows-Setup.exe`
 (Inno Setup, `installer/windows.iss`), `...-Windows-VST3.zip` and their SHA-256. Run
 `scripts/privacy-check.sh` on the unzipped bundle, then publish them as a prerelease
-(`v<version>-windows-beta`), so the Mac release stays the latest. Not code-signed yet.
+(`v<version>-windows-beta`, titled "Okami SF2 Player <version> for Windows (beta)"), so the macOS
+release stays the latest; macOS releases are tagged `v<version>` and titled "... <version> for
+macOS: ...". Each release's notes link to the other system's. Not code-signed yet.
 
 ## License
 
